@@ -22,6 +22,7 @@ import { sanitizeOps, sanitizePageMeta } from './validate.js';
 const W = 880, H = 660;
 const STYLE = `
   :host { display: block; width: 100%; --sketch-radius: 16px; --sketch-ink: rgba(255,255,255,.46); --sketch-live: rgb(150,205,255); font: 11px/1.5 -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif; }
+  :host([transparent]) .stage { background: transparent; border: 0; border-radius: 0; }
   .stage { position: relative; aspect-ratio: ${W} / ${H}; border-radius: var(--sketch-radius); overflow: hidden;
     border: .5px solid rgba(255,255,255,.09);
     background: radial-gradient(120% 100% at 30% 12%, #14151a 0%, #0b0b0f 52%, #07070a 100%); }

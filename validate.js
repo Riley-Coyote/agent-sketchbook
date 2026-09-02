@@ -23,6 +23,8 @@ const LAYER_KEYS = new Set(LAYERS.map((l) => l.key));
 const BRUSH_KEYS = new Set(Object.keys(BRUSHES));
 
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
+/* an optional colour on a stroke or dot: three whole numbers 0–255 */
+const colour = (c) => Array.isArray(c) && c.length === 3 && c.every((v) => Number.isInteger(v) && v >= 0 && v <= 255) ? [c[0], c[1], c[2]] : null;
 
 /**
  * Returns { ops, errors, stats }. `ops` is a clean copy holding only the
@@ -61,12 +63,16 @@ export function sanitizeOps(input, limits = LIMITS) {
       const w = o.w === undefined ? 1 : o.w;
       if (!num(w) || w <= 0 || w > limits.maxWeight) { err(i, `weight ${o.w} out of range`); continue; }
       points += pts.length;
-      out.push({ k: o.k, pts, layer: o.layer, brush: o.brush, w });
+      const s = { k: o.k, pts, layer: o.layer, brush: o.brush, w };
+      if (o.c !== undefined) { const c = colour(o.c); if (!c) { err(i, 'colour is not [r, g, b]'); continue; } s.c = c; }
+      out.push(s);
     } else if (o.k === 'd') {
       if (!inRange([o.x, o.y]) || !num(o.r) || o.r <= 0 || o.r > limits.maxDotRadius) { err(i, 'dot out of range'); continue; }
       if (!LAYER_KEYS.has(o.layer)) { err(i, `unknown layer ${JSON.stringify(o.layer)}`); continue; }
       if (!BRUSH_KEYS.has(o.brush)) { err(i, `unknown brush ${JSON.stringify(o.brush)}`); continue; }
-      out.push({ k: 'd', x: o.x, y: o.y, r: o.r, layer: o.layer, brush: o.brush });
+      const d = { k: 'd', x: o.x, y: o.y, r: o.r, layer: o.layer, brush: o.brush };
+      if (o.c !== undefined) { const c = colour(o.c); if (!c) { err(i, 'colour is not [r, g, b]'); continue; } d.c = c; }
+      out.push(d);
     } else if (o.k === 'p') {
       if (!num(o.ms) || o.ms < 0 || o.ms > limits.maxPauseMs) { err(i, 'pause out of range'); continue; }
       out.push({ k: 'p', ms: o.ms });

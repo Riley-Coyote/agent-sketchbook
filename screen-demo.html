@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sketchbook — screen marks</title>
+<style>
+  :root { color-scheme: dark; --ground: #07070a; --hair: rgba(255,255,255,.08); --hair-2: rgba(255,255,255,.13); --t1: rgba(255,255,255,.92); --t2: rgba(255,255,255,.55); --t3: rgba(255,255,255,.42); --t4: rgba(255,255,255,.32); --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--t1); font: 13px/1.65 var(--font); -webkit-font-smoothing: antialiased; padding: 36px 28px 80px; }
+  main { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 29px; font-weight: 600; letter-spacing: -.026em; margin: 0 0 6px; }
+  p { color: var(--t2); margin: 0 0 14px; max-width: 640px; }
+  .label { font-size: 9.5px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--t4); }
+  button { font: inherit; color: var(--t2); cursor: pointer; background: transparent; border: .5px solid var(--hair-2); border-radius: 999px; padding: 7px 13px; font-size: 11.5px; }
+  button:hover { color: var(--t1); border-color: rgba(255,255,255,.32); }
+  button:focus-visible { outline: none; border-color: rgba(255,255,255,.5); }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 18px 0 22px; }
+  #wheel { width: 64px; height: 64px; border-radius: 50%; cursor: crosshair; border: .5px solid var(--hair-2); }
+  #swatch { width: 18px; height: 18px; border-radius: 50%; border: .5px solid rgba(255,255,255,.3); }
+  #hex { font: 11px ui-monospace, Menlo, monospace; color: var(--t3); }
+
+  /* two fake windows, in page coordinates (880 × 660), scaled to fit */
+  .screens { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  .screen { position: relative; width: 100%; aspect-ratio: 880 / 660; border-radius: 12px; overflow: hidden; border: .5px solid var(--hair-2); }
+  .screen .mock { position: absolute; inset: 0; transform-origin: 0 0; width: 880px; height: 660px; font: 14px/1.4 var(--font); }
+  .screen sketch-page { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+  .el { position: absolute; }
+  /* light: a settings page */
+  .light .mock { background: #f4f5f7; color: #1c1e24; }
+  .light .titlebar { position: absolute; left: 0; top: 0; right: 0; height: 40px; background: #e8e9ec; border-bottom: 1px solid #d6d8dd; }
+  .light .side { position: absolute; left: 0; top: 40px; bottom: 0; width: 200px; background: #eceef1; border-right: 1px solid #d6d8dd; padding: 18px 14px; font-size: 13px; color: #55596a; }
+  .light .side div { padding: 6px 8px; border-radius: 6px; }
+  .light .side .on { background: #dfe3ea; color: #1c1e24; }
+  .light h3 { position: absolute; left: 240px; top: 64px; margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
+  .light .field { position: absolute; left: 240px; height: 36px; width: 420px; background: #fff; border: 1px solid #c9ccd4; border-radius: 8px; padding: 8px 12px; color: #444a5a; }
+  .light .fl { position: absolute; left: 240px; font-size: 12px; color: #6b7080; }
+  .light .btn { position: absolute; height: 36px; border-radius: 8px; padding: 8px 18px; font-weight: 600; }
+  .light .primary { background: #2f6fed; color: #fff; }
+  .light .ghost { background: #fff; border: 1px solid #c9ccd4; color: #444a5a; }
+  .light .danger { background: #fff; border: 1px solid #e3b4b4; color: #b03030; }
+  /* dark: an editor */
+  .dark .mock { background: #14161b; color: #cfd6e4; font: 13px/22px ui-monospace, 'SF Mono', Menlo, monospace; }
+  .dark .titlebar { position: absolute; left: 0; top: 0; right: 0; height: 40px; background: #1b1e25; border-bottom: 1px solid #262a33; }
+  .dark .tab { position: absolute; top: 10px; height: 30px; padding: 4px 14px; font: 12px var(--font); color: #9aa3b5; border-radius: 6px 6px 0 0; }
+  .dark .tab.on { background: #14161b; color: #e6ebf5; }
+  .dark pre { position: absolute; left: 24px; top: 64px; margin: 0; font: inherit; }
+  .dark .ln { color: #4a5160; display: inline-block; width: 36px; }
+  .dark .k { color: #c792ea; } .dark .s { color: #c3e88d; } .dark .f { color: #82aaff; } .dark .c { color: #5c6370; }
+  .dark .status { position: absolute; left: 0; right: 0; bottom: 0; height: 26px; background: #1b1e25; font: 11px var(--font); color: #7c8496; padding: 5px 14px; }
+</style>
+<script type="module" src="./sketch-page.js"></script>
+</head>
+<body>
+<main>
+  <div class="label">sketchbook</div>
+  <h1>Screen marks</h1>
+  <p>The pen for drawing on someone's screen: a mid-weight coloured pencil over a halo, so it reads on a light page and a dark one. Six gestures — circle, underline, arrow, bracket, text, cross — expanded into the same marks the book uses. Pick a colour on the wheel.</p>
+
+  <div class="row">
+    <canvas id="wheel" width="128" height="128" aria-label="pen colour"></canvas>
+    <div id="swatch"></div><div id="hex"></div>
+    <button id="again">Draw it again</button>
+    <button id="reseed">Different hand</button>
+  </div>
+
+  <div class="screens">
+    <div class="screen light">
+      <div class="mock" id="mock-light">
+        <div class="titlebar"></div>
+        <div class="side"><div>General</div><div class="on">Account</div><div>Notifications</div><div>Privacy</div><div>Advanced</div></div>
+        <h3>Account</h3>
+        <div class="fl" style="top:120px">Name</div>
+        <div class="field el" id="f-name" style="top:140px">Riley Coyote</div>
+        <div class="fl" style="top:196px">Email</div>
+        <div class="field el" id="f-email" style="top:216px">deepframe@…</div>
+        <div class="fl" style="top:272px">Password</div>
+        <div class="field el" id="f-pass" style="top:292px">••••••••••</div>
+        <div class="btn ghost el" id="b-cancel" style="left:240px;top:372px">Cancel</div>
+        <div class="btn primary el" id="b-save" style="left:336px;top:372px">Save changes</div>
+        <div class="btn danger el" id="b-delete" style="left:240px;top:560px">Delete account</div>
+      </div>
+      <sketch-page id="over-light" transparent hud="off" autoplay speed="2"></sketch-page>
+    </div>
+    <div class="screen dark">
+      <div class="mock" id="mock-dark">
+        <div class="titlebar"><div class="tab on" style="left:14px">mark-engine.js</div><div class="tab" style="left:140px">validate.js</div></div>
+        <pre id="code"><span class="ln">334</span><span class="k">export class</span> <span class="f">MarkEngine</span> {
+<span class="ln">335</span>  <span class="f">constructor</span>({ width, height, dpr = 2, ink = INK } = {}) {
+<span class="ln">336</span>    this.w = width;
+<span class="ln">337</span>    this.h = height;
+<span class="ln">338</span>    this.dpr = dpr;
+<span class="ln">339</span>    this.ink = ink;
+<span class="ln">340</span>    this.ops = [];
+<span class="ln">341</span>    this.cursor = <span class="k">null</span>;
+<span class="ln">342</span>    this.layers = {};
+<span class="ln">343</span>    <span class="k">for</span> (<span class="k">const</span> l <span class="k">of</span> LAYERS) {
+<span class="ln">344</span>      <span class="k">const</span> cv = document.createElement(<span class="s">'canvas'</span>);
+<span class="ln">345</span>      cv.width = width * dpr;
+<span class="ln">346</span>      cv.height = height * dpr;
+<span class="ln">347</span>      <span class="k">const</span> ctx = cv.getContext(<span class="s">'2d'</span>);
+<span class="ln">348</span>      ctx.scale(dpr, dpr);
+<span class="ln">349</span>      this.layers[l.key] = { cv, ctx };
+<span class="ln">350</span>    }
+<span class="ln">351</span>  }
+<span class="ln">352</span>
+<span class="ln">353</span>  <span class="c">/** Install a page. Ops are plain data and are never mutated. */</span>
+<span class="ln">354</span>  <span class="f">load</span>(ops) {</pre>
+        <div class="status">main · UTF-8 · JavaScript</div>
+      </div>
+      <sketch-page id="over-dark" transparent hud="off" autoplay speed="2"></sketch-page>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+  import { expandGestures } from './screen-marks.js';
+  const $ = (id) => document.getElementById(id);
+
+  /* scale the 880×660 mocks to their boxes */
+  const fit = () => document.querySelectorAll('.screen').forEach((s) => { s.querySelector('.mock').style.transform = `scale(${s.clientWidth / 880})`; });
+  fit(); addEventListener('resize', fit);
+
+  /* element rects in page units, straight from the mock layout */
+  const rect = (id) => { const el = $(id), m = el.closest('.mock'); const a = el.getBoundingClientRect(), b = m.getBoundingClientRect(); const k = 880 / b.width; return { x: (a.left - b.left) * k, y: (a.top - b.top) * k, w: a.width * k, h: a.height * k }; };
+
+  const gesturesLight = () => [
+    { kind: 'circle', target: rect('b-save') },
+    { kind: 'arrow', from: rect('f-email'), to: rect('b-save') },
+    { kind: 'text', at: { x: 560, y: 350 }, text: 'this one' },
+    { kind: 'underline', target: rect('f-name') },
+    { kind: 'cross', target: rect('b-delete') },
+    { kind: 'bracket', target: { x: 240, y: 120, w: 420, h: 210 }, side: 'right' },
+  ];
+  const gesturesDark = () => [
+    { kind: 'bracket', target: { x: 60, y: 262, w: 560, h: 176 }, side: 'left' },
+    { kind: 'circle', target: { x: 236, y: 348, w: 246, h: 22 } },
+    { kind: 'text', at: { x: 520, y: 318 }, text: 'one per layer' },
+    { kind: 'underline', target: { x: 176, y: 150, w: 100, h: 20 } },
+    { kind: 'arrow', from: { x: 700, y: 120 }, to: { x: 320, y: 155 } },
+  ];
+
+  let color = [255, 138, 92];
+  let seedN = 0;
+  function draw() {
+    $('over-light').ops = expandGestures(gesturesLight(), { color, ground: () => 'light', seed: seedN });
+    $('over-dark').ops = expandGestures(gesturesDark(), { color, ground: () => 'dark', seed: seedN });
+    $('swatch').style.background = `rgb(${color})`;
+    $('hex').textContent = '#' + color.map((v) => v.toString(16).padStart(2, '0')).join('');
+  }
+
+  /* a small hue/saturation wheel */
+  const wheel = $('wheel'), wc = wheel.getContext('2d'), R = 64;
+  const im = wc.createImageData(128, 128);
+  for (let y = 0; y < 128; y++) for (let x = 0; x < 128; x++) {
+    const dx = x - R, dy = y - R, d = Math.hypot(dx, dy) / R;
+    const i = (y * 128 + x) * 4;
+    if (d > 1) continue;
+    const h = (Math.atan2(dy, dx) / Math.PI / 2 + 1) % 1;
+    const [r, g, b] = hsl(h, Math.min(1, d * 1.05), 0.62);
+    im.data[i] = r; im.data[i + 1] = g; im.data[i + 2] = b; im.data[i + 3] = 255;
+  }
+  wc.putImageData(im, 0, 0);
+  function hsl(h, s, l) {
+    const f = (n) => { const k = (n + h * 12) % 12; const a = s * Math.min(l, 1 - l); return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
+    return [f(0), f(8), f(4)];
+  }
+  const pick = (e) => {
+    const b = wheel.getBoundingClientRect();
+    const x = (e.clientX - b.left) * (128 / b.width), y = (e.clientY - b.top) * (128 / b.height);
+    const dx = x - R, dy = y - R, d = Math.min(1, Math.hypot(dx, dy) / R);
+    color = hsl((Math.atan2(dy, dx) / Math.PI / 2 + 1) % 1, Math.min(1, d * 1.05), 0.62);
+    draw();
+  };
+  wheel.onclick = pick;
+  wheel.onpointermove = (e) => { if (e.buttons) pick(e); };
+  $('again').onclick = () => { $('over-light').replay(); $('over-dark').replay(); };
+  $('reseed').onclick = () => { seedN++; draw(); };
+  customElements.whenDefined('sketch-page').then(draw);
+  window.screenDemo = { draw, setColor: (c) => { color = c; draw(); } };
+</script>
+</body>
+</html>

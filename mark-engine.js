@@ -41,6 +41,11 @@ export const BRUSHES = {
   stipple:  { w: 0.85, alpha: 0.34,  swell: 0.2,  taper: 1,   spacing: 6.2, scatter: 2.9 },
   charcoal: { w: 2.4,  alpha: 0.3,   swell: 0.9,  taper: 0.8, spacing: 1.6, scatter: 1.1, dir: 0.55 },
   eraser:   { w: 3.4,  alpha: 0.62,  swell: 0.42, taper: 1,   spacing: 1.3, scatter: 0.18, sub: true },
+  /* for screens: a mid-weight coloured pencil that reads on any background.
+   * continuous (no brk), a little tooth, colour per mark (op.c). The halo is
+   * the same path laid down first, wide and faint, in the ground's opposite. */
+  pen:      { w: 2.4,  alpha: 0.55,  swell: 0.5,  taper: 1.1, spacing: 1.2, scatter: 0.5 },
+  halo:     { w: 5.3,  alpha: 0.32,  swell: 0.5,  taper: 1.1, spacing: 1.2, scatter: 0.3 },
 };
 
 /* Four layers, composited in this order. The split exists so tone can be
@@ -90,9 +95,9 @@ export const offsetPath = (pts, d) => pts.map((p, i) => {
 /* ---------------------------------------------------------------------- ops */
 
 /** A stroke. kind 's' = normal, 'g' = construction (forced faint). */
-export const OP = (kind, pts, layer, brush, w = 1) => ({ k: kind, pts, layer, brush, w });
+export const OP = (kind, pts, layer, brush, w = 1, c = undefined) => (c ? { k: kind, pts, layer, brush, w, c } : { k: kind, pts, layer, brush, w });
 /** A soft pressure dot — anthers, pupils, points of light. */
-export const DOT = (x, y, r, layer, brush) => ({ k: 'd', x, y, r, layer, brush });
+export const DOT = (x, y, r, layer, brush, c = undefined) => (c ? { k: 'd', x, y, r, layer, brush, c } : { k: 'd', x, y, r, layer, brush });
 /** Dead time. The hand stopping to look is most of what makes replay legible. */
 export const PAUSE = (ms) => ({ k: 'p', ms });
 /** Names the section of work now beginning; surfaces in the UI. */
@@ -487,7 +492,7 @@ export class MarkEngine {
     return Math.max(0.05, this.resample(op).len / px);
   }
 
-  stamp(x, y, vel, br, layer, wmul) {
+  stamp(x, y, vel, br, layer, wmul, ink = this.ink) {
     const L = this.layers[layer] || this.layers.line;
     const ctx = L.ctx;
     if (br.brk && vel > br.brk) {
@@ -505,7 +510,7 @@ export class MarkEngine {
       ctx.globalCompositeOperation = 'destination-out';
       ctx.fillStyle = `rgba(0,0,0,${br.alpha})`;
     } else {
-      ctx.fillStyle = `rgba(${this.ink[0]},${this.ink[1]},${this.ink[2]},${br.alpha})`;
+      ctx.fillStyle = `rgba(${ink[0]},${ink[1]},${ink[2]},${br.alpha})`;
     }
     ctx.beginPath();
     if (br.dir) ctx.ellipse(gx, gy, w * (1 + br.dir), w * (1 - br.dir * 0.5), 0.7, 0, Math.PI * 2);
@@ -559,7 +564,7 @@ export class MarkEngine {
         g.addColorStop(0.52, 'rgba(0,0,0,.6)');
         g.addColorStop(1, 'rgba(0,0,0,0)');
       } else {
-        const [r, gg, b] = this.ink;
+        const [r, gg, b] = op.c || this.ink;
         g.addColorStop(0, `rgba(${r},${gg},${b},.97)`);
         g.addColorStop(0.42, `rgba(${r},${gg},${b},.88)`);
         g.addColorStop(0.68, `rgba(${r},${gg},${b},.34)`);
@@ -590,7 +595,7 @@ export class MarkEngine {
       /* Velocity is a bell over the stroke: slow at both ends. This is what
        * gives every mark a tapered entry and exit without any author effort. */
       const vel = Math.pow(Math.sin(Math.PI * u), 0.55);
-      this.stamp(P0[i][0], P0[i][1], vel, use, op.layer, op.w);
+      this.stamp(P0[i][0], P0[i][1], vel, use, op.layer, op.w, op.c || this.ink);
       this.pen = { x: P0[i][0], y: P0[i][1] };
     }
   }
