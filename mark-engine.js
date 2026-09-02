@@ -41,11 +41,10 @@ export const BRUSHES = {
   stipple:  { w: 0.85, alpha: 0.34,  swell: 0.2,  taper: 1,   spacing: 6.2, scatter: 2.9 },
   charcoal: { w: 2.4,  alpha: 0.3,   swell: 0.9,  taper: 0.8, spacing: 1.6, scatter: 1.1, dir: 0.55 },
   eraser:   { w: 3.4,  alpha: 0.62,  swell: 0.42, taper: 1,   spacing: 1.3, scatter: 0.18, sub: true },
-  /* for screens: a mid-weight coloured pencil that reads on any background.
-   * continuous (no brk), a little tooth, colour per mark (op.c). The halo is
-   * the same path laid down first, wide and faint, in the ground's opposite. */
-  pen:      { w: 2.4,  alpha: 0.55,  swell: 0.5,  taper: 1.1, spacing: 1.2, scatter: 0.5 },
-  halo:     { w: 5.3,  alpha: 0.32,  swell: 0.5,  taper: 1.1, spacing: 1.2, scatter: 0.3 },
+  /* for screens: a coloured pencil. dense core, rough edge from the tooth,
+   * continuous. no outline — it reads on any ground by density, and the
+   * caller tunes the colour to the ground (pigment on white, chalk on black). */
+  pen:      { w: 2.7,  alpha: 0.66,  swell: 0.45, taper: 1.1, spacing: 1.0, scatter: 0.9 },
 };
 
 /* Four layers, composited in this order. The split exists so tone can be

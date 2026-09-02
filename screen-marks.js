@@ -2,8 +2,9 @@
  *
  * The reference for Prompt Ghost's screen marks (see its docs/SCREEN-MARKS.md).
  * A model says "circle that, arrow from this to that, write 'here'"; this turns
- * it into the engine's op list in the pen, with the hand's unevenness, each
- * stroke laid over a halo so it reads on any background.
+ * it into the engine's op list in the pen, with the hand's unevenness. No
+ * outline: the pencil reads by density, and its colour is tuned to the ground
+ * (pigment on a light page, chalk on a dark one).
  *
  *   import { expandGestures } from './screen-marks.js';
  *   const ops = expandGestures(gestures, { color: [255, 122, 89], ground: (x, y) => 'light' | 'dark' });
@@ -21,29 +22,30 @@
 
 import { OP, PAUSE, PHASE, jitter, seed, textOps } from './mark-engine.js';
 
-const DARK = [18, 20, 26];
-const LIGHT = [244, 247, 252];
 const WOB = 1.1;
 
-function haloFor(pts, opts) {
-  if (opts.halo === 'dark') return DARK;
-  if (opts.halo === 'light') return LIGHT;
+/** Ground under a path: 'light' or 'dark', from the caller's sampler. */
+function groundFor(pts, opts) {
+  if (opts.ground === 'light' || opts.ground === 'dark') return opts.ground;
   if (typeof opts.ground === 'function') {
-    /* sample the ground under the path: light ground → dark halo, and back */
-    let light = 0;
-    for (let i = 0; i < pts.length; i += Math.max(1, Math.floor(pts.length / 6))) if (opts.ground(pts[i][0], pts[i][1]) === 'light') light++;
-    return light * 2 >= Math.min(6, pts.length) ? DARK : LIGHT;
+    let light = 0, n = 0;
+    for (let i = 0; i < pts.length; i += Math.max(1, Math.floor(pts.length / 6))) { n++; if (opts.ground(pts[i][0], pts[i][1]) === 'light') light++; }
+    return light * 2 >= n ? 'light' : 'dark';
   }
-  return DARK;
+  return 'light';
 }
 
-/** One pen stroke over its halo. */
+/** A pencil's colour on a ground: pigment on white, chalk on black. No outline. */
+export function tone(color, ground) {
+  const k = ground === 'light' ? 0.78 : 1;                 /* darker on a light page */
+  const lift = ground === 'dark' ? 0.22 : 0;               /* lighter, chalkier on a dark one */
+  return color.map((v) => Math.round(Math.min(255, v * k + (255 - v) * lift)));
+}
+
+/** One pencil stroke. */
 export function penStroke(pts, w, color, opts = {}, wob = WOB) {
   const p = jitter(pts, wob);
-  return [
-    OP('s', p, 'line', 'halo', w, haloFor(p, opts)),
-    OP('s', p, 'line', 'pen', w, color),
-  ];
+  return [OP('s', p, 'line', 'pen', w, tone(color, groundFor(p, opts)))];
 }
 
 const center = (r) => (r.w === undefined ? [r.x, r.y] : [r.x + r.w / 2, r.y + r.h / 2]);
@@ -141,18 +143,16 @@ export function cross(target, color, opts, k) {
 }
 
 export function text(at, str, color, opts, size = 16) {
-  const halo = textOps(str, at.x, at.y, size, 'line', 'halo', 0.5, 0.78);
-  const c = haloFor(halo.flatMap((o) => o.pts), opts);
-  for (const o of halo) o.c = c;
-  const ink = textOps(str, at.x, at.y, size, 'line', 'pen', 0.5, 0.62);
-  for (const o of ink) o.c = color;
-  return [...halo, ...ink];
+  const ink = textOps(str, at.x, at.y, size, 'line', 'pen', 0.5, 0.85);
+  const c = tone(color, groundFor(ink.flatMap((o) => o.pts), opts));
+  for (const o of ink) o.c = c;
+  return ink;
 }
 
 /**
  * Expand a list of gestures into marks. `opts.color` is the pen (the user's
- * wheel); a gesture's own `color` overrides it. `opts.ground(x, y)` returns
- * 'light' or 'dark' for the halo; or set `opts.halo` to force one.
+ * wheel); a gesture's own `color` overrides it. `opts.ground` is 'light',
+ * 'dark', or a function (x, y) → either, used to tune the pencil's tone.
  */
 export function expandGestures(gestures, opts = {}) {
   const color = opts.color || [150, 205, 255];
