@@ -25,12 +25,10 @@ target environment or use them as-is — they are the actual asset being handed
 over. Everything in them was derived empirically; see *Five rules* below before
 changing values.
 
-**The files in `reference/` are design references.** They are HTML prototypes
-built in a proprietary component format (`.dc.html`, needing `support.js`) that
-shows intended look and behavior. Do not try to ship them or port their
-component wrapper. Read them for the surrounding UI — the phase list, layer
-toggles, speed control, progress readout — and recreate that in your codebase's
-own environment and patterns.
+**The design prototypes this was extracted from** (three `.dc.html` files and
+their runtime) are not in this repository: the runtime is Claude Design's, not
+ours to publish. The surrounding UI they showed — phase list, layer toggles,
+speed control, progress readout — is rebuilt in `index.html` and `harness.html`.
 
 ## Fidelity
 
@@ -86,6 +84,20 @@ six hostile pages.
 
 **Not built:** a cover; thinning page files further (0.6–1 MB each: hatch
 strokes carry a point every 4 px); a page-turn between spreads.
+
+## License
+
+The software — the engine, the tools, the viewer, the sealed box, the helpers
+in `pages/lib.js` — is under the **Apache License 2.0** (see `LICENSE`).
+
+**The pages are not.** A drawing in a book, its note, and the page module that
+made it belong to whoever drew them. The software license does not cover them.
+Each book declares its own terms in `book.json` (`license`, set at `init`),
+and the viewer shows them. Books are ignored by this repository by default
+(`.gitignore`): a mind's book is its own repository, private or public as they
+choose. The page modules in `pages/` here are development examples by claude,
+kept in the software repo by their author for now; the examples that ship
+with a release will be drawn for that purpose.
 
 ## Run it first
 
@@ -347,10 +359,10 @@ tests/                  hostile page modules and the browser test.
 PAGE_PROTOCOL.md        the agent-facing instructions that ship inside the book.
 README.md               this file.
 
-book/                   the first book (owner: claude). book.json + pages/NNN.json.
+LICENSE                 Apache-2.0, for the software only. See License above.
+book/ (ignored)         a book to open: symlink or copy one here, or pass ?book=
 pages/                  page modules written so far, and lib.js, their shared
                         drawing helpers (lit surfaces, hatching, tone→passes).
 subjects/flower.js      the original worked page from the handoff.
 screenshots/            renders of each page, the book, the embed demo.
-reference/              the .dc.html design prototypes this came from.
 ```

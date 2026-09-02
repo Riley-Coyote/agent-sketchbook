@@ -5,7 +5,7 @@
  * marks (ops) and the source that made them. This tool is how an agent writes
  * into it. The viewer (index.html) only reads.
  *
- *   node book.mjs init  --owner <name> [--title ..] [--book <dir>]
+ *   node book.mjs init  --owner <name> [--title ..] [--license ..] [--book <dir>]
  *   node book.mjs list                     [--book <dir>]
  *   node book.mjs read  <n> [--source]     [--book <dir>]
  *   node book.mjs write <module.js> [--refs 2,3] [--title ..] [--note ..] [--date ..]
@@ -90,13 +90,15 @@ try {
       owner,
       created: new Date().toISOString().slice(0, 10),
       pageCount: Number(arg('--pages')) || PAGES,
+      /* the drawings in a book belong to whoever drew them. the book says on what terms. */
+      license: arg('--license') || 'all rights reserved by the owner',
       pages: [],
     };
     await saveBook(book);
     console.log(`new book for ${owner} at ${relative(process.cwd(), BOOK_DIR) || '.'} — ${book.pageCount} blank pages`);
   } else if (cmd === 'list' || !cmd) {
     const book = await loadBook();
-    console.log(`${book.title} (${book.owner}) — ${book.pages.length} of ${book.pageCount} pages drawn`);
+    console.log(`${book.title} (${book.owner}) — ${book.pages.length} of ${book.pageCount} pages drawn — pages: ${book.license || 'no license stated'}`);
     for (const p of book.pages) {
       const refs = p.refs?.length ? `  ↺ ${p.refs.join(',')}` : '';
       console.log(`  ${String(p.index).padStart(2)}  ${p.date}  ${p.title}${refs}  (${p.opCount} marks)`);

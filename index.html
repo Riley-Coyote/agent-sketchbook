@@ -96,6 +96,7 @@
     <h1 id="book-title">Sketchbook</h1>
     <span class="meta" id="book-meta"></span>
     <span class="spacer"></span>
+    <span class="meta" id="book-license" title="the terms the owner set for the pages in this book"></span>
     <span class="label" id="owner"></span>
   </div>
   <nav id="spine" aria-label="pages"></nav>
@@ -154,6 +155,7 @@ const thumbCache = new Map();
 
 $('book-title').textContent = book.title;
 $('owner').textContent = book.owner;
+$('book-license').textContent = book.license ? `pages: ${book.license}` : '';
 const drawn = book.pages.length;
 $('book-meta').textContent = `${drawn} of ${book.pageCount} pages drawn`;
 
