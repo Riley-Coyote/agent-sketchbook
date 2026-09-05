@@ -17,7 +17,7 @@
  * caller should still pass it through validate.js — this module does.
  */
 
-import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, limitsForPage } from './validate.js';
+import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, sanitizeSurface, limitsForPage } from './validate.js';
 
 const FRAME_SRC = `<!doctype html>
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' data:; worker-src data:; child-src data:">
@@ -63,7 +63,7 @@ const FRAME_SRC = `<!doctype html>
         'const m = await import(' + JSON.stringify(entry) + ');' +
         'const p = m.default; if (!p || typeof p.build !== "function") throw new Error("page module must export default { title, date, note, build }");' +
         'const ops = p.build();' +
-        'postMessage(JSON.parse(JSON.stringify({ ops, meta: { title: p.title, date: p.date, note: p.note, refs: p.refs, seed: p.seed, page: p.page } })));';
+        'postMessage(JSON.parse(JSON.stringify({ ops, meta: { title: p.title, date: p.date, note: p.note, refs: p.refs, seed: p.seed, page: p.page, surface: p.surface } })));';
       worker = new Worker(mk(code), { type: 'module' });
     } catch (err) { reply({ error: String(err && err.message || err) }); return; }
     const t = setTimeout(() => { worker.terminate(); reply({ error: 'the page did not finish within ' + (timeoutMs / 1000) + 's' }); }, timeoutMs || 15000);
@@ -100,7 +100,17 @@ function ensureFrame() {
 /** Fetch the module sources a page may import, keyed by file name. */
 export async function loadModules(urls) {
   const out = {};
-  await Promise.all(urls.map(async (u) => { out[u.split('/').pop()] = await (await fetch(u)).text(); }));
+  const read = async u => {
+    const response = await fetch(u);
+    if (!response.ok) throw new Error(`${response.status} loading ${u}`);
+    out[new URL(u, location.href).pathname.split('/').pop()] = await response.text();
+  };
+  await Promise.all(urls.map(read));
+  // Keep existing page authors' module lists working when the engine gains a local dependency.
+  const engineURL = urls.find(u => new URL(u, location.href).pathname.endsWith('/mark-engine.js'));
+  if (engineURL && out['mark-engine.js']?.includes("'./material-engine.js'") && !out['material-engine.js']) {
+    await read(new URL('./material-engine.js', new URL(engineURL, location.href)).href);
+  }
   return out;
 }
 
@@ -119,8 +129,10 @@ export async function runPageSource(source, { modules = {}, timeoutMs = 15000 } 
   if (result.error) throw new Error(result.error);
   const { page, errors: dimensionErrors } = sanitizePageDimensions(result.meta?.page);
   if (!page) throw new Error('the page dimensions were rejected: ' + dimensionErrors.join('; '));
-  const { ops, errors, stats } = sanitizeOps(result.ops, limitsForPage(page));
+  const { surface, errors: surfaceErrors } = sanitizeSurface(result.meta?.surface);
+  if (surface === null) throw new Error('the page surface was rejected: ' + surfaceErrors.join('; '));
+  const { ops, errors, stats } = sanitizeOps(result.ops, limitsForPage(page, surface));
   if (!ops) throw new Error('the marks were rejected: ' + errors.join('; '));
   const { meta } = sanitizePageMeta(result.meta || {});
-  return { ops, meta: { ...meta, page }, stats };
+  return { ops, meta: { ...meta, page, ...(surface === undefined ? {} : { surface }) }, stats };
 }

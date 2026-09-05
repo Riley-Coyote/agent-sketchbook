@@ -43,6 +43,9 @@
   #bar h1 { font-size: 15px; font-weight: 600; letter-spacing: -.02em; margin: 0; }
   #bar .meta { color: var(--t3); font-size: 11px; }
   #bar .spacer { flex: 1; }
+  #bar .studio-link { color: var(--t2); font-size: 11.5px; text-decoration: none; white-space: nowrap; }
+  #bar .studio-link:hover { color: var(--t1); }
+  #bar .studio-link:focus-visible { outline: 1px solid var(--t2); outline-offset: 5px; }
 
   /* ---- spine */
   #spine { grid-area: spine; overflow-y: auto; border-right: .5px solid var(--hair); padding: 12px 8px 40px; }
@@ -84,7 +87,10 @@
   #hud { position: absolute; left: 20px; bottom: 16px; display: flex; gap: 9px; align-items: center; font-size: 10.5px; letter-spacing: .04em; color: var(--t3); }
   #dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,.3); transition: background .3s; }
   #pct { position: absolute; right: 20px; bottom: 16px; font-size: 10.5px; color: var(--t4); font-variant-numeric: tabular-nums; }
+  #stage[data-paper="white"] #hud, #stage[data-paper="toned"] #hud { color: rgba(25,24,22,.65); }
+  #stage[data-paper="white"] #pct, #stage[data-paper="toned"] #pct { color: rgba(25,24,22,.55); }
   #controls { display: flex; gap: 8px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+  #page-error { color: #efaaa4; font-size: 12px; }
   .sep { width: 1px; height: 18px; background: var(--hair); margin: 0 4px; }
   #empty { color: var(--t3); padding: 40px 0; }
 
@@ -96,6 +102,7 @@
     <h1 id="book-title">Sketchbook</h1>
     <span class="meta" id="book-meta"></span>
     <span class="spacer"></span>
+    <a class="studio-link" href="studio.html">Drawing studio</a>
     <span class="meta" id="book-license" title="the terms the owner set for the pages in this book"></span>
     <span class="label" id="owner"></span>
   </div>
@@ -139,12 +146,13 @@
         <button class="sp" data-v="3" aria-pressed="true">3×</button>
         <button class="sp" data-v="8">8×</button>
       </div>
+      <p id="page-error" role="alert" hidden></p>
     </section>
   </main>
 
 <script type="module">
 import { MarkEngine } from './mark-engine.js';
-import { sanitizeOps, sanitizePageDimensions, limitsForPage } from './validate.js';
+import { sanitizeOps, sanitizePageDimensions, sanitizeSurface, limitsForPage } from './validate.js';
 
 const $ = (id) => document.getElementById(id);
 /* ?book=<dir> opens another mind's book; one folder each */
@@ -165,9 +173,11 @@ async function loadPage(meta) {
     pageCache.set(meta.index, fetch(BOOK + '/' + meta.file).then((r) => r.json()).then((page) => {
       const { page: dimensions, errors: dimensionErrors } = sanitizePageDimensions(page.page);
       if (!dimensions) throw new Error(`page ${meta.index} dimensions rejected: ${dimensionErrors.join('; ')}`);
-      const { ops, errors } = sanitizeOps(page.ops, limitsForPage(dimensions));
+      const { surface, errors: surfaceErrors } = sanitizeSurface(page.surface);
+      if (surface === null) throw new Error(`page ${meta.index} surface rejected: ${surfaceErrors.join('; ')}`);
+      const { ops, errors } = sanitizeOps(page.ops, limitsForPage(dimensions, surface));
       if (!ops) throw new Error(`page ${meta.index} rejected: ${errors.join('; ')}`);
-      return { ...page, page: dimensions, ops };
+      return { ...page, page: dimensions, surface, ops };
     }));
   }
   return pageCache.get(meta.index);
@@ -179,7 +189,7 @@ async function thumb(meta) {
   const p = loadPage(meta).then((page) => {
     const { w, h } = page.page;
     // Keep thumbnail buffers small even when a page has thousands of logical pixels.
-    const e = new MarkEngine({ width: w, height: h, dpr: Math.max(1 / Math.min(w, h), 264 / Math.max(w, h)) });
+    const e = new MarkEngine({ width: w, height: h, dpr: Math.max(1 / Math.min(w, h), 264 / Math.max(w, h)), surface: page.surface });
     e.load(page.ops).finish();
     return { url: e.toDataURL(), page: page.page };
   });
@@ -218,7 +228,7 @@ for (const meta of book.pages) {
   thumb(meta).then(({ url, page }) => {
     row.querySelector('.thumb').style.aspectRatio = `${page.w} / ${page.h}`;
     row.querySelector('img').src = url;
-  });
+  }).catch(error => { row.title = error.message; row.querySelector('.d').textContent = 'Page unavailable'; });
 }
 const blank = book.pageCount - drawn;
 if (blank > 0) {
@@ -238,6 +248,7 @@ function esc(s) { return String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<'
 const cv = $('cv');
 const ctx = cv.getContext('2d');
 let engine = new MarkEngine({ width: 880, height: 660, dpr: 2 });
+let currentSurface;
 let ops = [];
 let speed = 3;
 let current = null;
@@ -254,19 +265,30 @@ async function open(index, push) {
   rows.get(index)?.scrollIntoView({ block: 'nearest' });
   if (push) history.replaceState(null, '', '#' + index);
 
-  const page = await loadPage(meta);
+  let page;
+  try { page = await loadPage(meta); }
+  catch (error) {
+    if (current === meta) {
+      $('page-error').textContent = `Unable to open this page: ${error.message}`;
+      $('page-error').hidden = false;
+    }
+    return;
+  }
   if (current !== meta) return;
+  $('page-error').hidden = true;
   ops = page.ops;
   const { w, h } = page.page;
-  if (engine.w !== w || engine.h !== h) {
+  if (engine.w !== w || engine.h !== h || JSON.stringify(currentSurface) !== JSON.stringify(page.surface)) {
     const dpr = Math.max(1 / Math.min(w, h), Math.min(2, 1760 / Math.max(w, h)));
-    engine = new MarkEngine({ width: w, height: h, dpr });
+    engine = new MarkEngine({ width: w, height: h, dpr, surface: page.surface });
+    currentSurface = page.surface;
     cv.width = w * dpr;
     cv.height = h * dpr;
     $('stage').style.aspectRatio = `${w} / ${h}`;
     $('stage').style.maxWidth = `${w}px`;
     window.engine = engine;
   }
+  $('stage').dataset.paper = page.surface?.paper || '';
   engine.load(ops);
   /* a page animates the first time you reach it, and is flat thereafter */
   if (seen.has(index)) engine.finish(); else { engine.replay(); markSeen(index); }
@@ -303,7 +325,7 @@ async function open(index, push) {
       thumb(m).then(({ url, page }) => {
         a.querySelector('.thumb').style.aspectRatio = `${page.w} / ${page.h}`;
         a.querySelector('img').src = url;
-      });
+      }).catch(error => { a.title = error.message; a.querySelector('.c').textContent = `p.${m.index} unavailable`; });
     });
   } else attWrap.hidden = true;
 
@@ -344,14 +366,15 @@ let last = performance.now();
     ctx.lineTo(engine.pen.x - 4, engine.pen.y - 24);
     ctx.lineTo(engine.pen.x + 4, engine.pen.y - 24);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(226,238,255,.8)';
+    ctx.fillStyle = currentSurface && currentSurface.paper !== 'black' ? 'rgba(38,37,35,.8)' : 'rgba(226,238,255,.8)';
     ctx.fill();
     ctx.restore();
   }
   const drawing = !!engine.cursor;
   phaseEl.textContent = engine.phase || (engine.done ? 'Finished' : 'Ready');
   pctEl.textContent = drawing ? Math.round(engine.progress * 100) + '%' : engine.done ? ops.length + ' marks' : '';
-  dotEl.style.background = drawing ? 'rgb(150,205,255)' : 'rgba(255,255,255,.3)';
+  const lightPaper = currentSurface && currentSurface.paper !== 'black';
+  dotEl.style.background = drawing ? (lightPaper ? '#3c5d74' : 'rgb(150,205,255)') : (lightPaper ? 'rgba(25,24,22,.4)' : 'rgba(255,255,255,.3)');
 })();
 
 /* expose for devtools and tests */

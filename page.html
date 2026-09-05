@@ -25,13 +25,23 @@
 <script type="module">
   const name = new URLSearchParams(location.search).get('p') || 'moth';
   const { MarkEngine } = await import('./mark-engine.js');
+  const { sanitizePageDimensions, sanitizeSurface, sanitizeOps, limitsForPage } = await import('./validate.js');
   const mod = await import(`./pages/${name}.js`);
   const page = mod.default;
   const cv = document.getElementById('cv');
   const ctx = cv.getContext('2d');
-  const engine = new MarkEngine({ width: 880, height: 660, dpr: 2 });
-  cv.width = 1760; cv.height = 1320;
-  const ops = page.build();
+  const dimensions = sanitizePageDimensions(page.page), paper = sanitizeSurface(page.surface);
+  if (!dimensions.page || paper.surface === null) throw new Error([...dimensions.errors, ...paper.errors].join('; '));
+  const { w, h } = dimensions.page;
+  const dpr = Math.min(2, Math.sqrt(8000000 / (w * h)));
+  const engine = new MarkEngine({ width: w, height: h, dpr, surface: paper.surface });
+  cv.width = w * dpr; cv.height = h * dpr;
+  Object.assign(document.getElementById('stage').style, { width: `min(${w}px, 100%)`, height: 'auto', aspectRatio: `${w}/${h}` });
+  Object.assign(cv.style, { width: '100%', height: '100%' });
+  if (paper.surface && paper.surface.paper !== 'black') document.getElementById('hud').style.color = '#333';
+  const checked = sanitizeOps(page.build(), limitsForPage(dimensions.page, paper.surface));
+  if (!checked.ops) throw new Error(checked.errors.join('; '));
+  const ops = checked.ops;
   engine.load(ops).replay();
   window.engine = engine; window.ops = ops;
   document.getElementById('note').textContent = `${page.title} — ${page.date} — ${page.note}`;

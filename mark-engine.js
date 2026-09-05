@@ -18,6 +18,8 @@
  * No framework, no dependencies. ES module.
  */
 
+import { MaterialSurface, gestureSamples } from './material-engine.js';
+
 export const INK = [236, 243, 255];
 
 /* ------------------------------------------------------------------ brushes */
@@ -346,11 +348,12 @@ export function textBlock(text, x, y, size, maxW, lineH, layer, brush, wob, weig
 /* -------------------------------------------------------------- the engine */
 
 export class MarkEngine {
-  constructor({ width, height, dpr = 2, ink = INK } = {}) {
+  constructor({ width, height, dpr = 2, ink = INK, surface = undefined } = {}) {
     this.w = width;
     this.h = height;
     this.dpr = dpr;
     this.ink = ink;
+    this.material = surface ? new MaterialSurface({ width, height, surface }) : null;
     this.ops = [];
     this.cursor = null;
     this.pen = null;
@@ -380,6 +383,7 @@ export class MarkEngine {
   }
 
   clear() {
+    if (this.material) this.material.clear();
     for (const l of LAYERS) {
       const L = this.layers[l.key];
       L.ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -477,6 +481,7 @@ export class MarkEngine {
 
   /** Composite the layers into a target 2d context. `hidden` is a key→bool map. */
   composite(ctx, hidden = {}) {
+    if (this.material) { this.material.composite(ctx, this.w * this.dpr, this.h * this.dpr); return; }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, this.w * this.dpr, this.h * this.dpr);
     for (const l of LAYERS) {
@@ -522,6 +527,8 @@ export class MarkEngine {
   }
 
   duration(op) {
+    if (op.k === 'm') return Math.max(.032, (op.samples.at(-1).t - op.samples[0].t) / 1000);
+    if (op.k === 'clean') return .02;
     if (op.k === 'p' || op.k === 'phase') return op.ms / 1000;
     if (op.k === 'clamp') return 0.02;
     if (op.k === 'occ') return 0.03;
@@ -579,6 +586,16 @@ export class MarkEngine {
   }
 
   run(op, from, to) {
+    if (this.material) {
+      if (op.k === 'm') {
+        let prepared = this.cache.get(op);
+        if (!prepared) { prepared = gestureSamples(op); this.cache.set(op, prepared); }
+        this.material.run(op, from, to, prepared);
+        const tip = prepared.findLast((sample) => sample.progress <= to);
+        if (tip) this.pen = { x: tip.x, y: tip.y };
+      } else this.material.run(op, from, to);
+      return;
+    }
     if (op.k === 'clamp') { if (from === 0) this.clampLayer(op.layer, op.max); return; }
 
     if (op.k === 'occ') {

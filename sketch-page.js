@@ -17,7 +17,7 @@
  */
 
 import { MarkEngine } from './mark-engine.js';
-import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, limitsForPage } from './validate.js';
+import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, sanitizeSurface, limitsForPage } from './validate.js';
 
 const W = 880, H = 660;
 const STYLE = `
@@ -31,6 +31,10 @@ const STYLE = `
   .dot { width: 5px; height: 5px; border-radius: 50%; background: rgba(255,255,255,.3); }
   .dot.live { background: var(--sketch-live); }
   .pct { position: absolute; right: 12px; bottom: 10px; font-size: 10px; color: rgba(255,255,255,.32); font-variant-numeric: tabular-nums; pointer-events: none; }
+  .stage[data-paper="white"] .hud, .stage[data-paper="toned"] .hud { color: rgba(25,24,22,.65); }
+  .stage[data-paper="white"] .pct, .stage[data-paper="toned"] .pct { color: rgba(25,24,22,.55); }
+  .stage[data-paper="white"] .dot, .stage[data-paper="toned"] .dot { background: rgba(25,24,22,.4); }
+  .stage[data-paper="white"] .dot.live, .stage[data-paper="toned"] .dot.live { background: #3c5d74; }
   .controls { display: flex; gap: 6px; margin-top: 8px; }
   button { font: inherit; font-size: 10.5px; color: rgba(255,255,255,.6); cursor: pointer; background: transparent; border: .5px solid rgba(255,255,255,.13); border-radius: 999px; padding: 5px 11px; }
   button:hover { color: rgba(255,255,255,.95); border-color: rgba(255,255,255,.32); }
@@ -60,6 +64,7 @@ export class SketchPage extends HTMLElement {
     this._ctx = this._cv.getContext('2d');
     this._engine = new MarkEngine({ width: W, height: H, dpr: 2 });
     this._page = { w: W, h: H };
+    this._surface = undefined;
     this._ops = [];
     this._meta = null;
     this._raf = 0;
@@ -103,18 +108,22 @@ export class SketchPage extends HTMLElement {
     const page = Array.isArray(input) ? { ops: input } : (input || {});
     const { page: dimensions, errors: dimensionErrors } = sanitizePageDimensions(page.page);
     if (!dimensions) { this._error('page dimensions rejected: ' + dimensionErrors.join('; ')); return; }
-    const { ops, errors } = sanitizeOps(page.ops, limitsForPage(dimensions));
+    const { surface, errors: surfaceErrors } = sanitizeSurface(page.surface);
+    if (surface === null) { this._error('page surface rejected: ' + surfaceErrors.join('; ')); return; }
+    const { ops, errors } = sanitizeOps(page.ops, limitsForPage(dimensions, surface));
     if (!ops) { this._error('marks rejected: ' + errors.slice(0, 3).join('; ')); return; }
     this._ops = ops;
-    this._meta = { ...sanitizePageMeta(page).meta, page: dimensions };
-    if (dimensions.w !== this._page.w || dimensions.h !== this._page.h) {
+    this._meta = { ...sanitizePageMeta(page).meta, page: dimensions, ...(surface === undefined ? {} : { surface }) };
+    if (dimensions.w !== this._page.w || dimensions.h !== this._page.h || JSON.stringify(surface) !== JSON.stringify(this._surface)) {
       const dpr = Math.max(1 / Math.min(dimensions.w, dimensions.h), Math.min(2, 1760 / Math.max(dimensions.w, dimensions.h)));
-      this._engine = new MarkEngine({ width: dimensions.w, height: dimensions.h, dpr });
+      this._engine = new MarkEngine({ width: dimensions.w, height: dimensions.h, dpr, surface });
       this._cv.width = dimensions.w * dpr;
       this._cv.height = dimensions.h * dpr;
       this.shadowRoot.querySelector('.stage').style.aspectRatio = `${dimensions.w} / ${dimensions.h}`;
       this._page = dimensions;
+      this._surface = surface;
     }
+    this.shadowRoot.querySelector('.stage').dataset.paper = surface?.paper || '';
     this.shadowRoot.querySelector('.err').hidden = true;
     this._engine.load(ops);
     this._doneFired = false;
@@ -154,7 +163,7 @@ export class SketchPage extends HTMLElement {
         ctx.save(); ctx.scale(e.dpr, e.dpr);
         ctx.beginPath();
         ctx.moveTo(e.pen.x, e.pen.y - 4); ctx.lineTo(e.pen.x - 4, e.pen.y - 24); ctx.lineTo(e.pen.x + 4, e.pen.y - 24);
-        ctx.closePath(); ctx.fillStyle = 'rgba(226,238,255,.8)'; ctx.fill();
+        ctx.closePath(); ctx.fillStyle = this._surface && this._surface.paper !== 'black' ? 'rgba(38,37,35,.8)' : 'rgba(226,238,255,.8)'; ctx.fill();
         ctx.restore();
       }
       const drawing = !!e.cursor;

@@ -27,7 +27,7 @@ import { resolve, dirname, relative, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, limitsForPage } from './validate.js';
+import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, sanitizeSurface, limitsForPage } from './validate.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PAGES = 48;
@@ -65,7 +65,7 @@ async function buildPage(modPath) {
     const mod = await import(pathToFileURL(modPath).href);
     const page = mod.default;
     if (!page || typeof page.build !== 'function') throw new Error('a page module exports default { title, date, note, build }');
-    return { ops: page.build(), meta: { title: page.title, date: page.date, note: page.note, refs: page.refs, seed: page.seed, page: page.page } };
+    return { ops: page.build(), meta: { title: page.title, date: page.date, note: page.note, refs: page.refs, seed: page.seed, page: page.page, surface: page.surface } };
   }
   const { stdout } = await promisify(execFile)(
     process.execPath,
@@ -136,10 +136,10 @@ const RENDER_HTML = `<!doctype html><meta charset="utf-8"><title>render</title>
 <script type="module">
 import { MarkEngine } from '/mark-engine.js';
 const page = await (await fetch('/__page.json')).json();
-const engine = new MarkEngine({ width: page.w, height: page.h, dpr: page.scale });
+const engine = new MarkEngine({ width: page.w, height: page.h, dpr: page.scale, surface: page.surface });
 engine.load(page.ops).finish();
 const flat = engine.toDataURL();
-if (page.transparent) { window.__png = flat; }
+if (page.transparent || page.surface) { window.__png = flat; }
 else {
   /* the paper the book is drawn on — the viewer's own ground, so the PNG
      reads the same outside the viewer as inside it. */
@@ -157,10 +157,10 @@ else {
 }
 </script>`;
 
-async function renderPage({ ops, w, h, scale, transparent, out }) {
+async function renderPage({ ops, w, h, scale, surface, transparent, out }) {
   const chromium = await playwright();
   if (!chromium) { console.error(MANUAL); process.exit(2); }
-  const { server, port } = await serve({ ops, w, h, scale, transparent });
+  const { server, port } = await serve({ ops, w, h, scale, surface, transparent });
   const browser = await chromium.launch();
   try {
     const tab = await browser.newPage();
@@ -221,7 +221,11 @@ try {
     const built = await buildPage(modPath);
     const { page, errors: dimensionErrors } = sanitizePageDimensions(built.meta.page);
     if (!page) throw new Error(`the page dimensions were rejected: ${dimensionErrors.join('; ')}`);
-    const { ops, errors, stats } = sanitizeOps((built.ops || []).map(roundOp), limitsForPage(page));
+    const { surface, errors: surfaceErrors } = sanitizeSurface(built.meta.surface);
+    if (surface === null) throw new Error(`the page surface was rejected: ${surfaceErrors.join('; ')}`);
+    // Material gestures retain pressure, tilt, time and subpixel coordinates exactly.
+    const prepared = Array.isArray(built.ops) ? built.ops.map(op => op?.k === 'm' ? op : roundOp(op)) : built.ops;
+    const { ops, errors, stats } = sanitizeOps(prepared, limitsForPage(page, surface));
     if (!ops) throw new Error(`the page's marks were rejected:\n  ${errors.join('\n  ')}`);
     if (ops.length === 0) throw new Error('the page has no marks');
     const { meta: m } = sanitizePageMeta({
@@ -241,6 +245,7 @@ try {
       date: m.date || new Date().toISOString().slice(0, 10),
       seed: built.meta.seed ?? index,
       page,
+      ...(surface === undefined ? {} : { surface }),
       module: relative(ROOT, modPath),
       opCount: ops.length,
       points: stats.points,
@@ -261,13 +266,16 @@ try {
     const page = JSON.parse(await readFile(resolve(BOOK_DIR, meta.file), 'utf8'));
     const { page: dimensions, errors: dimensionErrors } = sanitizePageDimensions(page.page);
     if (!dimensions) throw new Error(`the page dimensions were rejected: ${dimensionErrors.join('; ')}`);
-    const { ops, errors } = sanitizeOps(page.ops, limitsForPage(dimensions));
+    const { surface, errors: surfaceErrors } = sanitizeSurface(page.surface);
+    if (surface === null) throw new Error(`the page surface was rejected: ${surfaceErrors.join('; ')}`);
+    const { ops, errors } = sanitizeOps(page.ops, limitsForPage(dimensions, surface));
     if (!ops) throw new Error(`the page's marks were rejected: ${errors.join('; ')}`);
     const scale = Number(arg('--scale')) || 2;
     await renderPage({
       ops,
       w: dimensions.w,
       h: dimensions.h,
+      surface,
       scale,
       transparent: flag('--transparent'),
       out: resolve(process.cwd(), out),

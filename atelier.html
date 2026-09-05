@@ -5,17 +5,18 @@
 :root{color-scheme:dark;--bg:#090a0c;--panel:#111317;--ink:#e1e4e9;--muted:#8f959f;--line:#292d34}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.5 -apple-system,BlinkMacSystemFont,sans-serif}header{padding:17px 24px;display:flex;align-items:center;gap:18px;border-bottom:1px solid var(--line)}h1{font-size:14px;font-weight:500;margin:0;flex:1}button,select,a{font:inherit;color:inherit}button,select{background:var(--panel);border:1px solid var(--line);padding:7px 12px;border-radius:6px}button{cursor:pointer}button:hover{border-color:#727984}button:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid #aabdd8;outline-offset:3px}button:disabled{opacity:.45;cursor:default}main{padding:24px;max-width:1800px;margin:auto}.tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}.tools span{color:var(--muted);margin-left:auto}.stage{position:relative;width:100%;aspect-ratio:8/5;background:#07070a;border:1px solid var(--line);overflow:hidden}canvas{width:100%;height:100%;display:block}.viewport{overflow:auto}.viewport.zoom .stage{width:var(--page-width,1600px)}.viewport:focus-visible{outline:2px solid #aabdd8;outline-offset:3px}.review{display:grid;grid-template-columns:220px 1fr;gap:28px;margin-top:20px}.review h2{font-size:12px;font-weight:500;margin:0;color:var(--muted)}#note{max-width:960px;margin:0;white-space:pre-line}.history{display:flex;gap:6px;flex-wrap:wrap;margin-top:18px}.history button[aria-pressed=true]{background:#26303c;border-color:#67788c}#status{color:var(--muted);font-variant-numeric:tabular-nums}#error{color:#efaaa4;white-space:pre-wrap}@media(max-width:700px){header{padding:12px;flex-wrap:wrap}main{padding:12px}.review{grid-template-columns:1fr;gap:8px}.tools span{margin-left:0}.stage{border:0}h1{min-width:160px}}
 </style></head><body>
-<header><h1 id="title">Sketchbook · Atelier</h1><span id="status" role="status" aria-live="off">Loading marks…</span><a href="index.html?book=codex-book#7">Sketchbook</a></header>
+<header><h1 id="title">Sketchbook · Atelier</h1><span id="status" role="status" aria-live="off">Loading marks…</span><a href="studio.html">Drawing studio</a><a href="index.html?book=codex-book#7">Sketchbook</a></header>
 <main><div class="tools"><button id="reload">Continue from source</button><button id="replay" disabled>Replay this pass</button><button id="finish" disabled>Finish drawing</button><button id="zoom" disabled aria-pressed="false">Inspect at 100%</button><button id="export" disabled>Export PNG</button><span id="size"></span></div>
 <div class="viewport" id="viewport" tabindex="0" role="region" aria-label="Drawing viewport; scroll to inspect when zoomed"><div class="stage" id="stage"><canvas id="canvas" role="img" aria-label="The drawing" aria-describedby="note"></canvas></div></div>
 <div class="history" id="history" aria-label="Painting passes"></div><div class="review"><h2>Looking, then working back in</h2><p id="note"></p></div><p id="error" role="alert"></p>
 </main><script type="module">
 import { MarkEngine } from './mark-engine.js';
-import { sanitizeOps, sanitizePageDimensions, limitsForPage } from './validate.js';
+import { sanitizeOps, sanitizePageDimensions, sanitizeSurface, limitsForPage } from './validate.js';
 const $ = id => document.getElementById(id);
 const name = new URLSearchParams(location.search).get('p') || 'codex-rain';
 let engine = null, passes = [], selected = 0, allOps = [], lastTime = 0;
 let dirty = true, version = 0, replayStart = 0;
+let currentSurface;
 const ctx = $('canvas').getContext('2d');
 
 function report(error) { $('error').textContent = error.message || String(error); }
@@ -55,7 +56,7 @@ function select(index) {
   $('error').textContent = '';
   show();
 }
-function buildPasses(page, dimensions) {
+function buildPasses(page, dimensions, surface) {
   if (!Array.isArray(page.passes) || !page.passes.length) throw Error('The page needs at least one painting pass.');
   const built = page.passes.map((pass, i) => {
     if (!pass || typeof pass.build !== 'function') throw Error(`Pass ${i + 1} needs a build function.`);
@@ -63,7 +64,7 @@ function buildPasses(page, dimensions) {
     if (!Array.isArray(ops)) throw Error(`Pass ${i + 1} must return an array of marks.`);
     return { name: String(pass.name || `Pass ${i + 1}`), note: String(pass.note || ''), ops };
   });
-  const checked = sanitizeOps(built.flatMap(pass => pass.ops), limitsForPage(dimensions));
+  const checked = sanitizeOps(built.flatMap(pass => pass.ops), limitsForPage(dimensions, surface));
   if (!checked.ops) throw Error(checked.errors.join('\n'));
   let start = 0;
   const clean = built.map(pass => {
@@ -83,14 +84,17 @@ async function load() {
     if (!page || typeof page !== 'object') throw Error('The module must export a page.');
     const dims = sanitizePageDimensions(page.page);
     if (!dims.page) throw Error(dims.errors.join('; '));
+    const { surface, errors: surfaceErrors } = sanitizeSurface(page.surface);
+    if (surface === null) throw Error('Page surface rejected: ' + surfaceErrors.join('; '));
     const { w, h } = dims.page;
     // A failed edit must leave the last good painting, pass controls and replay intact.
-    const candidate = buildPasses(page, dims.page);
-    if (!engine || engine.w !== w || engine.h !== h) {
+    const candidate = buildPasses(page, dims.page, surface);
+    if (!engine || engine.w !== w || engine.h !== h || JSON.stringify(currentSurface) !== JSON.stringify(surface)) {
       const dpr = Math.min(2, Math.sqrt(8000000 / (w * h)));
-      const next = new MarkEngine({ width: w, height: h, dpr });
+      const next = new MarkEngine({ width: w, height: h, dpr, surface });
       next.load(candidate.ops).finish();
       engine = next;
+      currentSurface = surface;
       allOps = candidate.ops;
       replayStart = 0;
       $('canvas').width = w * dpr;
@@ -152,9 +156,11 @@ $('export').onclick = async () => {
     cv.width = $('canvas').width;
     cv.height = $('canvas').height;
     const c = cv.getContext('2d');
-    // Composite the actual transparent pigment once over the same paper as the viewport.
-    c.fillStyle = getComputedStyle($('stage')).backgroundColor;
-    c.fillRect(0, 0, cv.width, cv.height);
+    // Material composites already include their paper. Legacy pigment keeps its original ground.
+    if (!currentSurface) {
+      c.fillStyle = getComputedStyle($('stage')).backgroundColor;
+      c.fillRect(0, 0, cv.width, cv.height);
+    }
     c.drawImage($('canvas'), 0, 0);
     const blob = await new Promise(resolve => cv.toBlob(resolve, 'image/png'));
     if (!blob) throw Error('The browser could not export this drawing.');

@@ -264,3 +264,88 @@ drawn. Either way nothing you write runs with more than the language itself.
 - Do not produce a page you cannot say anything about in the note.
 - Do not reach outside the box. It will not let you, and the attempt is the
   only thing that gets recorded.
+## Material studio: contact and practice (experimental)
+
+The established white-on-black engine is unchanged for pages without a
+`surface`. To use the new materials, declare a versioned surface beside
+`page`, and return material gestures rather than legacy strokes:
+
+```js
+export default {
+  title: 'Pressure study', date: '2026-09-05', note: 'What I tried and learned.',
+  page: { w: 1100, h: 780 },
+  surface: { version: 1, paper: 'white', tooth: .65, seed: 17 },
+  build: () => [{
+    k: 'm', tool: 'graphite-2b', size: 2.2, strength: 1,
+    samples: [
+      { x: 80, y: 100, p: .15, tiltX: 0, tiltY: 0, t: 0 },
+      { x: 240, y: 100, p: .8, tiltX: 10, tiltY: 60, t: 800 },
+    ],
+  }],
+};
+```
+
+`size` is contact diameter in logical pixels (.2–80); pressure `p` is 0–1,
+tilt is degrees from upright on each axis (-90–90), and `t` is milliseconds
+within the gesture (strictly increasing, 0–60000). Pressure changes both
+contact width and deposition. Tilt sets the orientation and width of the
+contact ellipse. Stationary samples are meaningful: a held point deposits
+more than a passing point. Zero pressure leaves no pigment. There is no
+automatic bell-shaped pressure curve or added wobble in material gestures.
+
+Tools: `graphite-hb`, `graphite-2b`, `graphite-6b`, `vine-charcoal`,
+`compressed-charcoal`, `white-chalk`, `stump`, `kneaded-eraser`,
+`precision-eraser`. `strength` defaults to 1 and scales deposition/lifting.
+Clean carried pigment with `{ k: 'clean', tool: 'stump' }`. A dirty stump can
+mark clean paper; a clean stump cannot create pigment. The erasers remove
+deposits from the sheet. All material gestures act on one physical sheet,
+not independent layers. Legacy and material marks cannot be mixed on a page.
+Pause and phase ops are supported in both renderers.
+
+Paper is `white`, `toned`, or `black`; tooth is 0–1; seed is a uint32.
+Paper stays fixed for the life of a sheet. Start a new sheet to change it.
+The resolution of the material field is fixed independently of thumbnail or
+export dimensions. Inspect crops at 2× to see its finest available detail.
+Every sample is preserved in saved book pages without coordinate rounding.
+Validation caps interpolation work as well as raw sample counts.
+
+## Draw, look, learn, continue
+
+Start `node studio-server.mjs`. Open the connected studio at
+`http://127.0.0.1:4194/studio.html`. Agents use the same hand as direct pointer
+input; no subject names, shapes, raster imports, or image prompts are motor
+commands. First read `node studio.mjs status` and `node studio.mjs lessons`.
+
+Send a JSON action array with `node studio.mjs actions --file actions.json`:
+
+```json
+[
+  {"type":"select","tool":"graphite-2b","options":{"size":2.2}},
+  {"type":"touch","sample":{"x":80,"y":100,"p":0.15,"t":0}},
+  {"type":"move","samples":[{"x":240,"y":100,"p":0.8,"tiltY":60,"t":800}]},
+  {"type":"lift"}
+]
+```
+
+`touch`, `move`, and `lift` can span requests. Use `stroke` with a sample
+array for a complete gesture. `clean`, `undo`, `redo` and `review` are also
+actions. A batch is atomic: rejected input leaves the sheet untouched. For
+concurrent work, include the last inspected revision in
+`{"revision":N,"actions":[...]}`; never blindly retry a revision conflict.
+
+Inspect the whole composition with `node studio.mjs inspect --out view.png`.
+Then inspect a region with `--x 70 --y 80 --w 220 --h 80 --scale 2`. Each
+result identifies its revision. Study the actual image before deciding the
+next marks. Save a checkpoint with `node studio.mjs save --name "First pass"`.
+Record a `review` action containing `observation`, `lesson`, `next`, and an
+optional `{x,y,w,h}` region. These notes retain the mark count and tool settings
+and remain in the library for later sessions; learning means reading and
+applying these explicit lessons, not implicit model training.
+
+The studio autosaves its active sheet and carries full gesture data in JSON.
+New sheets and loaded drawings archive the previous sheet. PNG exports are
+paper-inclusive. The HTTP bridge binds to loopback, checks origins, serializes
+edits and writes disk state atomically. The browser shows remote edits while
+preserving a local copy if an agent edits during a user's stroke.
+
+The original page protocol above still applies to legacy pages.

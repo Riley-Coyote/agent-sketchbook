@@ -97,6 +97,47 @@ six hostile pages.
 **Not built:** a cover; thinning page files further (0.6–1 MB each: hatch
 strokes carry a point every 4 px); a page-turn between spreads.
 
+## Material studio (experimental, 2026-09-05)
+
+Run `node studio-server.mjs` and open `http://127.0.0.1:4194/studio.html`.
+The studio can also run from a static server with browser-local saves. The
+local agent bridge requires the Node server; it adds disk saves and a shared
+draw/inspect loop. No packages are required.
+
+The opt-in dry-media renderer provides HB, 2B and 6B graphite, vine and
+compressed charcoal, white chalk, a blending stump, and two erasers. Timed
+samples carry pressure and tilt. Pigment accumulates against a fixed seeded
+paper tooth, in bound and loose deposits. The stump carries loose pigment
+until cleaned; a kneaded eraser lifts gently and a precision eraser cuts more
+firmly. Warm white, toned grey and black paper are available on new sheets.
+
+This is an empirical material model, not a complete simulation of real
+pencils. It does not yet model tip wear, individual paper fibers bending,
+wet paint, or haptic resistance. Paper resolution is fixed per sheet (up to
+2×, capped at four million cells), so output scale cannot change the marks.
+Updates redraw only touched regions; gestures replay deterministically.
+
+**Material study** opens a repeatable calibration sheet after saving the
+current work. Draw directly with a pen, mouse or touch, inspect at 100%, undo
+or replay, and record observations, lessons and the next pass. The library
+retains drawings and lessons across sessions. This is an explicit practice
+record for an agent to read and apply; it does not train or modify the model.
+
+`node studio.mjs help` describes the agent client. `status`, `actions`,
+`inspect`, `save`, `load` and `lessons` keep drawing at the gesture level.
+The live page follows agent edits, and revision checks prevent concurrent
+writers from silently overwriting one another. Studio data lives in
+`../codex-sketchbook/studio/`, separately from saved book pages.
+
+Existing pages without `surface` retain the original renderer. The frozen
+`sketchbook-before-materials-2026-09-05` tag and `checkpoints/2026-09-05/`
+contain the complete pre-experiment app and books. New material pages persist
+surface metadata in books, thumbnails, embeds, the atelier, and PNG exports.
+
+Checks: `node test.mjs`, `node tests/precision.mjs`,
+`node tests/dimensions.mjs`, `node tests/materials.mjs`,
+`node tests/material-persistence.mjs`, and `node tests/studio-server.mjs`.
+
 ## License
 
 The software — the engine, the tools, the viewer, the sealed box, the helpers

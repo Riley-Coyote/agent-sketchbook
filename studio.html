@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#151618">
+  <title>Sketchbook · Material studio</title>
+  <link rel="stylesheet" href="studio.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="wordmark" href="index.html?book=codex-book" title="Open the original sketchbook">Sketchbook<span> / Material studio</span></a>
+    <div class="document-name"><label class="sr-only" for="drawing-title">Drawing title</label><input id="drawing-title" value="Untitled study" maxlength="120" spellcheck="false"></div>
+    <button id="library-button">Library</button><button id="save-button">Save draft</button>
+  </header>
+  <div class="studio-layout">
+    <aside class="tool-shelf" aria-label="Drawing materials">
+      <div class="shelf-heading"><h1>Materials</h1><button id="settings-toggle" class="small-button" aria-expanded="false" aria-controls="material-settings">Settings</button></div>
+      <div id="material-tools" class="material-tools" aria-label="Choose a drawing material"></div>
+      <div class="material-settings" id="material-settings">
+        <p id="tool-description" class="tool-description"></p>
+        <div class="range-control"><label for="size">Size <output id="size-value" for="size">2.0</output></label><input id="size" type="range" min="0.2" max="80" step="0.1" value="2"></div>
+        <div class="range-control"><label for="strength">Deposit / lift <output id="strength-value" for="strength">100%</output></label><input id="strength" type="range" min="0.02" max="1" step="0.01" value="1"></div>
+        <div class="range-control"><label for="pressure">Pressure <output id="pressure-value" for="pressure">50%</output></label><input id="pressure" type="range" min="0" max="1" step="0.01" value="0.5"></div>
+        <details class="tilt-controls"><summary>Hand angle <span id="tilt-summary">0° / 0°</span></summary>
+          <div class="range-control"><label for="tilt-x">Tilt X <output id="tilt-x-value" for="tilt-x">0°</output></label><input id="tilt-x" type="range" min="-90" max="90" step="1" value="0"></div>
+          <div class="range-control"><label for="tilt-y">Tilt Y <output id="tilt-y-value" for="tilt-y">0°</output></label><input id="tilt-y" type="range" min="-90" max="90" step="1" value="0"></div>
+        </details>
+        <p class="input-hint">A pen supplies its own pressure and tilt. Mouse and touch use these controls.</p>
+        <button id="clean-button" class="wide-button" hidden>Clean the stump</button>
+        <div class="paper-info"><span>Paper</span><strong id="paper-description">Warm white · 65% tooth</strong><button id="new-button" class="wide-button">New sheet…</button></div>
+        <button id="practice-button" class="wide-button study-button">Material study</button>
+        <p class="input-hint">Compare pressure, pencil grades, blending, and lifted highlights on a practice sheet.</p>
+      </div>
+    </aside>
+    <main class="drawing-workspace">
+      <div class="drawing-toolbar" aria-label="Drawing actions">
+        <div class="toolbar-group"><button id="undo-button" title="Undo (⌘/Ctrl Z)" disabled>Undo</button><button id="redo-button" title="Redo (⌘/Ctrl Shift Z)" disabled>Redo</button><button id="replay-button" disabled>Replay</button></div>
+        <div class="toolbar-group right-tools"><button id="zoom-button" aria-pressed="false">100%</button><button id="notes-button" aria-expanded="false" aria-controls="review-panel">Notes <span id="review-count"></span></button><details class="export-menu"><summary>Export</summary><div class="menu-content"><button id="png-button">Image · PNG</button><button id="json-button">Drawing · JSON</button><button id="import-button">Import drawing…</button></div></details></div>
+      </div>
+      <div class="paper-viewport" id="paper-viewport" tabindex="0" role="region" aria-label="Drawing viewport; in 100% mode, scroll to inspect the paper">
+        <div class="paper-stage" id="paper-stage"><canvas id="drawing-canvas" width="1100" height="780" aria-label="Untitled study on warm white paper" role="img"></canvas><span id="tool-cursor" aria-hidden="true"></span></div>
+      </div>
+      <footer class="drawing-footer"><span id="drawing-info">1100 × 780 · 0 marks</span><span id="input-status">Draw with a mouse, touch, or pen</span><span id="save-status" role="status" aria-live="polite">Opening studio…</span></footer>
+      <div id="notice" class="notice" role="status" hidden><span></span><button aria-label="Dismiss message">×</button></div>
+      <p id="error" class="error" role="alert" hidden></p>
+    </main>
+    <aside id="review-panel" class="review-panel" aria-label="Practice and observation notes" hidden>
+      <div class="panel-heading"><h2>Look, then continue</h2><button id="close-notes" aria-label="Close notes">×</button></div>
+      <p class="notes-intro">Record what changed, what you learned, and what to try next. Notes stay with this drawing.</p>
+      <form id="review-form">
+        <label for="observation">What do you see?</label><textarea id="observation" rows="3" maxlength="4000" placeholder="Describe the mark or passage you are studying…" required></textarea>
+        <label for="lesson">What did you learn?</label><textarea id="lesson" rows="3" maxlength="4000" placeholder="A specific lesson to carry into the next pass…"></textarea>
+        <label for="next-step">Next pass</label><textarea id="next-step" rows="2" maxlength="4000" placeholder="One change to try…"></textarea>
+        <label class="check-label"><input type="checkbox" id="save-lesson"> Keep this lesson in the library</label>
+        <button type="submit" class="wide-button">Record observation</button>
+      </form>
+      <div id="review-list" class="review-list"></div>
+    </aside>
+  </div>
+  <dialog id="new-dialog" aria-labelledby="new-dialog-title"><form id="new-form">
+    <div class="dialog-heading"><h2 id="new-dialog-title">A fresh sheet</h2><button type="button" data-close-dialog aria-label="Close new sheet dialog">×</button></div>
+    <p>Your current drawing will be saved in the library before the new sheet opens.</p>
+    <label for="new-title">Title</label><input id="new-title" type="text" value="Untitled study" maxlength="120" required>
+    <div class="field-pair"><div><label for="new-width">Width</label><input id="new-width" type="number" value="1100" min="64" max="4096" step="1" required></div><div><label for="new-height">Height</label><input id="new-height" type="number" value="780" min="64" max="4096" step="1" required></div></div>
+    <label for="new-paper">Paper</label><select id="new-paper"><option value="white">Warm white</option><option value="toned">Toned paper</option><option value="black">Black paper</option></select>
+    <div class="range-control"><label for="new-tooth">Paper tooth <output id="new-tooth-value" for="new-tooth">65%</output></label><input id="new-tooth" type="range" min="0" max="1" step="0.01" value="0.65"></div>
+    <p class="field-hint">Smooth paper holds an even mark. More tooth leaves visible grain in a light stroke.</p>
+    <div class="dialog-actions"><button type="button" data-close-dialog>Cancel</button><button type="submit">Save & open sheet</button></div>
+  </form></dialog>
+  <dialog id="library-dialog" aria-labelledby="library-title"><div class="dialog-heading"><h2 id="library-title">The working library</h2><button data-close-dialog aria-label="Close library">×</button></div><p>Saved drawings and lessons to return to.</p><h3>Drawings</h3><div id="saved-drawings" class="saved-list"></div><h3>Lessons</h3><div id="saved-lessons" class="saved-list"></div></dialog>
+  <input id="import-file" type="file" accept="application/json,.json" hidden>
+  <script type="module" src="studio-ui.js"></script>
+</body>
+</html>
