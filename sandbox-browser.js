@@ -17,7 +17,7 @@
  * caller should still pass it through validate.js — this module does.
  */
 
-import { sanitizeOps, sanitizePageMeta } from './validate.js';
+import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, limitsForPage } from './validate.js';
 
 const FRAME_SRC = `<!doctype html>
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' data:; worker-src data:; child-src data:">
@@ -63,7 +63,7 @@ const FRAME_SRC = `<!doctype html>
         'const m = await import(' + JSON.stringify(entry) + ');' +
         'const p = m.default; if (!p || typeof p.build !== "function") throw new Error("page module must export default { title, date, note, build }");' +
         'const ops = p.build();' +
-        'postMessage(JSON.parse(JSON.stringify({ ops, meta: { title: p.title, date: p.date, note: p.note, refs: p.refs, seed: p.seed } })));';
+        'postMessage(JSON.parse(JSON.stringify({ ops, meta: { title: p.title, date: p.date, note: p.note, refs: p.refs, seed: p.seed, page: p.page } })));';
       worker = new Worker(mk(code), { type: 'module' });
     } catch (err) { reply({ error: String(err && err.message || err) }); return; }
     const t = setTimeout(() => { worker.terminate(); reply({ error: 'the page did not finish within ' + (timeoutMs / 1000) + 's' }); }, timeoutMs || 15000);
@@ -117,8 +117,10 @@ export async function runPageSource(source, { modules = {}, timeoutMs = 15000 } 
     setTimeout(() => { if (pending.has(id)) { pending.delete(id); res({ error: 'the sandbox did not answer' }); } }, timeoutMs + 2000);
   });
   if (result.error) throw new Error(result.error);
-  const { ops, errors, stats } = sanitizeOps(result.ops);
+  const { page, errors: dimensionErrors } = sanitizePageDimensions(result.meta?.page);
+  if (!page) throw new Error('the page dimensions were rejected: ' + dimensionErrors.join('; '));
+  const { ops, errors, stats } = sanitizeOps(result.ops, limitsForPage(page));
   if (!ops) throw new Error('the marks were rejected: ' + errors.join('; '));
   const { meta } = sanitizePageMeta(result.meta || {});
-  return { ops, meta, stats };
+  return { ops, meta: { ...meta, page }, stats };
 }

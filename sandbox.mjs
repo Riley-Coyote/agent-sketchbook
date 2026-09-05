@@ -64,7 +64,7 @@ async function run(entry) {
   /* everything crosses back as plain JSON; nothing from the context survives */
   const json = JSON.stringify({
     ops,
-    meta: { title: page.title, date: page.date, note: page.note, refs: page.refs, seed: page.seed },
+    meta: { title: page.title, date: page.date, note: page.note, refs: page.refs, seed: page.seed, page: page.page },
   });
   return JSON.parse(json);
 }

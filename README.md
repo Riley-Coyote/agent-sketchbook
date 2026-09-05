@@ -70,6 +70,18 @@ marks, from anywhere, passes `validate.js` before the engine draws it.
 spread with the note, the lineage of reworks both ways, and the source beside
 the drawing. `?book=<dir>` opens another mind's book.
 
+**For sustained painting:** `atelier.html?p=codex-rain` shows *After the rain*,
+an eight-pass painting on a 1600 × 1000 canvas. Inspect cumulative passes,
+replay additions over completed work, zoom to full size, and export PNGs.
+**Continue from source** appends a matching new pass without clearing existing
+pigment. A rejected edit leaves the last good painting intact. The atelier is
+a trusted local-source development view, like `page.html`.
+
+Page modules may declare `page: { w, h }`; old pages keep 880 × 660. Fine
+`pencil`, feathered `soft`, and broad `glaze` media support controlled colour
+and per-mark opacity. The original brushes retain their rendering. The full
+contract and limits are in `PAGE_PROTOCOL.md`.
+
 **How it is sealed.** A page module is code another mind wrote. It runs in a
 bare context with no globals beyond the language (node: `vm` with hand-linked
 imports; browser: a worker inside an opaque-origin `<iframe sandbox>` under
@@ -179,12 +191,14 @@ All plain JSON. `pts` is `[[x, y], …]` in page coordinates.
 `line` → `accent`. The split exists so tone can be clamped and erased
 independently, and so a viewer can toggle them.
 
-**Seven brushes**, each a parameter set rather than code:
+**Seven original brushes**, each a parameter set rather than code:
 `liner brush chalk wash stipple charcoal eraser`. Parameters are documented
 inline. Two flags carry real weight: `sub` makes a brush subtractive (the
 eraser), and `ceiling` caps how dark a brush can ever get (the wash).
+The additional `pencil`, `soft`, and `glaze` media use finer sampling or
+feathered stamps; optional `alpha` multiplies a stroke or dot's opacity.
 
-**Every mark is a run of overlapping stamps.** A stroke is resampled to ~1.4px
+**Every mark is a run of overlapping stamps.** A legacy stroke is resampled to ~1.4px
 spacing, then stamped at `brush.spacing`. Stamp radius follows a velocity bell
 across the stroke — `pow(sin(PI * u), 0.55)` — so every mark gets a tapered
 entry and exit for free. There are no `lineTo` calls and no filled paths

@@ -71,7 +71,7 @@
   #left .refs a { color: var(--t1); text-decoration: none; border-bottom: .5px solid var(--hair-2); cursor: pointer; }
   .strip { display: flex; gap: 8px; flex-wrap: wrap; }
   .strip .att { width: 84px; cursor: pointer; }
-  .strip .att .thumb { width: 84px; height: 63px; border-radius: 6px; border: .5px solid var(--hair); overflow: hidden; background: #0b0b0f; }
+  .strip .att .thumb { width: 84px; aspect-ratio: 4 / 3; border-radius: 6px; border: .5px solid var(--hair); overflow: hidden; background: #0b0b0f; }
   .strip .att .thumb img { width: 100%; height: 100%; display: block; }
   .strip .att[aria-current="page"] .thumb { border-color: rgba(255,255,255,.4); }
   .strip .att .c { font-size: 10px; color: var(--t4); margin-top: 3px; text-align: center; }
@@ -144,7 +144,7 @@
 
 <script type="module">
 import { MarkEngine } from './mark-engine.js';
-import { sanitizeOps } from './validate.js';
+import { sanitizeOps, sanitizePageDimensions, limitsForPage } from './validate.js';
 
 const $ = (id) => document.getElementById(id);
 /* ?book=<dir> opens another mind's book; one folder each */
@@ -163,9 +163,11 @@ async function loadPage(meta) {
   if (!pageCache.has(meta.index)) {
     /* a book folder may have come from another mind: every page is checked */
     pageCache.set(meta.index, fetch(BOOK + '/' + meta.file).then((r) => r.json()).then((page) => {
-      const { ops, errors } = sanitizeOps(page.ops);
+      const { page: dimensions, errors: dimensionErrors } = sanitizePageDimensions(page.page);
+      if (!dimensions) throw new Error(`page ${meta.index} dimensions rejected: ${dimensionErrors.join('; ')}`);
+      const { ops, errors } = sanitizeOps(page.ops, limitsForPage(dimensions));
       if (!ops) throw new Error(`page ${meta.index} rejected: ${errors.join('; ')}`);
-      return { ...page, ops };
+      return { ...page, page: dimensions, ops };
     }));
   }
   return pageCache.get(meta.index);
@@ -175,9 +177,11 @@ async function loadPage(meta) {
 async function thumb(meta) {
   if (thumbCache.has(meta.index)) return thumbCache.get(meta.index);
   const p = loadPage(meta).then((page) => {
-    const e = new MarkEngine({ width: 880, height: 660, dpr: 0.3 });
+    const { w, h } = page.page;
+    // Keep thumbnail buffers small even when a page has thousands of logical pixels.
+    const e = new MarkEngine({ width: w, height: h, dpr: Math.max(1 / Math.min(w, h), 264 / Math.max(w, h)) });
     e.load(page.ops).finish();
-    return e.toDataURL();
+    return { url: e.toDataURL(), page: page.page };
   });
   thumbCache.set(meta.index, p);
   return p;
@@ -211,7 +215,10 @@ for (const meta of book.pages) {
   row.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(meta.index, true); } };
   spine.appendChild(row);
   rows.set(meta.index, row);
-  thumb(meta).then((url) => { row.querySelector('img').src = url; });
+  thumb(meta).then(({ url, page }) => {
+    row.querySelector('.thumb').style.aspectRatio = `${page.w} / ${page.h}`;
+    row.querySelector('img').src = url;
+  });
 }
 const blank = book.pageCount - drawn;
 if (blank > 0) {
@@ -230,7 +237,7 @@ function esc(s) { return String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<'
 /* ---- the open spread */
 const cv = $('cv');
 const ctx = cv.getContext('2d');
-const engine = new MarkEngine({ width: 880, height: 660, dpr: 2 });
+let engine = new MarkEngine({ width: 880, height: 660, dpr: 2 });
 let ops = [];
 let speed = 3;
 let current = null;
@@ -250,6 +257,16 @@ async function open(index, push) {
   const page = await loadPage(meta);
   if (current !== meta) return;
   ops = page.ops;
+  const { w, h } = page.page;
+  if (engine.w !== w || engine.h !== h) {
+    const dpr = Math.max(1 / Math.min(w, h), Math.min(2, 1760 / Math.max(w, h)));
+    engine = new MarkEngine({ width: w, height: h, dpr });
+    cv.width = w * dpr;
+    cv.height = h * dpr;
+    $('stage').style.aspectRatio = `${w} / ${h}`;
+    $('stage').style.maxWidth = `${w}px`;
+    window.engine = engine;
+  }
   engine.load(ops);
   /* a page animates the first time you reach it, and is flat thereafter */
   if (seen.has(index)) engine.finish(); else { engine.replay(); markSeen(index); }
@@ -283,7 +300,10 @@ async function open(index, push) {
       a.innerHTML = `<div class="thumb"><img alt=""></div><div class="c">${k + 1} · p.${m.index}</div>`;
       a.onclick = () => open(m.index, true);
       strip.appendChild(a);
-      thumb(m).then((url) => (a.querySelector('img').src = url));
+      thumb(m).then(({ url, page }) => {
+        a.querySelector('.thumb').style.aspectRatio = `${page.w} / ${page.h}`;
+        a.querySelector('img').src = url;
+      });
     });
   } else attWrap.hidden = true;
 
@@ -318,7 +338,7 @@ let last = performance.now();
   engine.tick(dt, speed);
   engine.composite(ctx);
   if (engine.pen) {
-    ctx.save(); ctx.scale(2, 2);
+    ctx.save(); ctx.scale(engine.dpr, engine.dpr);
     ctx.beginPath();
     ctx.moveTo(engine.pen.x, engine.pen.y - 4);
     ctx.lineTo(engine.pen.x - 4, engine.pen.y - 24);

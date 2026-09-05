@@ -13,11 +13,11 @@
  * on by default; hud="off" hides it).
  * Events: sketch-load { ops, meta }, sketch-done, sketch-error { message }.
  * Every list of marks passes validate.js before the engine draws it.
- * Size it with CSS width; the height follows the page's 4:3.
+ * Size it with CSS width; the height follows the page's dimensions (4:3 by default).
  */
 
 import { MarkEngine } from './mark-engine.js';
-import { sanitizeOps, sanitizePageMeta } from './validate.js';
+import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, limitsForPage } from './validate.js';
 
 const W = 880, H = 660;
 const STYLE = `
@@ -59,6 +59,7 @@ export class SketchPage extends HTMLElement {
     this._cv = root.querySelector('canvas');
     this._ctx = this._cv.getContext('2d');
     this._engine = new MarkEngine({ width: W, height: H, dpr: 2 });
+    this._page = { w: W, h: H };
     this._ops = [];
     this._meta = null;
     this._raf = 0;
@@ -100,10 +101,20 @@ export class SketchPage extends HTMLElement {
 
   _setOps(input) {
     const page = Array.isArray(input) ? { ops: input } : (input || {});
-    const { ops, errors } = sanitizeOps(page.ops);
+    const { page: dimensions, errors: dimensionErrors } = sanitizePageDimensions(page.page);
+    if (!dimensions) { this._error('page dimensions rejected: ' + dimensionErrors.join('; ')); return; }
+    const { ops, errors } = sanitizeOps(page.ops, limitsForPage(dimensions));
     if (!ops) { this._error('marks rejected: ' + errors.slice(0, 3).join('; ')); return; }
     this._ops = ops;
-    this._meta = sanitizePageMeta(page).meta;
+    this._meta = { ...sanitizePageMeta(page).meta, page: dimensions };
+    if (dimensions.w !== this._page.w || dimensions.h !== this._page.h) {
+      const dpr = Math.max(1 / Math.min(dimensions.w, dimensions.h), Math.min(2, 1760 / Math.max(dimensions.w, dimensions.h)));
+      this._engine = new MarkEngine({ width: dimensions.w, height: dimensions.h, dpr });
+      this._cv.width = dimensions.w * dpr;
+      this._cv.height = dimensions.h * dpr;
+      this.shadowRoot.querySelector('.stage').style.aspectRatio = `${dimensions.w} / ${dimensions.h}`;
+      this._page = dimensions;
+    }
     this.shadowRoot.querySelector('.err').hidden = true;
     this._engine.load(ops);
     this._doneFired = false;
@@ -128,18 +139,19 @@ export class SketchPage extends HTMLElement {
   _loop() {
     const root = this.shadowRoot;
     const phase = root.querySelector('.phase'), pct = root.querySelector('.pct'), dot = root.querySelector('.dot');
-    const e = this._engine, ctx = this._ctx;
+    const ctx = this._ctx;
     this._last = performance.now();
     const frame = () => {
       this._raf = requestAnimationFrame(frame);
       const now = performance.now();
       const dt = Math.min(0.05, (now - this._last) / 1000);
       this._last = now;
+      const e = this._engine;
       const was = !!e.cursor;
       e.tick(dt, this.speed);
       e.composite(ctx);
       if (e.pen) {
-        ctx.save(); ctx.scale(2, 2);
+        ctx.save(); ctx.scale(e.dpr, e.dpr);
         ctx.beginPath();
         ctx.moveTo(e.pen.x, e.pen.y - 4); ctx.lineTo(e.pen.x - 4, e.pen.y - 24); ctx.lineTo(e.pen.x + 4, e.pen.y - 24);
         ctx.closePath(); ctx.fillStyle = 'rgba(226,238,255,.8)'; ctx.fill();

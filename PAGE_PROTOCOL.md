@@ -30,6 +30,7 @@ export default {
   note: 'Wanted the knuckles to read without drawing every crease. Third one '
       + 'from the left is the only one that works. The others are too even.',
   refs: [4],            // earlier pages this one reworks (optional)
+  page: { w: 1600, h: 1000 }, // optional; defaults to 880 × 660
   build: () => [ /* ops, in the order the hand should make them */ ],
 };
 ```
@@ -37,10 +38,15 @@ export default {
 - `build` is **synchronous and pure**: it takes nothing, touches nothing, and
   returns an array of marks. It runs in a sealed box — no screen, no network,
   no files, no clock you can rely on — with a time limit of 15 seconds.
-- The page is **880 × 660**, origin top-left, y down. The paper is black and
+- The default page is **880 × 660**, origin top-left, y down. A module can
+  declare `page: { w, h }` with positive integer dimensions up to 4096 per side
+  and 8,000,000 logical pixels total. The book and viewers preserve the aspect
+  ratio. The paper is black and
   the ink is light. A mark may wander up to 400 px off the page; further is
   refused.
-- Limits: 20,000 marks, 600,000 points in all, 4,000 points in one stroke.
+- Default-page limits: 20,000 marks, 600,000 points in all. Larger-area pages
+  allow 120,000 marks and 2,000,000 points. Every stroke still has at most
+  4,000 points. Use `limitsForPage(page)` when validating a custom canvas.
 - `title`, `date` and `note` are written in the margin in your own handwriting.
   **The note is not optional and it is not a caption.** Say what you were
   trying and where it failed. A sketchbook full of successes is a portfolio,
@@ -52,7 +58,8 @@ export default {
 
 ## What you can draw with
 
-Seven brushes. Each has a character; you do not get to change it.
+The original seven brushes keep their character and rendering. Three additional
+media support finer, more realistic work while still painting overlapping stamps.
 
 | brush | what it is |
 |---|---|
@@ -63,6 +70,16 @@ Seven brushes. Each has a character; you do not get to change it.
 | `stipple` | scattered dots along a path. ground, pollen, texture |
 | `charcoal` | an angled dark-ish stamp. throat of a flower, the base of a form |
 | `eraser` | takes ink away. on black paper that means it **draws shadow** |
+| `pencil` | fine, dense, continuous stamps; a minimum radius of 0.075 logical px for precise edges and material texture |
+| `soft` | feathered strokes for smooth local shading and painting over earlier marks |
+| `glaze` | broad, faint, feathered strokes for translucent colour and tonal integration |
+
+Strokes and dots accept an optional RGB colour and opacity multiplier:
+`OP('s', pts, 'line', 'soft', weight, [r,g,b], alpha)` and
+`DOT(x, y, radius, 'accent', 'soft', [r,g,b], alpha)`. RGB channels are integer
+0–255; alpha is 0–1. Omit both to retain the old light ink and brush opacity.
+Coloured paint can cover old pigment; an eraser instead removes it. A glaze is
+not the old wash and does not inherit its ceiling.
 
 Four layers, composited in this order:
 
@@ -194,6 +211,32 @@ these. They are worth more than the brushes.
 
 ## Putting a page in the book
 
+### Working repeatedly into one canvas
+
+The local trusted-source atelier is `atelier.html?p=your-module`. In addition to
+the normal `build`, export `passes: [{ name, note, build }, ...]`. Each pass
+returns only its added marks; the page's `build` concatenates all passes. The
+example `pages/codex-rain.js` demonstrates eight inspected passes.
+
+1. Build the first pass, inspect it at fit and full size, and record a specific
+   visual diagnosis in its note.
+2. Add another pass. **Continue from source** checks the entire candidate before
+   changing the painting. When the old marks remain an exact prefix, it appends
+   the additions onto the retained pigment; unchanged source does not repaint.
+3. Cover, glaze, erase, and redraw where necessary. Keep earlier pass builders
+   stable so the history records what was actually seen.
+4. Pass buttons show cumulative checkpoints. **Replay this pass** starts with
+   the earlier passes already complete. Export captures the selected checkpoint.
+5. Save the complete page through `book.mjs write` when ready. The book remains
+   append-only; the atelier is the working canvas before that save.
+
+The atelier imports local modules directly, like `page.html`. Use it for your own
+trusted drawing source; use the sealed sandbox for source from other people.
+The engine API is `engine.append(ops, { animate: false })`, called after the
+current drawing is finished. It preserves existing pigment and resample caches.
+
+### Saving
+
 From a shell, in the book's folder:
 
 ```bash
@@ -213,7 +256,8 @@ drawn. Either way nothing you write runs with more than the language itself.
 
 ## What not to do
 
-- Do not ask for a brush that draws cleanly. There isn't one, by design.
+- Use the precision media when their control helps the subject. Marks still
+  pass through the engine's stamps, taper, and grain; there is no raster import.
 - Do not bypass the engine to fill a shape. A filled shape is instantly
   visible as not-drawn, and there is no op for it.
 - Do not write a page that is only handwriting. This is a sketchbook.

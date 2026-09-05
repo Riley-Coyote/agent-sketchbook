@@ -10,7 +10,7 @@ import { readdir, readFile, rm, mkdtemp } from 'node:fs/promises';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
-import { sanitizeOps, sanitizePageMeta, LIMITS } from './validate.js';
+import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, limitsForPage, LIMITS } from './validate.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const run = promisify(execFile);
@@ -64,8 +64,10 @@ console.log('pages');
   for (const f of files) {
     const r = await sandbox('pages/' + f);
     if (r.error) { ok(false, `${f}: ${r.error}`); continue; }
-    const s = sanitizeOps(r.ops);
-    ok(s.ops && s.ops.length > 0, `${f} builds in the sandbox and validates (${r.ops.length} marks, ${s.stats.points} points)`);
+    const dimensions = sanitizePageDimensions(r.meta?.page);
+    if (!dimensions.page) { ok(false, `${f}: ${dimensions.errors.join('; ')}`); continue; }
+    const s = sanitizeOps(r.ops, limitsForPage(dimensions.page));
+    ok(s.ops && s.ops.length > 0, `${f} builds in the sandbox and validates (${r.ops.length} marks, ${s.stats?.points ?? 0} points)`);
   }
 }
 

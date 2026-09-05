@@ -26,6 +26,26 @@ const num = (v) => typeof v === 'number' && Number.isFinite(v);
 /* an optional colour on a stroke or dot: three whole numbers 0–255 */
 const colour = (c) => Array.isArray(c) && c.length === 3 && c.every((v) => Number.isInteger(v) && v >= 0 && v <= 255) ? [c[0], c[1], c[2]] : null;
 
+/** Page geometry is explicit metadata, never inferred from untrusted marks. */
+export function sanitizePageDimensions(input) {
+  if (input === undefined) return { page: { ...LIMITS.page }, errors: [] };
+  if (!input || typeof input !== 'object' || Array.isArray(input)
+    || !Number.isInteger(input.w) || !Number.isInteger(input.h)
+    || input.w <= 0 || input.h <= 0 || input.w > 4096 || input.h > 4096
+    || input.w * input.h > 8000000) {
+    return { page: null, errors: ['page needs integer w and h from 1 to 4096, with at most 8000000 pixels'] };
+  }
+  return { page: { w: input.w, h: input.h }, errors: [] };
+}
+
+/** Larger pages have a bounded larger mark budget; original pages keep theirs. */
+export function limitsForPage(page) {
+  const checked = sanitizePageDimensions(page);
+  if (checked.errors.length) throw new RangeError(checked.errors[0]);
+  const large = checked.page.w * checked.page.h > LIMITS.page.w * LIMITS.page.h;
+  return { ...LIMITS, page: checked.page, ...(large ? { maxOps: 120000, maxPoints: 2000000 } : {}) };
+}
+
 /**
  * Returns { ops, errors, stats }. `ops` is a clean copy holding only the
  * fields the engine reads, or null if anything was rejected. Errors are
@@ -65,6 +85,7 @@ export function sanitizeOps(input, limits = LIMITS) {
       points += pts.length;
       const s = { k: o.k, pts, layer: o.layer, brush: o.brush, w };
       if (o.c !== undefined) { const c = colour(o.c); if (!c) { err(i, 'colour is not [r, g, b]'); continue; } s.c = c; }
+      if (o.alpha !== undefined) { if (!num(o.alpha) || o.alpha < 0 || o.alpha > 1) { err(i, 'alpha out of range'); continue; } s.alpha = o.alpha; }
       out.push(s);
     } else if (o.k === 'd') {
       if (!inRange([o.x, o.y]) || !num(o.r) || o.r <= 0 || o.r > limits.maxDotRadius) { err(i, 'dot out of range'); continue; }
@@ -72,6 +93,7 @@ export function sanitizeOps(input, limits = LIMITS) {
       if (!BRUSH_KEYS.has(o.brush)) { err(i, `unknown brush ${JSON.stringify(o.brush)}`); continue; }
       const d = { k: 'd', x: o.x, y: o.y, r: o.r, layer: o.layer, brush: o.brush };
       if (o.c !== undefined) { const c = colour(o.c); if (!c) { err(i, 'colour is not [r, g, b]'); continue; } d.c = c; }
+      if (o.alpha !== undefined) { if (!num(o.alpha) || o.alpha < 0 || o.alpha > 1) { err(i, 'alpha out of range'); continue; } d.alpha = o.alpha; }
       out.push(d);
     } else if (o.k === 'p') {
       if (!num(o.ms) || o.ms < 0 || o.ms > limits.maxPauseMs) { err(i, 'pause out of range'); continue; }

@@ -1,7 +1,7 @@
 /* mark-engine.js — the hand.
  *
  * A drawing is an ordered list of plain-data ops. The engine replays them onto
- * four layered canvases with seven brushes. Nothing is ever a filled shape and
+ * four layered canvases with a shared family of brushes. Nothing is ever a filled shape and
  * nothing is ever a vector path: every mark is a run of overlapping stamps whose
  * width follows stroke velocity, which is the whole reason the output reads as
  * drawn rather than rendered.
@@ -32,6 +32,8 @@ export const INK = [236, 243, 255];
  *   dir      stamp is an angled ellipse rather than a disc (charcoal)
  *   sub      subtractive — removes pigment instead of adding it
  *   ceiling  max alpha this brush can ever reach on its layer
+ *   minRadius / sampleStep  optional precision settings; legacy defaults .35 / 1.4
+ *   softEdge start of a feathered stamp edge, as a fraction of its radius
  */
 export const BRUSHES = {
   liner:    { w: 1.0,  alpha: 0.4,   swell: 0.26, taper: 1.7, spacing: 1.4, scatter: 0.05 },
@@ -45,6 +47,12 @@ export const BRUSHES = {
    * continuous. no outline — it reads on any ground by density, and the
    * caller tunes the colour to the ground (pigment on white, chalk on black). */
   pen:      { w: 2.7,  alpha: 0.66,  swell: 0.45, taper: 1.1, spacing: 1.0, scatter: 0.9 },
+  /* Precision media still use the same pressure, taper and stamp model. Fine
+   * pencil samples densely enough that its subpixel marks remain continuous;
+   * glaze and soft feather each stamp for controlled gradual transitions. */
+  pencil:   { w: 0.9,  alpha: 0.34,  swell: 0.25, taper: 1.25, spacing: 0.1,  scatter: 0.015, minRadius: 0.075, sampleStep: 0.1 },
+  glaze:    { w: 14,   alpha: 0.024, swell: 0.38, taper: 1.0,  spacing: 1.4,  scatter: 0.08,  minRadius: 0.16,  sampleStep: 1.4, softEdge: 0.2 },
+  soft:     { w: 3.6,  alpha: 0.2,   swell: 0.5,  taper: 1.0,  spacing: 0.5,  scatter: 0.035, minRadius: 0.12,  sampleStep: 0.5, softEdge: 0.4 },
 };
 
 /* Four layers, composited in this order. The split exists so tone can be
@@ -93,10 +101,11 @@ export const offsetPath = (pts, d) => pts.map((p, i) => {
 
 /* ---------------------------------------------------------------------- ops */
 
-/** A stroke. kind 's' = normal, 'g' = construction (forced faint). */
-export const OP = (kind, pts, layer, brush, w = 1, c = undefined) => (c ? { k: kind, pts, layer, brush, w, c } : { k: kind, pts, layer, brush, w });
+/** A stroke. kind 's' = normal, 'g' = construction (forced faint).
+ * Optional alpha multiplies every stamp's opacity without changing its width. */
+export const OP = (kind, pts, layer, brush, w = 1, c = undefined, alpha = undefined) => ({ k: kind, pts, layer, brush, w, ...(c ? { c } : {}), ...(alpha === undefined ? {} : { alpha }) });
 /** A soft pressure dot — anthers, pupils, points of light. */
-export const DOT = (x, y, r, layer, brush, c = undefined) => (c ? { k: 'd', x, y, r, layer, brush, c } : { k: 'd', x, y, r, layer, brush });
+export const DOT = (x, y, r, layer, brush, c = undefined, alpha = undefined) => ({ k: 'd', x, y, r, layer, brush, ...(c ? { c } : {}), ...(alpha === undefined ? {} : { alpha }) });
 /** Dead time. The hand stopping to look is most of what makes replay legible. */
 export const PAUSE = (ms) => ({ k: 'p', ms });
 /** Names the section of work now beginning; surfaces in the UI. */
@@ -405,6 +414,36 @@ export class MarkEngine {
     return this;
   }
 
+  /** Continue a finished page without clearing its pigment or resample cache.
+   * The caller validates new ops just as it does before load(). */
+  append(ops, { animate = false } = {}) {
+    if (!Array.isArray(ops)) throw new TypeError('append expects an array of ops');
+    if (!this.done && this.ops.length) throw new Error('finish the current drawing before appending marks');
+    if (!ops.length) return this;
+    const start = this.ops.length;
+    const elapsed = this.total;
+    this.cache ||= new WeakMap();
+    const addedDuration = ops.reduce((s, o) => s + this.duration(o), 0);
+    this.ops = this.ops.concat(ops);
+    this.total += addedDuration;
+    this.pen = null;
+    this.phase = null;
+    if (animate) {
+      this.cursor = { i: start, u: 0, elapsed };
+      this.done = false;
+      this.progress = elapsed / (this.total || 1);
+    } else {
+      for (const op of ops) {
+        if (op.k !== 'p' && op.k !== 'phase') this.run(op, 0, 1);
+      }
+      this.cursor = null;
+      this.pen = null;
+      this.done = true;
+      this.progress = 1;
+    }
+    return this;
+  }
+
   /** Advance by dt seconds at `speed`×. Returns true while still drawing. */
   tick(dt, speed = 1) {
     if (!this.cursor) return false;
@@ -463,12 +502,13 @@ export class MarkEngine {
     let r = this.cache.get(op);
     if (r) return r;
     const pts = op.pts;
+    const sampleStep = BRUSHES[op.brush]?.sampleStep ?? 1.4;
     const out = [];
     let len = 0;
     for (let i = 0; i < pts.length - 1; i++) {
       const a = pts[i], b = pts[i + 1];
       const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      const n = Math.max(2, Math.ceil(d / 1.4));
+      const n = Math.max(2, Math.ceil(d / sampleStep));
       for (let j = 0; j < n; j++) {
         const t = j / n;
         out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
@@ -491,7 +531,7 @@ export class MarkEngine {
     return Math.max(0.05, this.resample(op).len / px);
   }
 
-  stamp(x, y, vel, br, layer, wmul, ink = this.ink) {
+  stamp(x, y, vel, br, layer, wmul, ink = this.ink, alpha = undefined) {
     const L = this.layers[layer] || this.layers.line;
     const ctx = L.ctx;
     if (br.brk && vel > br.brk) {
@@ -503,11 +543,19 @@ export class MarkEngine {
     const sc = br.scatter;
     const gx = x + (sc ? (frac(Math.sin(x * 127.1 + y * 311.7) * 43758.5453) - 0.5) * sc * 2 : 0);
     const gy = y + (sc ? (frac(Math.sin(x * 269.5 + y * 183.3) * 43758.5453) - 0.5) * sc * 2 : 0);
-    const w = Math.max(0.35, br.w * (wmul || 1) * (0.34 + Math.pow(vel, br.taper) * br.swell));
+    const w = Math.max(br.minRadius ?? 0.35, br.w * (wmul || 1) * (0.34 + Math.pow(vel, br.taper) * br.swell));
     ctx.save();
+    if (alpha !== undefined) ctx.globalAlpha *= alpha;
     if (br.sub) {
       ctx.globalCompositeOperation = 'destination-out';
       ctx.fillStyle = `rgba(0,0,0,${br.alpha})`;
+    } else if (br.softEdge !== undefined) {
+      const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, w);
+      const rgb = `${ink[0]},${ink[1]},${ink[2]}`;
+      g.addColorStop(0, `rgba(${rgb},${br.alpha})`);
+      g.addColorStop(br.softEdge, `rgba(${rgb},${br.alpha})`);
+      g.addColorStop(1, `rgba(${rgb},0)`);
+      ctx.fillStyle = g;
     } else {
       ctx.fillStyle = `rgba(${ink[0]},${ink[1]},${ink[2]},${br.alpha})`;
     }
@@ -556,6 +604,7 @@ export class MarkEngine {
       const ctx = L.ctx;
       const R = op.r * 1.55;
       ctx.save();
+      if (op.alpha !== undefined) ctx.globalAlpha *= op.alpha;
       const g = ctx.createRadialGradient(op.x, op.y, 0, op.x, op.y, R);
       if (br.sub) {
         ctx.globalCompositeOperation = 'destination-out';
@@ -583,7 +632,7 @@ export class MarkEngine {
     const n = P0.length;
     const i0 = Math.max(0, Math.floor(from * (n - 1)));
     const i1 = Math.min(n - 1, Math.floor(to * (n - 1)));
-    const every = Math.max(1, Math.round(br.spacing / 1.4));
+    const every = Math.max(1, Math.round(br.spacing / (br.sampleStep ?? 1.4)));
     /* Construction lines are forced faint whatever brush was asked for — the
      * underdrawing is kept on purpose, not hidden, so it must never compete. */
     const use = op.k === 'g'
@@ -594,7 +643,7 @@ export class MarkEngine {
       /* Velocity is a bell over the stroke: slow at both ends. This is what
        * gives every mark a tapered entry and exit without any author effort. */
       const vel = Math.pow(Math.sin(Math.PI * u), 0.55);
-      this.stamp(P0[i][0], P0[i][1], vel, use, op.layer, op.w, op.c || this.ink);
+      this.stamp(P0[i][0], P0[i][1], vel, use, op.layer, op.w, op.c || this.ink, op.alpha);
       this.pen = { x: P0[i][0], y: P0[i][1] };
     }
   }
