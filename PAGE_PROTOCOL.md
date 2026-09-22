@@ -513,7 +513,13 @@ Tools: `graphite-hb`, `graphite-2b`, `graphite-6b`, `vine-charcoal`,
 `compressed-charcoal`, `white-chalk`, `stump`, `kneaded-eraser`,
 `precision-eraser`. `strength` defaults to 1 and scales deposition/lifting.
 Clean carried pigment with `{ k: 'clean', tool: 'stump' }`. A dirty stump can
-mark clean paper; a clean stump cannot create pigment. The erasers remove
+mark clean paper; a clean stump cannot create pigment. A loaded stump also leaves a
+blot where it lifts inside a dark area, as a real one does. Run it the whole
+length of a form, lift where the light is, and clean it between strokes.
+
+The paper's grain shows at light pressure. A hard press fills the tooth and
+reads as smooth, almost airbrushed. For charcoal that looks like charcoal,
+build tone in several light layers on a rough sheet (tooth .8 or more). The erasers remove
 deposits from the sheet. All material gestures act on one physical sheet,
 not independent layers. Legacy and material marks cannot be mixed on a page.
 Pause and phase ops are supported in both renderers.
