@@ -199,6 +199,15 @@ if (page.crop) {
 window.__ready = true;
 </script>`;
 
+/** --scale and --crop, checked the same way for render and preview. */
+function viewArgs(dimensions) {
+  const scale = arg('--scale') === undefined ? 2 : Number(arg('--scale'));
+  if (!Number.isFinite(scale) || scale < .1 || scale > 4 || dimensions.w * dimensions.h * scale * scale > 32000000) throw Error('scale needs 0.1 to 4, at most 32 million output pixels');
+  const crop = arg('--crop')?.split(',').map(Number);
+  if (crop && (crop.length !== 4 || !crop.every(Number.isInteger) || crop[0] < 0 || crop[1] < 0 || crop[2] <= 0 || crop[3] <= 0 || crop[0]+crop[2] > dimensions.w || crop[1]+crop[3] > dimensions.h)) throw Error('crop needs x,y,width,height inside the page');
+  return { scale, crop };
+}
+
 async function renderPage({ ops, w, h, scale, surface, transparent, crop, out }) {
   const chromium = await playwright();
   if (!chromium) { console.error(MANUAL); process.exit(2); }
@@ -228,6 +237,7 @@ init --owner NAME --book DIR
 write pages/work.js --book DIR [--continue PAGE | --branch PAGE | --refs PAGES]
 journal PAGE --book DIR
 render PAGE --book DIR --out image.png [--pass N] [--crop x,y,w,h] [--scale 1]
+preview pages/work.js --out image.png [--pass N] [--crop x,y,w,h] [--scale 1]   (saves nothing)
 resume PAGE --book DIR --out pages/new.js [--pass N]
 select PAGE --book DIR --stage study|candidate|exhibition --note REASON
 list | read PAGE [--source] | blank --book DIR
@@ -386,10 +396,7 @@ export default {
     if (surface === null) throw new Error(`the page surface was rejected: ${surfaceErrors.join('; ')}`);
     const { ops, errors } = sanitizeOps(checkpoint(page).ops, limitsForPage(dimensions, surface));
     if (!ops) throw new Error(`the page's marks were rejected: ${errors.join('; ')}`);
-    const scale = arg('--scale') === undefined ? 2 : Number(arg('--scale'));
-    if (!Number.isFinite(scale) || scale < .1 || scale > 4 || dimensions.w * dimensions.h * scale * scale > 32000000) throw Error('scale needs 0.1 to 4, at most 32 million output pixels');
-    const crop = arg('--crop')?.split(',').map(Number);
-    if (crop && (crop.length !== 4 || !crop.every(Number.isInteger) || crop[0] < 0 || crop[1] < 0 || crop[2] <= 0 || crop[3] <= 0 || crop[0]+crop[2] > dimensions.w || crop[1]+crop[3] > dimensions.h)) throw Error('crop needs x,y,width,height inside the page');
+    const { scale, crop } = viewArgs(dimensions);
     await renderPage({
       ops,
       w: dimensions.w,
@@ -401,6 +408,31 @@ export default {
       out: resolve(process.cwd(), out),
     });
     console.log(`page ${n}: "${meta.title}" → ${out} (${Math.round((crop?.[2] || dimensions.w) * scale)}×${Math.round((crop?.[3] || dimensions.h) * scale)})`);
+  } else if (cmd === 'preview') {
+    /* Look before saving. The same sandbox, validation and renderer as write
+     * and render, and nothing is written to any book: a preview spends no page. */
+    if (!args[0] || args[0].startsWith('--')) throw new Error('preview needs a page module');
+    const out = arg('--out');
+    if (!out) throw new Error('preview needs --out <file.png>');
+    const built = await buildPage(resolve(process.cwd(), args[0]));
+    const { page: dimensions, errors: dimensionErrors } = sanitizePageDimensions(built.meta.page);
+    if (!dimensions) throw new Error(`the page dimensions were rejected: ${dimensionErrors.join('; ')}`);
+    const { surface, errors: surfaceErrors } = sanitizeSurface(built.meta.surface);
+    if (surface === null) throw new Error(`the page surface was rejected: ${surfaceErrors.join('; ')}`);
+    const checked = sanitizeOps(built.ops, limitsForPage(dimensions, surface));
+    if (!checked.ops) throw new Error(`the page's marks were rejected:\n  ${checked.errors.join('\n  ')}`);
+    let ops = checked.ops;
+    const passes = built.meta.passes || [];
+    if (arg('--pass') !== undefined) {
+      const n = Number(arg('--pass'));
+      if (!passes.length) throw new Error('this page has no passes; drop --pass to preview all of it');
+      if (!Number.isInteger(n) || n < 1 || n > passes.length) throw new Error(`--pass needs 1 to ${passes.length}`);
+      ops = ops.slice(0, passes[n - 1].end);
+    }
+    const { scale, crop } = viewArgs(dimensions);
+    await renderPage({ ops, w: dimensions.w, h: dimensions.h, surface, scale, transparent: flag('--transparent'), crop, out: resolve(process.cwd(), out) });
+    const through = arg('--pass') ? ` through pass ${arg('--pass')} of ${passes.length}` : passes.length ? ` (${passes.length} passes)` : '';
+    console.log(`preview: "${built.meta.title || 'untitled'}"${through}, ${ops.length} marks → ${out} (${Math.round((crop?.[2] || dimensions.w) * scale)}×${Math.round((crop?.[3] || dimensions.h) * scale)}). Nothing was saved.`);
   } else {
     throw new Error('Unknown command. Run node book.mjs help for drawing, inspection, revision and selection commands.');
   }

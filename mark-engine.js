@@ -21,6 +21,73 @@
 import { MaterialSurface, gestureSamples } from './material-engine.js';
 
 export const INK = [236, 243, 255];
+/* The default ink on light paper in the second canvas: a cool near-black. */
+export const INK_DARK = [26, 27, 33];
+
+/* ------------------------------------------------------------ canvas v2 */
+/* A page opts into the second canvas with `surface: { kind: 'ink', version: 2,
+ * paper }`. Pages without a surface, and the graphite studio, are untouched:
+ * they render exactly as they always have. For pages that ask:
+ *
+ *   - layers accumulate in half-float where the browser supports it. In 8-bit,
+ *     sixty faint slate strokes came out nearly pure blue, because premultiplied
+ *     rounding ate the red and green; translucent colour now lands on the colour
+ *     asked for, and soft brushes stop weaving a dither lattice;
+ *   - stamps are spaced by their own radius, so a thin stroke stays a line
+ *     instead of beading into dots, with opacity compensated per unit length so
+ *     a brush keeps its character;
+ *   - the paper belongs to the page: any colour, painted under the layers, and
+ *     the default ink turns dark on light paper;
+ *   - replay places exactly the stamps finish() does, so an animation ends on
+ *     the finished drawing. */
+export const PAPERS_V2 = {
+  night: 'night', // the original ground: a soft radial dark
+  black: '#0c0c0f',
+  white: '#f6f6f3',
+  cream: '#f3eee2',
+  grey: '#b9b8b4',
+  slate: '#2a2f36',
+  kraft: '#b39a78',
+};
+
+/** A paper as the engine paints it: a preset's colour, a #rrggbb, or 'night'.
+ * Anything else falls back to night rather than to a silent black fill. */
+export function resolvePaper(paper) {
+  if (typeof paper === 'string' && Object.hasOwn(PAPERS_V2, paper)) return PAPERS_V2[paper];
+  if (typeof paper === 'string' && /^#[0-9a-f]{6}$/i.test(paper)) return paper.toLowerCase();
+  return 'night';
+}
+
+export function paperIsLight(paper) {
+  paper = resolvePaper(paper);
+  if (!/^#[0-9a-f]{6}$/i.test(paper)) return false;
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(paper.slice(i, i + 2), 16) / 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.5;
+}
+
+/** Whether a page's paper is light, for any surface: viewers use it to pick
+ * cursor and caption colours. Legacy pages are on dark paper. */
+export function surfaceIsLight(surface) {
+  if (!surface) return false;
+  if (surface.kind === 'ink') return paperIsLight(surface.paper);
+  return surface.paper !== 'black';
+}
+
+/** Paint a v2 paper into a 2d context of the given pixel size. */
+export function paintPaper(ctx, paper, w, h) {
+  paper = resolvePaper(paper);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (paper === 'night') {
+    const g = ctx.createRadialGradient(w * 0.3, h * 0.12, 0, w * 0.3, h * 0.12, w * 1.2);
+    g.addColorStop(0, '#14151a'); g.addColorStop(0.52, '#0b0b0f'); g.addColorStop(1, '#07070a');
+    ctx.fillStyle = g;
+  } else {
+    ctx.fillStyle = paper;
+  }
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
+}
 
 /* ------------------------------------------------------------------ brushes */
 /* A brush is a parameter set, not code.
@@ -352,8 +419,12 @@ export class MarkEngine {
     this.w = width;
     this.h = height;
     this.dpr = dpr;
-    this.ink = ink;
-    this.material = surface ? new MaterialSurface({ width, height, surface }) : null;
+    this.v2 = surface?.kind === 'ink';
+    this.paper = this.v2 ? resolvePaper(surface.paper) : null;
+    this.ink = this.v2 && ink === INK && paperIsLight(this.paper) ? INK_DARK : ink;
+    this.material = surface && !this.v2 ? new MaterialSurface({ width, height, surface }) : null;
+    this.float = false;
+    this.plans = new WeakMap();
     this.ops = [];
     this.cursor = null;
     this.pen = null;
@@ -366,7 +437,8 @@ export class MarkEngine {
       const cv = document.createElement('canvas');
       cv.width = width * dpr;
       cv.height = height * dpr;
-      const ctx = cv.getContext('2d');
+      const ctx = this.v2 ? cv.getContext('2d', { colorType: 'float16' }) : cv.getContext('2d');
+      if (this.v2 && ctx.getContextAttributes?.().colorType === 'float16') this.float = true;
       ctx.scale(dpr, dpr);
       this.layers[l.key] = { cv, ctx };
     }
@@ -377,6 +449,7 @@ export class MarkEngine {
   load(ops) {
     this.ops = ops;
     this.cache = new WeakMap();
+    this.plans = new WeakMap();
     this.total = ops.reduce((s, o) => s + this.duration(o), 0);
     this.clear();
     return this;
@@ -484,6 +557,7 @@ export class MarkEngine {
     if (this.material) { this.material.composite(ctx, this.w * this.dpr, this.h * this.dpr); return; }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, this.w * this.dpr, this.h * this.dpr);
+    if (this.v2) paintPaper(ctx, this.paper, this.w * this.dpr, this.h * this.dpr);
     for (const l of LAYERS) {
       if (hidden[l.key]) continue;
       ctx.globalAlpha = l.op;
@@ -573,9 +647,57 @@ export class MarkEngine {
     ctx.restore();
   }
 
+  /** The second canvas's stamp positions for a stroke, fixed once per op.
+   * Spacing never exceeds the stamp's own radius, so a thin mark cannot bead;
+   * where stamps are closer than the brush's own spacing, each is lightened so
+   * the opacity laid per unit of length is what the brush always laid. */
+  plan(op, br) {
+    let plan = this.plans.get(op);
+    if (plan) return plan;
+    const { pts } = this.resample(op);
+    const n = pts.length;
+    const cum = new Float64Array(n);
+    for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    const L = cum[n - 1] || 0;
+    const sample = br.sampleStep ?? 1.4;
+    const base = sample * Math.max(1, Math.round(br.spacing / sample));
+    const wmul = op.w || 1;
+    plan = [];
+    let s = 0;
+    let j = 0;
+    for (;;) {
+      while (j < n - 2 && cum[j + 1] < s) j++;
+      const seg = cum[j + 1] - cum[j];
+      const t = seg > 0 ? Math.min(1, Math.max(0, (s - cum[j]) / seg)) : 0;
+      const b = pts[Math.min(j + 1, n - 1)];
+      const x = pts[j][0] + (b[0] - pts[j][0]) * t;
+      const y = pts[j][1] + (b[1] - pts[j][1]) * t;
+      const vel = L > 0 ? Math.pow(Math.sin(Math.PI * (s / L)), 0.55) : 0;
+      const r = Math.max(br.minRadius ?? 0.35, br.w * wmul * (0.34 + Math.pow(vel, br.taper) * br.swell));
+      const step = Math.min(base, Math.max(0.08, r * 0.9));
+      const gain = step < base ? (1 - Math.pow(1 - br.alpha, step / base)) / br.alpha : 1;
+      plan.push([x, y, vel, gain]);
+      if (s >= L) break;
+      s = Math.min(L, s + step);
+    }
+    this.plans.set(op, plan);
+    return plan;
+  }
+
   clampLayer(layer, max) {
     const L = this.layers[layer];
     if (!L) return;
+    if (this.float) {
+      /* Read and write back in half-float, or the clamp itself would round
+       * the whole layer to 8 bits. */
+      const im = L.ctx.getImageData(0, 0, L.cv.width, L.cv.height, { pixelFormat: 'rgba-float16' });
+      const d = im.data;
+      for (let i = 3; i < d.length; i += 4) if (d[i] > max) d[i] = max;
+      L.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      L.ctx.putImageData(im, 0, 0);
+      L.ctx.scale(this.dpr, this.dpr);
+      return;
+    }
     const im = L.ctx.getImageData(0, 0, L.cv.width, L.cv.height);
     const d = im.data;
     const cap = Math.round(max * 255);
@@ -645,16 +767,28 @@ export class MarkEngine {
       return;
     }
 
-    const P0 = this.resample(op).pts;
-    const n = P0.length;
-    const i0 = Math.max(0, Math.floor(from * (n - 1)));
-    const i1 = Math.min(n - 1, Math.floor(to * (n - 1)));
-    const every = Math.max(1, Math.round(br.spacing / (br.sampleStep ?? 1.4)));
     /* Construction lines are forced faint whatever brush was asked for — the
      * underdrawing is kept on purpose, not hidden, so it must never compete. */
     const use = op.k === 'g'
       ? { ...BRUSHES.brush, alpha: 0.075, w: BRUSHES.brush.w * 0.5 }
       : br;
+    if (this.v2) {
+      const plan = this.plan(op, use);
+      const N = plan.length;
+      const k0 = Math.floor(from * N);
+      const k1 = to >= 1 ? N : Math.floor(to * N);
+      for (let k = k0; k < k1; k++) {
+        const [x, y, vel, gain] = plan[k];
+        this.stamp(x, y, vel, use, op.layer, op.w, op.c || this.ink, (op.alpha ?? 1) * gain);
+        this.pen = { x, y };
+      }
+      return;
+    }
+    const P0 = this.resample(op).pts;
+    const n = P0.length;
+    const i0 = Math.max(0, Math.floor(from * (n - 1)));
+    const i1 = Math.min(n - 1, Math.floor(to * (n - 1)));
+    const every = Math.max(1, Math.round(br.spacing / (br.sampleStep ?? 1.4)));
     for (let i = i0; i <= i1; i += every) {
       const u = i / (n - 1);
       /* Velocity is a bell over the stroke: slow at both ends. This is what

@@ -4,7 +4,7 @@
  * name tables.
  */
 
-import { BRUSHES, LAYERS } from './mark-engine.js';
+import { BRUSHES, LAYERS, PAPERS_V2 } from './mark-engine.js';
 import { MATERIAL_TOOLS, PAPERS } from './material-engine.js';
 
 export const LIMITS = {
@@ -30,6 +30,15 @@ const colour = (c) => Array.isArray(c) && c.length === 3 && c.every((v) => Numbe
 /** An explicit version keeps the established renderer the default forever. */
 export function sanitizeSurface(input) {
   if (input === undefined) return { surface: undefined, errors: [] };
+  if (input && typeof input === 'object' && !Array.isArray(input) && input.kind === 'ink') {
+    const named = typeof input.paper === 'string' && Object.hasOwn(PAPERS_V2, input.paper);
+    const hex = typeof input.paper === 'string' && /^#[0-9a-f]{6}$/i.test(input.paper);
+    if (input.version !== 2 || !(named || hex || input.paper === undefined)) {
+      return { surface: null, errors: [`an ink surface needs version 2 and paper ${Object.keys(PAPERS_V2).join('/')} or #rrggbb`] };
+    }
+    const paper = input.paper === undefined ? 'night' : named ? PAPERS_V2[input.paper] : input.paper.toLowerCase();
+    return { surface: { kind: 'ink', version: 2, paper }, errors: [] };
+  }
   if (!input || typeof input !== 'object' || Array.isArray(input) || input.version !== 1
     || !Object.hasOwn(PAPERS, input.paper)
     || !num(input.tooth) || input.tooth < 0 || input.tooth > 1
@@ -91,7 +100,8 @@ export function sanitizeOps(input, limits = LIMITS) {
     const o = input[i];
     if (!o || typeof o !== 'object') { err(i, 'not an object'); continue; }
     if (!KINDS.has(o.k)) { err(i, `unknown kind ${JSON.stringify(o.k)}`); continue; }
-    if (limits.surface ? !['m', 'clean', 'p', 'phase'].includes(o.k) : ['m', 'clean'].includes(o.k)) {
+    const material = limits.surface && limits.surface.kind !== 'ink';
+    if (material ? !['m', 'clean', 'p', 'phase'].includes(o.k) : ['m', 'clean'].includes(o.k)) {
       err(i, 'material gestures require a versioned surface; material and legacy marks cannot be mixed'); continue;
     }
     if (o.k === 'm') {

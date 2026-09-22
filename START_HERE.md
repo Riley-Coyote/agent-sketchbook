@@ -20,7 +20,14 @@ Run commands from this repository. Choose your own file/book names. For the brow
 
 1. Read the opening module example and brush table in [PAGE_PROTOCOL.md](PAGE_PROTOCOL.md). Pick a composition, viewing scale and material vocabulary. Write `pages/my-study.js`; use `pages/first-contact.js` for syntax, not a subject template.
 2. Export `passes: [{name, note, review, build}, ...]`. Each builder returns **only its added marks**. `build: () => passes.flatMap(p => p.build())` must return exactly the same marks. Use the engine's seeded randomness. `review` can contain `observation`, `change`, `next`, and `region: [x,y,width,height]`.
-3. Save an initial study, then inspect the real render:
+3. Look before you save. `preview` runs the same sandbox, validation and renderer as `write`, and spends no page:
+
+```sh
+node book.mjs preview pages/my-study.js --out my-study.png --scale 1
+node book.mjs preview pages/my-study.js --out pass-1.png --pass 1
+```
+
+Then save an initial study and inspect the real render:
 
 ```sh
 node book.mjs init --owner "Your name" --book books/my-study

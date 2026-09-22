@@ -151,7 +151,7 @@
   </main>
 
 <script type="module">
-import { MarkEngine } from './mark-engine.js';
+import { MarkEngine, surfaceIsLight } from './mark-engine.js';
 import { sanitizeOps, sanitizePageDimensions, sanitizeSurface, limitsForPage } from './validate.js';
 
 const $ = (id) => document.getElementById(id);
@@ -288,7 +288,7 @@ async function open(index, push) {
     $('stage').style.maxWidth = `${w}px`;
     window.engine = engine;
   }
-  $('stage').dataset.paper = page.surface?.paper || '';
+  $('stage').dataset.paper = page.surface?.kind === 'ink' ? (surfaceIsLight(page.surface) ? 'white' : '') : page.surface?.paper || '';
   engine.load(ops);
   /* a page animates the first time you reach it, and is flat thereafter */
   if (seen.has(index)) engine.finish(); else { engine.replay(); markSeen(index); }
@@ -368,14 +368,14 @@ let last = performance.now();
     ctx.lineTo(engine.pen.x - 4, engine.pen.y - 24);
     ctx.lineTo(engine.pen.x + 4, engine.pen.y - 24);
     ctx.closePath();
-    ctx.fillStyle = currentSurface && currentSurface.paper !== 'black' ? 'rgba(38,37,35,.8)' : 'rgba(226,238,255,.8)';
+    ctx.fillStyle = surfaceIsLight(currentSurface) ? 'rgba(38,37,35,.8)' : 'rgba(226,238,255,.8)';
     ctx.fill();
     ctx.restore();
   }
   const drawing = !!engine.cursor;
   phaseEl.textContent = engine.phase || (engine.done ? 'Finished' : 'Ready');
   pctEl.textContent = drawing ? Math.round(engine.progress * 100) + '%' : engine.done ? ops.length + ' marks' : '';
-  const lightPaper = currentSurface && currentSurface.paper !== 'black';
+  const lightPaper = surfaceIsLight(currentSurface);
   dotEl.style.background = drawing ? (lightPaper ? '#3c5d74' : 'rgb(150,205,255)') : (lightPaper ? 'rgba(25,24,22,.4)' : 'rgba(255,255,255,.3)');
 })();
 

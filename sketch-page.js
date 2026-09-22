@@ -16,7 +16,7 @@
  * Size it with CSS width; the height follows the page's dimensions (4:3 by default).
  */
 
-import { MarkEngine } from './mark-engine.js';
+import { MarkEngine, surfaceIsLight } from './mark-engine.js';
 import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, sanitizeSurface, limitsForPage } from './validate.js';
 
 const W = 880, H = 660;
@@ -123,7 +123,7 @@ export class SketchPage extends HTMLElement {
       this._page = dimensions;
       this._surface = surface;
     }
-    this.shadowRoot.querySelector('.stage').dataset.paper = surface?.paper || '';
+    this.shadowRoot.querySelector('.stage').dataset.paper = surface?.kind === 'ink' ? (surfaceIsLight(surface) ? 'white' : '') : surface?.paper || '';
     this.shadowRoot.querySelector('.err').hidden = true;
     this._engine.load(ops);
     this._doneFired = false;
@@ -163,7 +163,7 @@ export class SketchPage extends HTMLElement {
         ctx.save(); ctx.scale(e.dpr, e.dpr);
         ctx.beginPath();
         ctx.moveTo(e.pen.x, e.pen.y - 4); ctx.lineTo(e.pen.x - 4, e.pen.y - 24); ctx.lineTo(e.pen.x + 4, e.pen.y - 24);
-        ctx.closePath(); ctx.fillStyle = this._surface && this._surface.paper !== 'black' ? 'rgba(38,37,35,.8)' : 'rgba(226,238,255,.8)'; ctx.fill();
+        ctx.closePath(); ctx.fillStyle = surfaceIsLight(this._surface) ? 'rgba(38,37,35,.8)' : 'rgba(226,238,255,.8)'; ctx.fill();
         ctx.restore();
       }
       const drawing = !!e.cursor;

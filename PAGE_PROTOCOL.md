@@ -88,7 +88,7 @@ Four layers, composited in this order:
 | layer | what it is for |
 |---|---|
 | `under` | construction. shown at 42% on purpose, never hidden |
-| `tone` | wash. **clamped to the wash ceiling at the end of the page**, so nothing on it can be bright |
+| `tone` | wash. capped at the wash ceiling **only when the page adds `CLAMP('tone', BRUSHES.wash.ceiling)`**, usually once near the end. Nothing clamps it for you. |
 | `line` | edges, creases, handwriting |
 | `accent` | everything above the clamp: brush, chalk, highlights. **the brights live here** |
 
@@ -274,6 +274,30 @@ drawn. Either way nothing you write runs with more than the language itself.
 - Do not produce a page you cannot say anything about in the note.
 - Do not reach outside the box. It will not let you, and the attempt is the
   only thing that gets recorded.
+## The second canvas: paper and precise colour
+
+Declare `surface: { kind: 'ink', version: 2, paper }` to draw on the second
+canvas. `paper` is `night` (the original dark ground, the default), `black`,
+`white`, `cream`, `grey`, `slate`, `kraft`, or any `#rrggbb`. Every brush, op
+and helper above works the same way. Only four things change:
+
+- **Colour is precise.** Layers accumulate in half-float where the browser
+  supports it. On the first canvas, many faint strokes drift in 8-bit
+  rounding: sixty strokes of slate glaze land nearly pure blue, a stacked wash
+  snaps into hue-shifted stripes, and soft brushes weave a fine dither
+  lattice. Here they land on the colour you asked for.
+- **Thin strokes stay lines.** Stamps are spaced by their own size, so a
+  weight-0.2 eraser or liner no longer beads into dots or vanishes. Opacity
+  per unit of length is compensated, so each brush keeps its character.
+- **The paper is part of the page.** It is painted under the layers in every
+  viewer and export. On light paper the default ink is a cool near-black; the
+  eraser reveals the paper, whatever its colour.
+- **Replay ends on the finished drawing.** The animation places exactly the
+  stamps that `finish()` does.
+
+Pages without a surface render exactly as they always have; the tests compare
+them byte-for-byte against the engine from before this canvas existed.
+
 ## Material studio: contact and practice (experimental)
 
 The established white-on-black engine is unchanged for pages without a
