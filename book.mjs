@@ -96,6 +96,46 @@ function frameArgs(motion) {
 }
 const frameName = (motion, view) => view.sheet ? `all ${motion.frames} frames` : `frame ${view.frame} of 0–${motion.frames - 1}`;
 
+/** Which way a render comes out: a still (png), or for a motion page a gif,
+ * a video (.webm / .mp4) or a timing sheet (--timing). */
+async function motionOut(out, motion, dimensions) {
+  const ext = extname(out).toLowerCase();
+  const kind = ext === '.gif' ? 'gif' : ext === '.webm' || ext === '.mp4' ? 'video' : flag('--timing') ? 'timing' : 'png';
+  if (kind === 'png') return null;
+  if (!motion) throw new Error('GIF, video and --timing are for motion pages; a still renders to .png');
+  if (flag('--sheet') || arg('--frame') !== undefined || arg('--crop') !== undefined || arg('--pass') !== undefined) throw new Error(`a ${kind} takes the whole loop: drop --sheet, --frame, --crop and --pass`);
+  if (flag('--timing') && kind !== 'timing') throw new Error('--timing writes a .png');
+  const fit = kind === 'gif' ? 640 : kind === 'timing' ? 1000 : 1920;
+  const scale = arg('--scale') === undefined ? Math.min(1, fit / dimensions.w) : Number(arg('--scale'));
+  if (!Number.isFinite(scale) || scale < .1 || scale > 2 || motion.frames * dimensions.w * dimensions.h * scale * scale > 48000000) throw new Error('scale needs 0.1 to 2, and every frame counts toward 48 million pixels');
+  const seconds = motion.frames / motion.fps;
+  const loops = arg('--loops') === undefined ? Math.min(12, Math.max(1, Math.ceil(3 / seconds))) : Number(arg('--loops'));
+  if (!Number.isInteger(loops) || loops < 1 || loops > 20) throw new Error('--loops needs 1 to 20');
+  let mime;
+  if (kind === 'video') mime = ext === '.mp4' ? 'video/mp4;codecs=avc1' : 'video/webm;codecs=vp9';
+  return { kind, scale, loops, mime, fps: motion.fps, poster: motion.poster ?? 0, seconds };
+}
+
+/* Change per step as one line of text: a sparkline an agent can read. */
+function sparkline(values) {
+  const bars = '▁▂▃▄▅▆▇█';
+  const top = Math.max(...values, 1e-9);
+  return values.map((v) => bars[Math.min(7, Math.round((v / top) * 7))]).join('');
+}
+
+function reportMotion(way, info, out) {
+  if (way.kind === 'gif') return `${out}: an animated GIF, looping forever at ${way.fps} fps (${way.seconds.toFixed(2)} s a loop).`;
+  if (way.kind === 'video') return `${out}: ${way.loops} loop${way.loops > 1 ? 's' : ''} at ${way.fps} fps, ${(way.seconds * way.loops).toFixed(2)} s.`;
+  const pct = (v) => `${(v * 100).toFixed(2)}%`;
+  return [
+    `${out}: every frame at once, coloured by time, over change per step.`,
+    `  ${info.frames} frames at ${info.fps} fps: ${info.seconds.toFixed(2)} s a loop`,
+    `  change per step: ${sparkline(info.change.slice(0, -1))} | seam ${sparkline(info.change).slice(-1)}`,
+    `  median ${pct(info.median)} · most ${pct(info.max)} (frame ${info.maxAt} → ${(info.maxAt + 1) % info.frames}) · ${info.holds} held step${info.holds === 1 ? '' : 's'}`,
+    `  seam, frame ${info.frames - 1} → 0: ${pct(info.seam)}, ${Number.isFinite(info.seamRatio) ? info.seamRatio.toFixed(1) + '×' : 'n/a'} the median: ${info.verdict}.`,
+  ].join('\n');
+}
+
 function checkpoint(page) {
   if (arg('--pass') === undefined) return { ops: page.ops, passes: page.journal?.passes || [] };
   const number = Number(arg('--pass'));
@@ -202,6 +242,28 @@ const page = await (await fetch('/__page.json')).json();
 const engine = new MarkEngine({ width: page.w, height: page.h, dpr: page.scale, surface: page.surface });
 engine.load(page.ops);
 await engine.ready();
+if (page.out === 'gif' || page.out === 'video' || page.out === 'timing') {
+  /* a moving page out of the book: see motion-out.js */
+  const { gifFromFrames, videoFromFrames, timingSheet } = await import('/motion-out.js');
+  const frames = engine.motionFrames();
+  const b64 = (bytes) => { let s = ''; for (let i = 0; i < bytes.length; i += 32768) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 32768)); return btoa(s); };
+  if (page.out === 'gif') {
+    window.__b64 = b64(gifFromFrames(frames, { fps: page.fps }));
+  } else if (page.out === 'video') {
+    window.__b64 = b64(await videoFromFrames(frames, { fps: page.fps, loops: page.loops, mime: page.mime }));
+  } else {
+    const ground = document.createElement('canvas');
+    ground.width = frames[0].width; ground.height = frames[0].height;
+    const bare = new MarkEngine({ width: page.w, height: page.h, dpr: page.scale, surface: page.surface });
+    bare.load([]).finish();
+    bare.composite(ground.getContext('2d'));
+    const { canvas, stats } = timingSheet(frames, { fps: page.fps, ground, poster: page.poster || 0, font: 'SketchSans, sans-serif' });
+    const url = canvas.toDataURL('image/png');
+    window.__b64 = url.slice(url.indexOf(',') + 1);
+    window.__info = stats;
+  }
+  window.__ready = true;
+} else {
 if (page.frame !== undefined) engine.drawFrame(page.frame); else engine.finish();
 const flat = engine.toDataURL();
 if (page.sheet) {
@@ -252,6 +314,7 @@ if (page.crop) {
   window.__png = crop.toDataURL('image/png');
 }
 window.__ready = true;
+}
 </script>`;
 
 /** --scale and --crop, checked the same way for render and preview. */
@@ -264,21 +327,22 @@ function viewArgs(dimensions, frames = 1) {
   return { scale, crop };
 }
 
-async function renderPage({ ops, w, h, scale, surface, transparent, crop, frame, sheet, out }) {
+async function renderPage({ ops, w, h, scale, surface, transparent, crop, frame, sheet, out, kind, fps, loops, mime, poster }) {
   const chromium = await playwright();
   if (!chromium) { console.error(MANUAL); process.exit(2); }
-  const { server, port } = await serve({ ops, w, h, scale, surface, transparent, crop, frame, sheet });
+  const { server, port } = await serve({ ops, w, h, scale, surface, transparent, crop, frame, sheet, out: kind, fps, loops, mime, poster });
   const browser = await chromium.launch();
   try {
     const tab = await browser.newPage();
     const failures = [];
     tab.on('pageerror', (e) => failures.push(String(e)));
     await tab.goto(`http://127.0.0.1:${port}/__render.html`);
-    await tab.waitForFunction('window.__ready === true', null, { timeout: 60000 })
+    await tab.waitForFunction('window.__ready === true', null, { timeout: kind === 'video' ? 600000 : 120000 })
       .catch(() => { throw new Error(`the page did not draw${failures.length ? `: ${failures[0]}` : ''}`); });
-    const url = await tab.evaluate('window.__png');
+    const [b64, url, info] = await tab.evaluate('[window.__b64, window.__png, window.__info]');
     await mkdir(dirname(out), { recursive: true });
-    await writeFile(out, Buffer.from(url.slice(url.indexOf(',') + 1), 'base64'));
+    await writeFile(out, Buffer.from(b64 ?? url.slice(url.indexOf(',') + 1), 'base64'));
+    return info;
   } finally {
     await browser.close();
     server.close();
@@ -295,6 +359,7 @@ journal PAGE --book DIR
 render PAGE --book DIR --out image.png [--pass N] [--crop x,y,w,h] [--scale 1] [--frame I | --sheet]
 preview pages/work.js --out image.png [--pass N] [--crop x,y,w,h] [--scale 1] [--frame I | --sheet]   (saves nothing)
   motion frames count from 0, as frame(i, n) does; without --frame you get the poster frame
+  a motion page also renders to --out loop.gif, loop.webm or loop.mp4 [--loops N], or --timing --out timing.png
 export PAGE --book DIR --out post.json [--image] [--no-source]   (packages a page to post; publishes nothing)
 resume PAGE --book DIR --out pages/new.js [--pass N]
 select PAGE --book DIR --stage study|candidate|exhibition --note REASON
@@ -458,6 +523,11 @@ export default {
     const { ops, errors } = sanitizeOps(checkpoint(page).ops, limitsForPage(dimensions, surface));
     if (!ops) throw new Error(`the page's marks were rejected: ${errors.join('; ')}`);
     const motion = motionFor(page.motion, dimensions, ops);
+    const way = await motionOut(out, motion, dimensions);
+    if (way) {
+      const info = await renderPage({ ops, w: dimensions.w, h: dimensions.h, surface, ...way, out: resolve(process.cwd(), out) });
+      console.log(`page ${n}: "${meta.title}" → ${reportMotion(way, info, out)}`);
+    } else {
     const view = frameArgs(motion);
     const { scale, crop } = viewArgs(dimensions, view.sheet ? motion.frames : 1);
     await renderPage({
@@ -473,6 +543,7 @@ export default {
     });
     const which = motion ? ` (${frameName(motion, view)})` : '';
     console.log(`page ${n}: "${meta.title}"${which} → ${out}`);
+    }
   } else if (cmd === 'export') {
     /* One self-contained file for a page: what a gallery such as mnemos.world
      * needs to show it and play it back as drawn. It packages; it does not
@@ -536,6 +607,11 @@ export default {
     if (!checked.ops) throw new Error(`the page's marks were rejected:\n  ${checked.errors.join('\n  ')}`);
     let ops = checked.ops;
     const motion = motionFor(built.meta.motion, dimensions, ops);
+    const way = await motionOut(out, motion, dimensions);
+    if (way) {
+      const info = await renderPage({ ops, w: dimensions.w, h: dimensions.h, surface, ...way, out: resolve(process.cwd(), out) });
+      console.log(`preview: "${built.meta.title || 'untitled'}" → ${reportMotion(way, info, out)} Nothing was saved.`);
+    } else {
     const view = frameArgs(motion);
     const passes = built.meta.passes || [];
     if (arg('--pass') !== undefined) {
@@ -549,6 +625,7 @@ export default {
     const through = arg('--pass') ? ` through pass ${arg('--pass')} of ${passes.length}` : passes.length ? ` (${passes.length} passes)` : '';
     const which = motion ? `, ${frameName(motion, view)} at ${motion.fps} fps` : '';
     console.log(`preview: "${built.meta.title || 'untitled'}"${through}${which}, ${ops.length} marks → ${out}. Nothing was saved.`);
+    }
   } else {
     throw new Error('Unknown command. Run node book.mjs help for drawing, inspection, revision and selection commands.');
   }

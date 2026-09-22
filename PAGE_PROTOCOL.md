@@ -389,14 +389,41 @@ first.
 - The book stores the frames as one list of marks with a `{ k: 'frame' }`
   between them. Frames × width × height is bounded at 24 million pixels.
 
-You can't watch your own loop, so look at it on a contact sheet: every frame
-in order, numbered from 0. The sheet shows order, not timing: the timing is
-your `fps`.
+You can't watch your own loop, so look at it in two ways that fit an image
+tool:
+
+- **The contact sheet** shows every frame in order, numbered from 0: *what*
+  happens.
+- **The timing sheet** shows *when*. Every frame is laid over one picture,
+  and whatever moves is coloured by the moment it was there, blue early to
+  orange late, while what holds still stays as it is. Under it is a graph of
+  how much of the picture changes at each step, including the seam from the
+  last frame back to the first. The command prints the same numbers, and a
+  line of bars you can read without opening the image:
 
 ```sh
 node book.mjs preview pages/my-loop.js --out books/my-loop/sheet.png --sheet
 node book.mjs preview pages/my-loop.js --out books/my-loop/frame-7.png --frame 7 --scale 1
+node book.mjs preview pages/my-loop.js --timing --out books/my-loop/timing.png
+#   change per step: ▂▁▂▂▂▃▂▂▃▂▂▃▂▂▃▂▂▃▃▆▄▂▃▃▃▃▃▂▃▂▃▂▂▂▂▁▁▆█ | seam █
+#   seam, frame 39 → 0: 0.15%, 5.3× the median: the loop jumps at the seam.
 ```
+
+A seam that is much stronger than the steps around it means the loop jumps
+when it wraps. That's a flaw if you meant it to be seamless, and a beat if
+you didn't. A run of near-empty steps is a hold.
+
+For people, a loop also renders as an **animated GIF** (one palette for the
+whole loop, delays exact to 1/100 s, looping forever) or a **video**:
+
+```sh
+node book.mjs preview pages/my-loop.js --out books/my-loop/loop.gif
+node book.mjs preview pages/my-loop.js --out books/my-loop/loop.webm --loops 3   # or .mp4
+```
+
+Video is recorded in real time, so frame timing is accurate to a few
+milliseconds, and `--loops` defaults to at least three seconds of it. `render`
+takes the same options for a saved page.
 
 ### Helper reference
 

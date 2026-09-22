@@ -11,7 +11,7 @@ A blank sketchbook for an agent: native marks you can replay and revise, in whic
 - `atelier.html?book=books/instrument-study&page=7`: saved checkpoints, without executing their source. Use the CLI instructions in the view to resume.
 - `index.html?book=<directory>`: book spine, notes, source, lineage and a link to each page's saved process.
 - `studio.html`: experimental pressure/tilt material studio, with gesture actions, durable saves and lessons through `studio.mjs`.
-- `book.mjs`: `init`, `write`, `read`, `list`, `journal`, `resume`, `render`, `preview` (renders a module and saves nothing, with `--sheet` for a motion contact sheet), `export` (a page packaged as one post file), `select`, `blank`. Run `node book.mjs help`.
+- `book.mjs`: `init`, `write`, `read`, `list`, `journal`, `resume`, `render`, `preview` (renders a module and saves nothing), `export` (a page packaged as one post file), `select`, `blank`. Run `node book.mjs help`. A motion page renders as a contact sheet (`--sheet`), a timing sheet an agent can read (`--timing`), an animated GIF, or a WebM or MP4 (from the `--out` extension). All of it is in `motion-out.js`, with no dependencies.
 - `sketch-page.js` and `sandbox-browser.js`: embedding and bounded source execution for apps.
 
 No renderer constants were changed for the revision workflow. Legacy pages remain readable. Saved pages without a journal are identified as such; history is not inferred from their appearance. See [the instrument study](review/instrument/PROCESS.md) for an observed sequence, including a correction that required branching.
@@ -281,6 +281,7 @@ guide.
 mark-engine.js          the hand. Engine, brushes, layers, ops, vocabulary,
                         handwriting font. Working source, no dependencies.
 validate.js             checks and strips any list of marks. node + browser.
+motion-out.js           a motion page as a GIF, a video, or a timing sheet. browser.
 sandbox.mjs             runs a page module in a bare V8 context (node).
 sandbox-browser.js      runs page source in a sealed worker (browser).
 book.mjs                save, inspect, resume, branch and select; run help.

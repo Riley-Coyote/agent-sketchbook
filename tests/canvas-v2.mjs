@@ -307,6 +307,76 @@ export default { title: 'test loop', date: '2026-09-22', note: 'a bar that walks
       await rm(dir, { recursive: true, force: true });
     }
   }
+  console.log('motion out: gif, video, timing');
+  {
+    const { mkdtemp, writeFile: write, readFile: read, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const run = (args) => execFileSync(process.execPath, ['book.mjs', ...args], { cwd: ROOT, encoding: 'utf8' });
+    const dir = await mkdtemp(join(tmpdir(), 'sketch-out-'));
+    const smooth = join(ROOT, 'pages', `_smooth-${process.pid}.js`);
+    const jumpy = join(ROOT, 'pages', `_jumpy-${process.pid}.js`);
+    const loop = (body) => `import { OP, DOT } from '../mark-engine.js';
+export default { title: 'loop', date: '2026-09-22', note: 'x', page: { w: 200, h: 120 },
+  surface: { kind: 'ink', version: 2, paper: 'night' }, motion: { frames: 12, fps: 10 },
+  frame: (i, n) => [${body}] };
+`;
+    // a dot that circles and comes home, and a bar that grows and snaps back
+    await write(smooth, loop(`DOT(100 + 60 * Math.cos(i / n * Math.PI * 2), 60 + 30 * Math.sin(i / n * Math.PI * 2), 8, 'accent', 'brush')`));
+    await write(jumpy, loop(`OP('s', [[20, 60], [20 + 160 * (i + 1) / n, 60]], 'line', 'brush', 3)`));
+    try {
+      run(['preview', smooth, '--out', join(dir, 'loop.gif')]);
+      const gif = await read(join(dir, 'loop.gif'));
+      // walk the blocks: count frames and add up their delays
+      let p = 13 + 3 * 256, frames = 0, delay = 0, loops = false;
+      while (p < gif.length && gif[p] !== 0x3b) {
+        if (gif[p] === 0x21) {
+          const label = gif[p + 1];
+          if (label === 0xf9) delay += gif[p + 4] | (gif[p + 5] << 8);
+          if (label === 0xff && gif.toString('latin1', p + 3, p + 14) === 'NETSCAPE2.0') loops = gif[p + 16] === 0 && gif[p + 17] === 0;
+          p += 2;
+          while (gif[p]) p += gif[p] + 1;
+          p++;
+        } else if (gif[p] === 0x2c) {
+          frames++;
+          p += 10 + 1; // descriptor, then the LZW minimum code size
+          while (gif[p]) p += gif[p] + 1;
+          p++;
+        } else break;
+      }
+      ok(gif.toString('latin1', 0, 6) === 'GIF89a' && gif[p] === 0x3b, 'the GIF is well formed, from header to trailer');
+      ok(frames === 12 && delay === 120 && loops, `12 frames, delays adding to exactly 1.2 s at 10 fps, looping forever (${frames} frames, ${delay} cs)`);
+      const shown = await page.evaluate(async (b64) => {
+        const img = new Image(); img.src = 'data:image/gif;base64,' + b64; await img.decode();
+        return { w: img.naturalWidth, h: img.naturalHeight };
+      }, gif.toString('base64'));
+      ok(shown.w === 200 && shown.h === 120, `a browser decodes it (${shown.w} × ${shown.h})`);
+
+      run(['preview', smooth, '--out', join(dir, 'loop.webm'), '--loops', '1']);
+      const webm = await read(join(dir, 'loop.webm'));
+      ok(webm.readUInt32BE(0) === 0x1a45dfa3 && webm.length > 1000, `the video is a WebM (${webm.length} bytes)`);
+
+      const calm = run(['preview', smooth, '--timing', '--out', join(dir, 'smooth.png')]);
+      const jump = run(['preview', jumpy, '--timing', '--out', join(dir, 'jumpy.png')]);
+      ok(/the loop closes smoothly/.test(calm), 'the timing sheet reads a loop that comes home as smooth');
+      ok(/the loop jumps at the seam/.test(jump), 'and one that snaps back as a jump at the seam');
+      ok(/change per step: [▁▂▃▄▅▆▇█]{11} \| seam [▁▂▃▄▅▆▇█]/.test(calm), 'it prints change per step as a line an agent can read');
+      const sheet = await read(join(dir, 'smooth.png'));
+      ok(sheet.readUInt32BE(16) === 200 && sheet.readUInt32BE(20) > 120, 'and draws the sheet: the picture over its graph');
+
+      let refused = '';
+      try { run(['preview', 'pages/example-riso-harbour.js', '--out', join(dir, 'still.gif')]); } catch (e) { refused = String(e.stderr || e.message); }
+      ok(/for motion pages/.test(refused), 'a still page is refused a GIF');
+      refused = '';
+      try { run(['preview', smooth, '--out', join(dir, 'x.gif'), '--frame', '3']); } catch (e) { refused = String(e.stderr || e.message); }
+      ok(/takes the whole loop/.test(refused), 'a GIF takes the whole loop, not one frame');
+    } finally {
+      await rm(smooth, { force: true });
+      await rm(jumpy, { force: true });
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+
   console.log('posting');
   {
     const { mkdtemp, readFile: read, rm } = await import('node:fs/promises');

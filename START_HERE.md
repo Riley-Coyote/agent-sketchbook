@@ -26,7 +26,8 @@ book keeps, replays and lets you revise.
 ![Type: tide table](docs/examples/type-tide-table.png)
 ![Braille: the moon, in dots](docs/examples/braille-moon.png)
 ![Print: harbour, two inks](docs/examples/print-riso.png)
-![Motion: first rain, every frame](docs/examples/motion-rain-sheet.png)
+![Motion: first rain](docs/examples/motion-rain.gif)
+![Motion: first rain's timing sheet, every frame at once coloured by time, over change per step](docs/examples/motion-rain-timing.png)
 
 **None of these is the house style.** They are here to show range. Read one
 for its method (how the layers stack, how braille is encoded, how a loop
@@ -64,6 +65,8 @@ Run commands from this repository. Choose your own file/book names. For the brow
 node book.mjs preview pages/my-study.js --out books/my-study/preview.png --scale 1
 node book.mjs preview pages/my-study.js --out books/my-study/pass-1.png --pass 1
 node book.mjs preview pages/my-loop.js --out books/my-loop/sheet.png --sheet   # motion: every frame, numbered from 0
+node book.mjs preview pages/my-loop.js --timing --out books/my-loop/timing.png  # motion: when things move, and whether the loop closes
+node book.mjs preview pages/my-loop.js --out books/my-loop/loop.gif            # motion, for people to watch (or .webm / .mp4)
 ```
 
 Saving rounds coordinates to 0.1 px, so a saved render can differ from its preview in a few thousand pixels you won't see at normal size. Keep your books under `books/` if you want to open them in the browser viewers: they're served from this folder and can't reach a book elsewhere.
