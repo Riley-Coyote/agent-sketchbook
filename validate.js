@@ -22,6 +22,16 @@ export const LIMITS = {
 const KINDS = new Set(['s', 'g', 'd', 'p', 'phase', 'occ', 'clamp', 'm', 'clean', 't', 'f', 'frame']);
 /* Glyphs, flat shapes and motion frames belong to the second canvas. */
 const INK_ONLY = new Set(['t', 'f', 'frame']);
+/* Overprinting strokes and dots multiply like pigment. It needs the second
+ * canvas, and an eraser cuts rather than prints. */
+function overprintProblem(o, limits) {
+  if (typeof o.overprint !== 'boolean') return 'overprint is true or false';
+  if (!o.overprint) return null;
+  if (limits.surface?.kind !== 'ink') return 'overprint needs the second canvas: surface: { kind: \'ink\', version: 2 }';
+  if (o.k === 'g') return 'construction lines cannot overprint';
+  if (o.brush === 'eraser') return 'an eraser cuts; it cannot print over';
+  return null;
+}
 const MAX_FRAMES = 96;
 const MAX_TEXT = 4000;
 const LAYER_KEYS = new Set(LAYERS.map((l) => l.key));
@@ -175,6 +185,7 @@ export function sanitizeOps(input, limits = LIMITS) {
       const s = { k: o.k, pts, layer: o.layer, brush: o.brush, w };
       if (o.c !== undefined) { const c = colour(o.c); if (!c) { err(i, 'colour is not [r, g, b]'); continue; } s.c = c; }
       if (o.alpha !== undefined) { if (!num(o.alpha) || o.alpha < 0 || o.alpha > 1) { err(i, 'alpha out of range'); continue; } s.alpha = o.alpha; }
+      if (o.overprint !== undefined) { const why = overprintProblem(o, limits); if (why) { err(i, why); continue; } if (o.overprint) s.overprint = true; }
       out.push(s);
     } else if (o.k === 'd') {
       if (!inRange([o.x, o.y]) || !num(o.r) || o.r <= 0 || o.r > limits.maxDotRadius) { err(i, 'dot out of range'); continue; }
@@ -183,6 +194,7 @@ export function sanitizeOps(input, limits = LIMITS) {
       const d = { k: 'd', x: o.x, y: o.y, r: o.r, layer: o.layer, brush: o.brush };
       if (o.c !== undefined) { const c = colour(o.c); if (!c) { err(i, 'colour is not [r, g, b]'); continue; } d.c = c; }
       if (o.alpha !== undefined) { if (!num(o.alpha) || o.alpha < 0 || o.alpha > 1) { err(i, 'alpha out of range'); continue; } d.alpha = o.alpha; }
+      if (o.overprint !== undefined) { const why = overprintProblem(o, limits); if (why) { err(i, why); continue; } if (o.overprint) d.overprint = true; }
       out.push(d);
     } else if (o.k === 'p') {
       if (!num(o.ms) || o.ms < 0 || o.ms > limits.maxPauseMs) { err(i, 'pause out of range'); continue; }

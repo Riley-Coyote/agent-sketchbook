@@ -214,6 +214,48 @@ try {
   ok(g.replayDiff === 0, `replay types the glyphs and ends on the finished page (${g.replayDiff} differing bytes)`);
   ok(g.overprint[0] < 20 && g.overprint[1] > 160 && g.overprint[2] < 20, `overprint multiplies inks: yellow over cyan prints green (${g.overprint})`);
 
+  console.log('transparent paint');
+  const tp = await page.evaluate(async () => {
+    const { MarkEngine, OP, DOT, PHASE } = await import('/mark-engine.js');
+    const surface = { kind: 'ink', version: 2, paper: '#ffffff' };
+    const YELLOW = [242, 200, 20], BLUE = [30, 90, 190];
+    const flatten = (e) => { const c = document.createElement('canvas'); c.width = 200; c.height = 120; e.composite(c.getContext('2d')); return c.getContext('2d').getImageData(0, 0, 200, 120).data; };
+    const draw = (ops) => { const e = new MarkEngine({ width: 200, height: 120, dpr: 1, surface }); e.load(ops); e.finish(); return flatten(e); };
+    const at = (d, x, y) => Array.from(d.slice((y * 200 + x) * 4, (y * 200 + x) * 4 + 3));
+    // a wash of many strokes: yellow across, then blue down
+    const wash = (over) => [
+      ...Array.from({ length: 6 }, (_, k) => OP('s', [[10, 40 + k * 8], [190, 40 + k * 8]], 'tone', 'glaze', 2, YELLOW, 0.9, { overprint: over })),
+      ...Array.from({ length: 6 }, (_, k) => OP('s', [[80 + k * 8, 5], [80 + k * 8, 115]], 'tone', 'glaze', 2, BLUE, 0.9, { overprint: over })),
+    ];
+    const light = draw(wash(false)), pigment = draw(wash(true));
+    const out = { lightYellow: at(light, 30, 60), pigmentYellow: at(pigment, 30, 60), lightCross: at(light, 100, 60), pigmentCross: at(pigment, 100, 60) };
+    // coats: the same blue laid once, then again after a phase
+    const band = (k) => Array.from({ length: 5 }, (_, j) => OP('s', [[10, 50 + j * 5], [190, 50 + j * 5]], 'tone', 'glaze', 2, BLUE, 0.5, { overprint: true }));
+    out.oneCoat = at(draw(band()), 100, 60);
+    out.twoCoats = at(draw([...band(), PHASE('again', 0), ...band()]), 100, 60);
+    out.runIsOneCoat = at(draw([...band(), ...band()]), 100, 60);
+    out.normalTwice = at(draw([...band().map((o) => ({ ...o, overprint: undefined })), ...band().map((o) => ({ ...o, overprint: undefined }))]), 100, 60);
+    // a dot overprints too
+    out.dot = at(draw([DOT(100, 60, 30, 'tone', 'soft', YELLOW), DOT(100, 60, 30, 'tone', 'soft', BLUE, 1, { overprint: true })]), 100, 60);
+    // replay in uneven steps ends on the finished page, coats and all
+    const ops = [...wash(true), PHASE('shadow', 0), OP('s', [[20, 100], [180, 20]], 'tone', 'glaze', 3, BLUE, 0.6, { overprint: true }), OP('s', [[10, 10], [190, 110]], 'line', 'pencil', 1)];
+    const f = new MarkEngine({ width: 200, height: 120, dpr: 1, surface }); f.load(ops); f.finish();
+    const r = new MarkEngine({ width: 200, height: 120, dpr: 1, surface }); r.load(ops); r.replay();
+    let steps = 0; while (r.tick(0.011 + (steps % 7) * 0.006, 2) && steps < 100000) steps++;
+    const fa = flatten(f), fb = flatten(r);
+    let diff = 0; for (let i = 0; i < fa.length; i++) if (fa[i] !== fb[i]) diff++;
+    out.replayDiff = diff; out.replaySteps = steps;
+    return out;
+  });
+  const near3 = (a, b, t) => a.every((v, k) => Math.abs(v - b[k]) <= t);
+  ok(near3(tp.pigmentYellow, tp.lightYellow, 1), `a first coat of transparent paint looks like ordinary paint (${tp.pigmentYellow} vs ${tp.lightYellow})`);
+  ok(tp.lightCross[2] > tp.lightCross[1] && tp.lightCross[2] > 150, `ordinary paint mixes like light: blue over yellow stays blue (${tp.lightCross})`);
+  ok(tp.pigmentCross[1] > tp.pigmentCross[0] && tp.pigmentCross[1] > tp.pigmentCross[2] + 20, `overprinted paint mixes like pigment: blue over yellow makes green (${tp.pigmentCross})`);
+  ok(tp.twoCoats[2] < tp.oneCoat[2] - 20 && tp.twoCoats[0] < tp.oneCoat[0], `a second coat, after a phase, is darker than the first (${tp.oneCoat} → ${tp.twoCoats})`);
+  ok(near3(tp.runIsOneCoat, tp.normalTwice, 2), `a run of strokes of one colour is one coat, not many (${tp.runIsOneCoat} vs ${tp.normalTwice})`);
+  ok(tp.dot[1] > tp.dot[2] + 20 && tp.dot[1] > tp.dot[0], `an overprinted dot multiplies too (${tp.dot})`);
+  ok(tp.replayDiff === 0, `replay in ${tp.replaySteps} uneven steps ends on the finished coats (${tp.replayDiff} differing bytes)`);
+
   console.log('motion');
   const mo = await page.evaluate(async () => {
     const { MarkEngine, GLYPHS, OP } = await import('/mark-engine.js');
@@ -259,6 +301,11 @@ try {
   ok(sanitizeOps([{ k: 'clean', tool: 'stump' }], inkLimits).ops === null, 'ink pages refuse material gestures');
   const legacyLimits = limitsForPage({ w: 400, h: 300 });
   ok(sanitizeOps([{ k: 't', text: 'hi', x: 10, y: 10 }], legacyLimits).ops === null, 'glyphs are refused on pages without the second canvas');
+  const glaze = { k: 's', pts: [[0, 0], [10, 10]], layer: 'tone', brush: 'glaze', overprint: true };
+  ok(sanitizeOps([glaze, { k: 'd', x: 5, y: 5, r: 4, layer: 'tone', brush: 'soft', overprint: true }], inkLimits).ops?.every((o) => o.overprint === true), 'ink pages take overprinted strokes and dots');
+  ok(sanitizeOps([glaze], legacyLimits).ops === null, 'overprinted strokes are refused without the second canvas');
+  ok(sanitizeOps([{ ...glaze, brush: 'eraser' }], inkLimits).ops === null && sanitizeOps([{ ...glaze, k: 'g' }], inkLimits).ops === null, 'an eraser or a construction line cannot overprint');
+  ok(sanitizeOps([{ ...glaze, overprint: 'yes' }], inkLimits).ops === null, 'overprint is true or false');
   ok(sanitizeOps([{ k: 't', text: 'hi', x: 10, y: 10, font: 'serif' }], inkLimits).ops === null, 'an unbundled face is refused');
   ok(sanitizeOps([{ k: 't', text: 'x'.repeat(4001), x: 10, y: 10 }], inkLimits).ops === null, 'text over 4000 characters is refused');
   ok(sanitizeOps([{ k: 't', text: 'a\u0007b', x: 10, y: 10 }], inkLimits).ops === null, 'control characters are refused');

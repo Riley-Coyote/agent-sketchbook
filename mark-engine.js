@@ -242,9 +242,12 @@ export const offsetPath = (pts, d) => pts.map((p, i) => {
 
 /** A stroke. kind 's' = normal, 'g' = construction (forced faint).
  * Optional alpha multiplies every stamp's opacity without changing its width. */
-export const OP = (kind, pts, layer, brush, w = 1, c = undefined, alpha = undefined) => ({ k: kind, pts, layer, brush, w, ...(c ? { c } : {}), ...(alpha === undefined ? {} : { alpha }) });
+/* `opts.overprint` (second canvas only) lays the mark as transparent paint:
+ * each stamp multiplies what is already on its layer, as pigment does, so
+ * yellow under blue makes green and a second coat is darker than the first. */
+export const OP = (kind, pts, layer, brush, w = 1, c = undefined, alpha = undefined, opts = {}) => ({ k: kind, pts, layer, brush, w, ...(c ? { c } : {}), ...(alpha === undefined ? {} : { alpha }), ...(opts.overprint ? { overprint: true } : {}) });
 /** A soft pressure dot — anthers, pupils, points of light. */
-export const DOT = (x, y, r, layer, brush, c = undefined, alpha = undefined) => ({ k: 'd', x, y, r, layer, brush, ...(c ? { c } : {}), ...(alpha === undefined ? {} : { alpha }) });
+export const DOT = (x, y, r, layer, brush, c = undefined, alpha = undefined, opts = {}) => ({ k: 'd', x, y, r, layer, brush, ...(c ? { c } : {}), ...(alpha === undefined ? {} : { alpha }), ...(opts.overprint ? { overprint: true } : {}) });
 /** Dead time. The hand stopping to look is most of what makes replay legible. */
 export const PAUSE = (ms) => ({ k: 'p', ms });
 /** Names the section of work now beginning; surfaces in the UI. */
@@ -539,6 +542,7 @@ export class MarkEngine {
 
   clear() {
     if (this.material) this.material.clear();
+    if (this._coat) { this._coat = null; const { cv, ctx } = this._sheet; ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height); ctx.restore(); }
     for (const l of LAYERS) {
       const L = this.layers[l.key];
       L.ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -564,7 +568,8 @@ export class MarkEngine {
   drawFrame(i) {
     const marks = this.frames ? this.frames[((i % this.frames.length) + this.frames.length) % this.frames.length] : this.ops;
     this.clear();
-    for (const op of marks) if (op.k !== 'p' && op.k !== 'phase') this.run(op, 0, 1);
+    for (const op of marks) { if (op.k !== 'p' && op.k !== 'phase') this.run(op, 0, 1); else this.endCoat(); }
+    this.endCoat();
     this.cursor = null;
     this.pen = null;
     this.phase = null;
@@ -605,9 +610,10 @@ export class MarkEngine {
   finish() {
     this.clear();
     for (const op of this.ops) {
-      if (op.k === 'p' || op.k === 'phase') continue;
+      if (op.k === 'p' || op.k === 'phase') { this.endCoat(); continue; }
       this.run(op, 0, 1);
     }
+    this.endCoat();
     this.cursor = null;
     this.pen = null;
     this.phase = null;
@@ -637,7 +643,9 @@ export class MarkEngine {
     } else {
       for (const op of ops) {
         if (op.k !== 'p' && op.k !== 'phase') this.run(op, 0, 1);
+        else this.endCoat();
       }
+      this.endCoat();
       this.cursor = null;
       this.pen = null;
       this.done = true;
@@ -658,6 +666,7 @@ export class MarkEngine {
       const use = Math.min(budget, room);
       const u0 = this.cursor.u;
       const u1 = u0 + (dur ? use / dur : 1);
+      if (op.k === 'phase' || op.k === 'p') this.endCoat();
       if (op.k === 'phase') this.phase = op.name;
       else if (op.k !== 'p') this.run(op, u0, Math.min(1, u1));
       budget -= use;
@@ -667,6 +676,7 @@ export class MarkEngine {
     }
     this.progress = Math.min(1, this.cursor.elapsed / (this.total || 1));
     if (this.cursor.i >= this.ops.length) {
+      this.endCoat();
       this.cursor = null;
       this.pen = null;
       this.phase = null;
@@ -687,6 +697,12 @@ export class MarkEngine {
       if (hidden[l.key]) continue;
       ctx.globalAlpha = l.op;
       ctx.drawImage(this.layers[l.key].cv, 0, 0);
+      if (this._coat?.layer === l.key) {
+        // a coat still being laid (mid-replay) shows over its layer until it lands
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.drawImage(this._sheet.cv, 0, 0);
+        ctx.globalCompositeOperation = 'source-over';
+      }
     }
     ctx.globalAlpha = 1;
   }
@@ -744,9 +760,8 @@ export class MarkEngine {
     return Math.max(0.05, this.resample(op).len / px);
   }
 
-  stamp(x, y, vel, br, layer, wmul, ink = this.ink, alpha = undefined) {
-    const L = this.layers[layer] || this.layers.line;
-    const ctx = L.ctx;
+  stamp(x, y, vel, br, layer, wmul, ink = this.ink, alpha = undefined, target = null) {
+    const ctx = target || (this.layers[layer] || this.layers.line).ctx;
     if (br.brk && vel > br.brk) {
       const over = (vel - br.brk) / (1 - br.brk);
       if (frac(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) < Math.min(0.8, over * 0.85)) return;
@@ -968,6 +983,45 @@ export class MarkEngine {
    * Spacing never exceeds the stamp's own radius, so a thin mark cannot bead;
    * where stamps are closer than the brush's own spacing, each is lightened so
    * the opacity laid per unit of length is what the brush always laid. */
+  /** Overprinted strokes are transparent paint, laid in coats. A coat is a
+   * run of consecutive overprinted strokes of one colour on one layer: one
+   * wash, however many strokes it takes. Its stamps build up together on a
+   * sheet of their own, as they would on any stroke, and the finished coat
+   * then multiplies its layer, as pigment filters the light through what is
+   * under it: yellow under blue makes green, and a second coat is darker than
+   * the first. Any other mark, a pause or a phase ends the coat. (Multiplying
+   * stamp by stamp would darken a wash against itself, toward black.) */
+  coatKey(op) { return `${op.layer}|${(op.c || this.ink).join(',')}`; }
+  beginCoat(op) {
+    const L = this.layers[op.layer] || this.layers.line;
+    if (!this._sheet) {
+      const cv = document.createElement('canvas');
+      cv.width = L.cv.width; cv.height = L.cv.height;
+      const ctx = cv.getContext('2d', { colorType: 'float16' });
+      ctx.scale(this.dpr, this.dpr);
+      this._sheet = { cv, ctx };
+    }
+    this._coat = { key: this.coatKey(op), layer: op.layer, x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+  }
+  endCoat() {
+    const coat = this._coat;
+    if (!coat) return;
+    this._coat = null;
+    if (coat.x1 < coat.x0) return;
+    const { cv, ctx } = this._sheet;
+    const bx = Math.max(0, Math.floor(coat.x0 * this.dpr)), by = Math.max(0, Math.floor(coat.y0 * this.dpr));
+    const bw = Math.min(cv.width, Math.ceil(coat.x1 * this.dpr)) - bx, bh = Math.min(cv.height, Math.ceil(coat.y1 * this.dpr)) - by;
+    if (bw > 0 && bh > 0) {
+      const L = (this.layers[coat.layer] || this.layers.line).ctx;
+      L.save();
+      L.setTransform(1, 0, 0, 1, 0, 0);
+      L.globalCompositeOperation = 'multiply';
+      L.drawImage(cv, bx, by, bw, bh, bx, by, bw, bh);
+      L.restore();
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(bx, by, bw, bh); ctx.restore();
+    }
+  }
+
   plan(op, br) {
     let plan = this.plans.get(op);
     if (plan) return plan;
@@ -1025,6 +1079,7 @@ export class MarkEngine {
   }
 
   run(op, from, to) {
+    if (this._coat && !(op.k === 's' && op.overprint && this.coatKey(op) === this._coat.key)) this.endCoat();
     if (this.material) {
       if (op.k === 'm') {
         let prepared = this.cache.get(op);
@@ -1081,6 +1136,7 @@ export class MarkEngine {
         g.addColorStop(0.52, 'rgba(0,0,0,.6)');
         g.addColorStop(1, 'rgba(0,0,0,0)');
       } else {
+        if (op.overprint) ctx.globalCompositeOperation = 'multiply';
         const [r, gg, b] = op.c || this.ink;
         g.addColorStop(0, `rgba(${r},${gg},${b},.97)`);
         g.addColorStop(0.42, `rgba(${r},${gg},${b},.88)`);
@@ -1105,6 +1161,20 @@ export class MarkEngine {
     if (this.v2) {
       const plan = this.plan(op, use);
       const N = plan.length;
+      if (op.overprint) {
+        if (!this._coat) this.beginCoat(op);
+        const coat = this._coat, sheet = this._sheet.ctx;
+        const reach = use.w * (op.w || 1) * (0.34 + use.swell) * (1 + (use.dir || 0)) + (use.scatter || 0) + 2;
+        const k0 = Math.floor(from * N), k1 = to >= 1 ? N : Math.floor(to * N);
+        for (let k = k0; k < k1; k++) {
+          const [x, y, vel, gain] = plan[k];
+          this.stamp(x, y, vel, use, op.layer, op.w, op.c || this.ink, (op.alpha ?? 1) * gain, sheet);
+          coat.x0 = Math.min(coat.x0, x - reach); coat.y0 = Math.min(coat.y0, y - reach);
+          coat.x1 = Math.max(coat.x1, x + reach); coat.y1 = Math.max(coat.y1, y + reach);
+          this.pen = { x, y };
+        }
+        return;
+      }
       const k0 = Math.floor(from * N);
       const k1 = to >= 1 ? N : Math.floor(to * N);
       for (let k = k0; k < k1; k++) {

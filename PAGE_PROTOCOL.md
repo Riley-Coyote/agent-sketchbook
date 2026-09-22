@@ -305,6 +305,37 @@ and helper above works the same way. Only four things change:
 Pages without a surface render exactly as they always have; the tests compare
 them byte-for-byte against the engine from before this canvas existed.
 
+### Transparent paint: coats that mix like pigment
+
+Ordinary strokes mix like light. A later stroke covers what is under it in
+proportion to its opacity, so blue laid over yellow stays blue, and a colour
+laid again and again never gets darker than itself. Watercolour and glazes
+work differently. Each layer of pigment filters the light through the ones
+beneath it, so yellow under blue makes green, and every coat is darker than
+the last. Pass `{ overprint: true }` as the last argument to `OP` or `DOT` to
+paint that way:
+
+```js
+OP('s', pts, 'tone', 'glaze', 6, [242, 200, 20], 0.5, { overprint: true })
+```
+
+- **A coat is one wash.** Consecutive overprinted strokes of one colour on
+  one layer build up together, like a wet wash. Then they multiply what was on
+  the layer before. Any other mark, a `PAUSE` or a `PHASE` ends the coat. A
+  sky laid with fifty strokes is one coat, and `PHASE('second coat')` between
+  two runs of the same colour makes them two.
+- **The first coat looks like ordinary paint.** Mixing starts with the second.
+- **Coats mix within their layer.** They multiply what is on the same layer,
+  and the layers still stack in order over the paper. Keep colours that should
+  mix on one layer; `tone` is a good home. The paper doesn't tint a glaze. To
+  paint on a coloured ground, lay the ground as a first coat.
+- **Keep glazes light.** Coats multiply, so a few at alpha 0.3–0.6 go a long
+  way. Six strong coats of one blue are nearly black.
+- Erasers and construction lines can't overprint. Dots can, and each one is
+  its own dab.
+- In replay a coat shows as it is laid and settles when it ends. Replay still
+  ends on exactly what `finish()` draws.
+
 ### Glyphs: type as a medium
 
 The second canvas also takes text as marks. Use it for ASCII and braille
@@ -437,8 +468,8 @@ Optional arguments show their defaults.
 | `ellipse(cx, cy, rx, ry)` | a closed ring of points |
 | `jitter(pts, amt)` | the points, wobbled by up to about `amt` px, deterministically |
 | `offsetPath(pts, d)` | the path shifted `d` px to one side, for double lines and edges |
-| `OP(kind, pts, layer, brush, w = 1, c, alpha)` | a stroke (`'s'`) or construction line (`'g'`) |
-| `DOT(x, y, r, layer, brush, c, alpha)` | a soft dot |
+| `OP(kind, pts, layer, brush, w = 1, c, alpha, opts)` | a stroke (`'s'`) or construction line (`'g'`); `opts.overprint` lays a stroke as transparent paint (second canvas) |
+| `DOT(x, y, r, layer, brush, c, alpha, opts)` | a soft dot; `opts.overprint` as for `OP` |
 | `PAUSE(ms)` `PHASE(name, ms = 240)` `OCCLUDE(poly, a = 0.9)` `CLAMP(layer, max)` | timing, naming, clearing, capping |
 | `textOps(text, x, y, size, layer = 'line', brush = 'liner', wob = 0.5, weight = 0.5, c, alpha)` | handwriting as strokes, in colour if `c` is given; `y` is the baseline |
 | `textWidth(text, size)` | the width of a handwritten run, for layout |
