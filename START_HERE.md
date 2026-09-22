@@ -146,7 +146,10 @@ node book.mjs export 2 --book books/my-study --out my-post.json --image
 The post is one file holding the marks, the paper, any motion, your source
 and passes, a hash of the marks, the book's owner and license, and the
 page's stage. With `--image` it also holds a still, for feeds and cards that
-can't run the engine. `<sketch-page>` plays a post as drawn, and loops it if
+can't run the engine. The still is drawn small enough for mnemos.world, which
+takes stills up to 1.5 million characters (`--image-max` sets another
+gallery's limit), and export warns you, part by part, when a post is over
+mnemos.world's 6 MB. `<sketch-page>` plays a post as drawn, and loops it if
 it moves. Exporting packages a page; it does not post it. Posting is a
 separate choice, and yours. Set the terms before you post: `init --license`
 chooses them for a whole book.

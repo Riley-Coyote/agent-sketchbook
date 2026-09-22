@@ -317,6 +317,12 @@ window.__ready = true;
 }
 </script>`;
 
+/* What mnemos.world's Commons takes: a Sketchbook export of up to 6 MB, and
+ * a still (the whole PNG data URL) of up to 1.5 million characters.
+ * --image-max sets another gallery's limit for the still. */
+const POST_BUDGET = 6 * 1024 * 1024;
+const IMAGE_BUDGET = 1_500_000;
+
 /** --scale and --crop, checked the same way for render and preview. */
 function viewArgs(dimensions, frames = 1) {
   const scale = arg('--scale') === undefined ? (frames > 1 ? 0.5 : 2) : Number(arg('--scale'));
@@ -360,7 +366,7 @@ render PAGE --book DIR --out image.png [--pass N] [--crop x,y,w,h] [--scale 1] [
 preview pages/work.js --out image.png [--pass N] [--crop x,y,w,h] [--scale 1] [--frame I | --sheet]   (saves nothing)
   motion frames count from 0, as frame(i, n) does; without --frame you get the poster frame
   a motion page also renders to --out loop.gif, loop.webm or loop.mp4 [--loops N], or --timing --out timing.png
-export PAGE --book DIR --out post.json [--image] [--no-source]   (packages a page to post; publishes nothing)
+export PAGE --book DIR --out post.json [--image [--image-max CHARS]] [--no-source]   (packages a page to post; publishes nothing)
 resume PAGE --book DIR --out pages/new.js [--pass N]
 select PAGE --book DIR --stage study|candidate|exhibition --note REASON
 list | read PAGE [--source] | blank --book DIR
@@ -580,18 +586,42 @@ export default {
       marksHash: hash(ops),
       exportedAt: new Date().toISOString(),
     };
+    let stillSize = '';
     if (flag('--image')) {
-      /* a still for places that can't run the engine: feeds, cards, alt views */
+      /* A still for places that can't run the engine: feeds, cards, alt
+       * views. Galleries cap its size, so a detailed page is rendered smaller
+       * until its still fits, down to 480 px on the long side. */
+      const budget = arg('--image-max') === undefined ? IMAGE_BUDGET : Number(arg('--image-max'));
+      if (!Number.isInteger(budget) || budget < 1) throw new Error('--image-max takes a number of characters');
       const still = resolve(BOOK_DIR, `.export-${process.pid}.png`);
+      const long = Math.max(dimensions.w, dimensions.h);
+      let scale = Math.min(1, 1600 / long);
       try {
-        await renderPage({ ops, w: dimensions.w, h: dimensions.h, surface, scale: Math.min(1, 1600 / Math.max(dimensions.w, dimensions.h)), ...(motion ? { frame: motion.poster ?? 0 } : {}), out: still });
-        post.image = 'data:image/png;base64,' + (await readFile(still)).toString('base64');
+        for (;;) {
+          await renderPage({ ops, w: dimensions.w, h: dimensions.h, surface, scale, ...(motion ? { frame: motion.poster ?? 0 } : {}), out: still });
+          const png = await readFile(still);
+          post.image = 'data:image/png;base64,' + png.toString('base64');
+          stillSize = `${png.readUInt32BE(16)} × ${png.readUInt32BE(20)}`;
+          if (post.image.length <= budget || long * scale <= 480) break;
+          // a PNG grows with its area: aim just under the budget, and always shrink
+          scale = Math.max(480 / long, scale * Math.min(0.9, 0.95 * Math.sqrt(budget / post.image.length)));
+        }
       } finally {
         await rm(still, { force: true });
       }
+      if (post.image.length > budget) {
+        delete post.image;
+        console.warn(`the still wouldn't fit in ${budget.toLocaleString('en')} characters even at 480 px, so this post has none`);
+      }
     }
-    await writeFile(resolve(process.cwd(), out), JSON.stringify(post));
-    console.log(`page ${n}: "${meta.title}" → ${out} (${ops.length} marks${motion ? `, ${motion.frames} frames` : ''}${post.image ? ', with a still' : ''}). Packaged, not published: posting is a separate choice.`);
+    const text = JSON.stringify(post);
+    await writeFile(resolve(process.cwd(), out), text);
+    const size = Buffer.byteLength(text);
+    console.log(`page ${n}: "${meta.title}" → ${out} (${ops.length} marks${motion ? `, ${motion.frames} frames` : ''}${post.image ? `, a ${stillSize} still` : ''}, ${(size / 1048576).toFixed(1)} MB). Packaged, not published: posting is a separate choice.`);
+    if (size > POST_BUDGET) {
+      const mb = (value) => (Buffer.byteLength(JSON.stringify(value ?? '')) / 1048576).toFixed(1);
+      console.warn(`note: this post is ${(size / 1048576).toFixed(1)} MB (marks ${mb(post.ops)}, source ${mb(post.source)}, still ${mb(post.image)}); mnemos.world's Commons takes Sketchbook exports up to ${POST_BUDGET / 1048576} MB. Fewer marks, or fewer points in each, make it smaller; --no-source leaves the source out.`);
+    }
   } else if (cmd === 'preview') {
     /* Look before saving. The same sandbox, validation and renderer as write
      * and render, and nothing is written to any book: a preview spends no page. */

@@ -398,6 +398,15 @@ export default { title: 'loop', date: '2026-09-22', note: 'x', page: { w: 200, h
       ok(typeof still.source === 'string' && still.journal?.passes?.length === 2 && /^[0-9a-f]{64}$/.test(still.marksHash), 'a post carries its source, passes and a hash of its marks');
       ok(still.image?.startsWith('data:image/png;base64,') && still.image.length > 5000, 'export --image adds a still for places that cannot run the engine');
       ok(loop.motion?.frames === 24 && !loop.image, 'a motion post keeps its frames');
+      // a gallery caps the still: a page too detailed for the cap is drawn smaller until it fits
+      const { spawnSync } = await import('node:child_process');
+      run(['export', '1', '--book', book, '--out', join(dir, 'small.json'), '--image', '--image-max', '300000']);
+      const small = JSON.parse(await read(join(dir, 'small.json'), 'utf8'));
+      const wide = (post) => Buffer.from(post.image.slice('data:image/png;base64,'.length), 'base64').readUInt32BE(16);
+      ok(still.image.length > 300000 && small.image.length <= 300000 && wide(small) < wide(still) && wide(small) >= 360, `a still too big for a gallery is drawn smaller until it fits (${wide(still)} → ${wide(small)} px wide)`);
+      const none = spawnSync(process.execPath, ['book.mjs', 'export', '1', '--book', book, '--out', join(dir, 'none.json'), '--image', '--image-max', '2000'], { cwd: ROOT, encoding: 'utf8' });
+      const bare = JSON.parse(await read(join(dir, 'none.json'), 'utf8'));
+      ok(none.status === 0 && !('image' in bare) && /wouldn't fit/.test(none.stderr) && bare.marksHash === still.marksHash, 'a still that cannot fit even at 480 px is left out, with a warning');
       await page.setContent('<!doctype html><body style="width:600px"><script type="module" src="/sketch-page.js"></script></body>');
       const shown = await page.evaluate(async (posts) => {
         await customElements.whenDefined('sketch-page');
