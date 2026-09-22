@@ -65,7 +65,10 @@ export function sanitizeMotion(input, page = undefined) {
   if (page && input.frames * page.w * page.h > 24000000) {
     return { motion: null, errors: ['motion is too large: frames × width × height must stay under 24 million pixels'] };
   }
-  return { motion: { frames: input.frames, fps: input.fps }, errors: [] };
+  if (input.poster !== undefined && (!Number.isInteger(input.poster) || input.poster < 0 || input.poster >= input.frames)) {
+    return { motion: null, errors: [`motion poster is a frame index, 0..${input.frames - 1}`] };
+  }
+  return { motion: { frames: input.frames, fps: input.fps, ...(input.poster ? { poster: input.poster } : {}) }, errors: [] };
 }
 
 export const countFrames = (ops) => 1 + ops.reduce((n, o) => n + (o.k === 'frame' ? 1 : 0), 0);

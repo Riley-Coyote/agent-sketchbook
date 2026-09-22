@@ -194,7 +194,9 @@ async function thumb(meta) {
     const { w, h } = page.page;
     // Keep thumbnail buffers small even when a page has thousands of logical pixels.
     const e = new MarkEngine({ width: w, height: h, dpr: Math.max(1 / Math.min(w, h), 264 / Math.max(w, h)), surface: page.surface });
-    e.load(page.ops).finish();
+    e.load(page.ops);
+    /* a motion page's thumbnail is its poster frame */
+    if (e.frameCount > 1) e.drawFrame(page.motion?.poster ?? 0); else e.finish();
     return { url: e.toDataURL(), page: page.page };
   });
   thumbCache.set(meta.index, p);
@@ -299,7 +301,7 @@ async function open(index, push) {
   if (engine.frameCount > 1) {
     /* a motion page loops its frames; click the stage to pause or play.
        With reduced motion asked for, it waits on its first frame. */
-    motion = { pictures: engine.motionFrames(), fps: page.motion.fps, started: performance.now(), playing: !matchMedia('(prefers-reduced-motion: reduce)').matches };
+    motion = { pictures: engine.motionFrames(), fps: page.motion.fps, poster: page.motion.poster ?? 0, started: performance.now(), playing: !matchMedia('(prefers-reduced-motion: reduce)').matches };
   } else {
     motion = null;
     /* a page animates the first time you reach it, and is flat thereafter */
@@ -377,7 +379,7 @@ let last = performance.now();
   last = now;
   if (motion) {
     const n = motion.pictures.length;
-    const k = motion.playing ? Math.floor((now - motion.started) / 1000 * motion.fps) % n : 0;
+    const k = motion.playing ? Math.floor((now - motion.started) / 1000 * motion.fps) % n : motion.poster;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, cv.width, cv.height);
     ctx.drawImage(motion.pictures[k], 0, 0, cv.width, cv.height);

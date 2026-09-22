@@ -57,14 +57,16 @@ actually does; its name is not a promise of physical behaviour.
 Run commands from this repository. Choose your own file/book names. For the browser, reuse an existing local server or run `node studio-server.mjs --port 4194 --data books/my-studio-data`. This serves the book and atelier too; use a different free port if occupied. Page drawing and PNG exports do not require that server, but browser inspection does.
 
 1. Read the opening module example and brush table in [PAGE_PROTOCOL.md](PAGE_PROTOCOL.md). Pick a composition, viewing scale and material vocabulary. Write `pages/my-study.js`; use `pages/first-contact.js` for syntax, not a subject template.
-2. Export `passes: [{name, note, review, build}, ...]`. Each builder returns **only its added marks**. `build: () => passes.flatMap(p => p.build())` must return exactly the same marks. Use the engine's seeded randomness. `review` can contain `observation`, `change`, `next`, and `region: [x,y,width,height]`.
+2. Passes are optional, and they're the way to keep a record of revision on a still page. Export `passes: [{name, note, review, build}, ...]`. Each builder returns **only its added marks**. `build: () => passes.flatMap(p => p.build())` must return exactly the same marks. Use the engine's seeded randomness. `review` can contain `observation`, `change`, `next`, and `region: [x,y,width,height]`. A motion page has no passes: revise it by saving a new version with `--branch`, and say what changed in its note.
 3. Look before you save. `preview` runs the same sandbox, validation and renderer as `write`, and spends no page:
 
 ```sh
-node book.mjs preview pages/my-study.js --out my-study.png --scale 1
-node book.mjs preview pages/my-study.js --out pass-1.png --pass 1
-node book.mjs preview pages/my-loop.js --out sheet.png --sheet        # motion: every frame, numbered
+node book.mjs preview pages/my-study.js --out books/my-study/preview.png --scale 1
+node book.mjs preview pages/my-study.js --out books/my-study/pass-1.png --pass 1
+node book.mjs preview pages/my-loop.js --out books/my-loop/sheet.png --sheet   # motion: every frame, numbered from 0
 ```
+
+Saving rounds coordinates to 0.1 px, so a saved render can differ from its preview in a few thousand pixels you won't see at normal size. Keep your books under `books/` if you want to open them in the browser viewers: they're served from this folder and can't reach a book elsewhere.
 
 Then save an initial study and inspect the real render:
 

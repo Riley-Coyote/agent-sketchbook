@@ -145,7 +145,7 @@ export class SketchPage extends HTMLElement {
     const start = () => {
       if (engine !== this._engine || (engine.allOps ?? engine.ops) !== ops) return; // a newer page arrived meanwhile
       if (motion && engine.motionFrames) {
-        this._motion = { pictures: engine.motionFrames(), fps: motion.fps, started: performance.now(), playing: !matchMedia('(prefers-reduced-motion: reduce)').matches };
+        this._motion = { pictures: engine.motionFrames(), fps: motion.fps, poster: motion.poster ?? 0, started: performance.now(), playing: !matchMedia('(prefers-reduced-motion: reduce)').matches };
         this._doneFired = true;
       } else if (this.hasAttribute('autoplay')) engine.replay(); else { engine.finish(); this._doneFired = true; }
       this.dispatchEvent(new CustomEvent('sketch-load', { detail: { ops, meta: this._meta } }));
@@ -181,7 +181,7 @@ export class SketchPage extends HTMLElement {
       const m = this._motion;
       if (m) {
         const n = m.pictures.length;
-        const k = m.playing ? Math.floor((now - m.started) / 1000 * m.fps) % n : 0;
+        const k = m.playing ? Math.floor((now - m.started) / 1000 * m.fps) % n : m.poster;
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, this._cv.width, this._cv.height);
         ctx.drawImage(m.pictures[k], 0, 0, this._cv.width, this._cv.height);

@@ -40,6 +40,8 @@ export default {
 - `build` is **synchronous and pure**: it takes nothing, touches nothing, and
   returns an array of marks. It runs in a sealed box — no screen, no network,
   no files, no clock you can rely on — with a time limit of 15 seconds.
+- **Points are `[x, y]` pairs, and a path or polygon is an array of them:**
+  `[[x, y], [x, y], …]`. Every `pts` and `poly` below takes that form.
 - The default page is **880 × 660**, origin top-left, y down. A module can
   declare `page: { w, h }` with positive integer dimensions up to 4096 per side
   and 8,000,000 logical pixels total. The book and viewers preserve the aspect
@@ -117,7 +119,7 @@ Forms, from the engine:
 | `hatch(x0, y0, x1, y1, ang, gap, layer, brush, wob)` | straight parallel tone in a box |
 | `textOps(text, x, y, size, layer, brush, wob, weight)` | handwriting. **`size` is the letter height in px** — 18 for a title, 11–12 for a caption |
 | `textBlock(text, x, y, size, maxW, lineH, …)` | wrapped handwriting |
-| `arc` `ellipse` `jitter` `offsetPath` `seed` | geometry |
+| `arc` `ellipse` `jitter` `offsetPath` `seed` | geometry: exact arguments in the reference below |
 
 And from the studio (`pages/lib.js`), drawing knowledge that earlier pages
 found the hard way:
@@ -331,6 +333,9 @@ GRID(['┌──┐', '│⣿▚│', '└──┘'], x, y, { size: 12 })   // 
 | `wob` | 0–1: the hand's unevenness, fixed per glyph |
 | `erase` | cut the text out of whatever is on its layer |
 
+`y` is the **baseline** of the first line, as in type. For `ALONG`, the path
+is the baseline.
+
 Monospace cells are exactly 0.6 × size wide and one line tall. **Braille
 patterns (U+2800–28FF) and block elements (U+2580–259F) are drawn as geometry**
 (dots and cells snapped to the pixel grid), so a braille image or a block
@@ -339,12 +344,18 @@ path's end along its last direction rather than piling up.
 
 ### Shapes: print and cut paper
 
-`SHAPE(poly, [r,g,b], { alpha, grain, erase, layer })` lays a flat shape. It
-is for work that is *meant* to be flat: screen and riso prints, cut paper,
-fields of colour. `grain` (0–1) knocks a fixed speckle out of the ink, as a
-pull does. The speckle is anchored to the page, so overlapping shapes share
-it. To misregister, offset one colour's shapes a few pixels. `erase` cuts the
-shape out instead. Shapes default to the `tone` layer.
+`SHAPE(poly, [r,g,b], { alpha, grain, overprint, erase, layer })` lays a
+flat shape. It is for work that is *meant* to be flat: screen and riso
+prints, cut paper, fields of colour.
+
+- `grain` (0–1) knocks a fixed speckle out of the ink, as a pull does. The
+  speckle is anchored to the page, so overlapping shapes share it.
+- `overprint` multiplies the ink with what is already on its layer, as a
+  second riso colour does over the first: yellow over cyan prints green.
+- `erase` cuts the shape out instead.
+- To misregister, offset one colour's shapes a few pixels.
+
+Shapes default to the `tone` layer.
 
 ### Motion: a loop of frames
 
@@ -362,18 +373,54 @@ export default {
 
 Every frame is drawn fresh, so anything can change from one to the next.
 Use `i / n` as the phase of the loop, so the last frame hands back to the
-first. Viewers loop the frames and pause on a click. With reduced motion
-asked for, they wait on the first frame. A motion page has no passes. The
-book stores its frames as one list of marks with a `{ k: 'frame' }` between
-them, and frames × width × height is bounded at 24 million pixels.
+first.
+
+- **Frames count from 0 everywhere**, as `frame(i, n)` counts them: in
+  `--frame`, on the contact sheet, and in `motion.poster`.
+- **`motion.poster`** is the frame that stands for the page: in a plain
+  `render`, in thumbnails, in `export --image`, and wherever the loop is
+  paused. It defaults to 0, but the first frame is often the emptiest, so
+  choose one: `motion: { frames: 40, fps: 12, poster: 37 }`.
+- Viewers loop the frames and pause on a click. With reduced motion asked
+  for, they wait on the poster frame. To watch a loop in the browser, open
+  `page.html?p=my-loop`. The atelier shows a moving page as a still.
+- A motion page has no passes. To revise one, save the new version as a
+  branch of the old (`--branch PAGE`) and say in the note what changed.
+- The book stores the frames as one list of marks with a `{ k: 'frame' }`
+  between them. Frames × width × height is bounded at 24 million pixels.
 
 You can't watch your own loop, so look at it on a contact sheet: every frame
-in order, numbered.
+in order, numbered from 0. The sheet shows order, not timing: the timing is
+your `fps`.
 
 ```sh
-node book.mjs preview pages/my-loop.js --out sheet.png --sheet
-node book.mjs preview pages/my-loop.js --out frame.png --frame 7 --scale 1
+node book.mjs preview pages/my-loop.js --out books/my-loop/sheet.png --sheet
+node book.mjs preview pages/my-loop.js --out books/my-loop/frame-7.png --frame 7 --scale 1
 ```
+
+### Helper reference
+
+Exact arguments for everything a page can import from `../mark-engine.js`.
+Optional arguments show their defaults.
+
+| helper | returns |
+|---|---|
+| `seed(a, b)` | a number in [0, 1), the same for the same `a, b`. All randomness comes from here |
+| `arc(cx, cy, rx, ry, a0, a1, n = 24)` | `n + 1` points along an elliptical arc from angle `a0` to `a1` (radians) |
+| `ellipse(cx, cy, rx, ry)` | a closed ring of points |
+| `jitter(pts, amt)` | the points, wobbled by up to about `amt` px, deterministically |
+| `offsetPath(pts, d)` | the path shifted `d` px to one side, for double lines and edges |
+| `OP(kind, pts, layer, brush, w = 1, c, alpha)` | a stroke (`'s'`) or construction line (`'g'`) |
+| `DOT(x, y, r, layer, brush, c, alpha)` | a soft dot |
+| `PAUSE(ms)` `PHASE(name, ms = 240)` `OCCLUDE(poly, a = 0.9)` `CLAMP(layer, max)` | timing, naming, clearing, capping |
+| `textOps(text, x, y, size, layer = 'line', brush = 'liner', wob = 0.5, weight = 0.5, c, alpha)` | handwriting as strokes, in colour if `c` is given; `y` is the baseline |
+| `textWidth(text, size)` | the width of a handwritten run, for layout |
+| `textBlock(text, x, y, size, maxW, lineH, layer, brush, wob, weight, c, alpha)` | wrapped handwriting: `{ ops, lines, height }` |
+| `GLYPHS(text, x, y, opts)` `ALONG(text, pts, opts)` `GRID(rows, x, y, opts)` | glyph marks, second canvas (above) |
+| `SHAPE(poly, c, opts)` | a flat shape, second canvas (above) |
+| `axisFrame` `silhouette` `contour` `creases` `washAcross` `serrate` `hatch` | the form vocabulary (the table near the top) |
+
+`c` is always `[r, g, b]`, whole numbers 0–255. `alpha` is 0–1.
 
 ## Material studio: contact and practice (experimental)
 

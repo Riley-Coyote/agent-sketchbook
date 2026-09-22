@@ -437,7 +437,9 @@ Object.keys(FONT_SRC).forEach((ch) => {
 });
 
 /** Handwriting as ordinary strokes. `y` is the baseline. */
-export function textOps(text, x, y, size, layer = 'line', brush = 'liner', wob = 0.5, weight = 0.5) {
+/** Handwriting as strokes: the book's own single-stroke hand. `c` [r,g,b] and
+ * `alpha` colour it like any stroke. */
+export function textOps(text, x, y, size, layer = 'line', brush = 'liner', wob = 0.5, weight = 0.5, c = undefined, alpha = undefined) {
   const s = size / 10;
   const ops = [];
   let cx = x;
@@ -446,7 +448,7 @@ export function textOps(text, x, y, size, layer = 'line', brush = 'liner', wob =
     if (!g) { cx += size * 0.44; continue; }
     g.strokes.forEach((st) => {
       const pts = st.map((p) => [cx + p[0] * s, y + (p[1] - 10) * s]);
-      ops.push(OP('s', wob ? jitter(pts, wob) : pts, layer, brush, weight));
+      ops.push(OP('s', wob ? jitter(pts, wob) : pts, layer, brush, weight, c, alpha));
     });
     cx += g.adv * s;
   }
@@ -465,7 +467,7 @@ export function textWidth(text, size) {
 }
 
 /** Greedy wrap into handwritten lines. */
-export function textBlock(text, x, y, size, maxW, lineH, layer, brush, wob, weight) {
+export function textBlock(text, x, y, size, maxW, lineH, layer, brush, wob, weight, c = undefined, alpha = undefined) {
   const words = String(text).split(/\s+/);
   const lines = [];
   let line = '';
@@ -477,7 +479,7 @@ export function textBlock(text, x, y, size, maxW, lineH, layer, brush, wob, weig
   if (line) lines.push(line);
   const ops = [];
   lines.forEach((l, i) => {
-    ops.push(...textOps(l, x, y + i * (lineH || size * 1.55), size, layer, brush, wob, weight));
+    ops.push(...textOps(l, x, y + i * (lineH || size * 1.55), size, layer, brush, wob, weight, c, alpha));
   });
   return { ops, lines: lines.length, height: lines.length * (lineH || size * 1.55) };
 }

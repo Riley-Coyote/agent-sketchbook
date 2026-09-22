@@ -271,6 +271,7 @@ try {
   ok(countFrames([{ k: 'p', ms: 1 }, { k: 'frame' }, { k: 'frame' }]) === 3, 'frames are counted from their breaks');
   ok(sanitizeMotion({ frames: 96, fps: 12 }, { w: 1000, h: 1000 }).motion === null, 'motion is bounded by frames × page area');
   ok(sanitizeMotion({ frames: 24, fps: 12 }, { w: 400, h: 300 }).motion?.fps === 12, 'ordinary motion is accepted');
+  ok(sanitizeMotion({ frames: 24, fps: 12, poster: 17 }).motion?.poster === 17 && sanitizeMotion({ frames: 24, fps: 12, poster: 24 }).motion === null, 'a poster frame is an index within the loop');
 
   console.log('motion in the book');
   {
@@ -293,7 +294,12 @@ export default { title: 'test loop', date: '2026-09-22', note: 'a bar that walks
       const saved = JSON.parse(await read(join(dir, 'book', 'pages', '001.json'), 'utf8'));
       ok(saved.motion?.frames === 4 && saved.motion?.fps === 6 && saved.ops.filter((o) => o.k === 'frame').length === 3, 'write keeps the motion and its frame breaks');
       const render = run(['render', '1', '--book', join(dir, 'book'), '--out', join(dir, 'f2.png'), '--frame', '2', '--scale', '1']);
-      ok(/frame 2 of 4/.test(render), 'render draws a chosen frame of a saved motion page');
+      ok(/frame 2 of 0–3/.test(render), 'render draws a chosen frame, counted from 0 as frame(i, n) counts');
+      let refused = '';
+      try { run(['render', '1', '--book', join(dir, 'book'), '--out', join(dir, 'f4.png'), '--frame', '4']); } catch (e) { refused = String(e.stderr || e.message); }
+      ok(/--frame needs 0 to 3/.test(refused), 'a frame past the last is refused with the 0-based range');
+      const poster = run(['render', '1', '--book', join(dir, 'book'), '--out', join(dir, 'poster.png'), '--scale', '1']);
+      ok(/frame 0 of 0–3/.test(poster), 'without --frame a motion page shows its poster frame (0 by default)');
       const sheet = await read(join(dir, 'sheet.png'));
       ok(sheet.length > 2000 && sheet.readUInt32BE(16) > 160 * 0.5 * 2, `the contact sheet holds the frames side by side (${sheet.readUInt32BE(16)} px wide)`);
     } finally {

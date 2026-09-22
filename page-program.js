@@ -18,7 +18,7 @@ export function compilePage(page) {
       if (i) ops.push({ k: 'frame' });
       for (const op of marks) ops.push(op);
     }
-    return { ops, meta: { title: page.title, date: page.date, note: page.note, refs: page.refs, seed: page.seed, page: page.page, surface: page.surface, motion: { frames: m.frames, fps } } };
+    return { ops, meta: { title: page.title, date: page.date, note: page.note, refs: page.refs, seed: page.seed, page: page.page, surface: page.surface, motion: { frames: m.frames, fps, ...(m.poster !== undefined ? { poster: m.poster } : {}) } } };
   }
   if (!page || typeof page.build !== 'function') throw Error('page module must export default { title, date, note, build }');
   const ops = page.build();

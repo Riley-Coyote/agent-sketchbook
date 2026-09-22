@@ -77,7 +77,9 @@ function motionFor(input, dimensions, ops) {
   return motion;
 }
 
-/** --frame N (1-based) or --sheet for a motion page; nothing for a still. */
+/** --frame I or --sheet for a motion page; nothing for a still. Frames are
+ * numbered from 0, as frame(i, n) numbers them. Without --frame a motion page
+ * shows its poster frame (motion.poster, default 0). */
 function frameArgs(motion) {
   const sheet = flag('--sheet');
   const f = arg('--frame');
@@ -87,11 +89,12 @@ function frameArgs(motion) {
   }
   if (sheet && f !== undefined) throw new Error('choose --frame or --sheet');
   if (sheet) return { sheet: true };
-  if (f === undefined) return { frame: 0 };
+  if (f === undefined) return { frame: motion.poster ?? 0 };
   const n = Number(f);
-  if (!Number.isInteger(n) || n < 1 || n > motion.frames) throw new Error(`--frame needs 1 to ${motion.frames}`);
-  return { frame: n - 1 };
+  if (!Number.isInteger(n) || n < 0 || n >= motion.frames) throw new Error(`--frame needs 0 to ${motion.frames - 1} (frames count from 0, as in frame(i, n))`);
+  return { frame: n };
 }
+const frameName = (motion, view) => view.sheet ? `all ${motion.frames} frames` : `frame ${view.frame} of 0–${motion.frames - 1}`;
 
 function checkpoint(page) {
   if (arg('--pass') === undefined) return { ops: page.ops, passes: page.journal?.passes || [] };
@@ -211,11 +214,15 @@ if (page.sheet) {
   sheet.width = cols * cw + (cols + 1) * gap; sheet.height = rows * ch + (rows + 1) * gap;
   const c = sheet.getContext('2d');
   c.fillStyle = '#16161a'; c.fillRect(0, 0, sheet.width, sheet.height);
-  c.font = Math.max(10, Math.round(12 * page.scale)) + 'px sans-serif';
+  const size = Math.max(10, Math.round(12 * page.scale));
+  c.font = size + 'px sans-serif';
   pictures.forEach((p, i) => {
     const x = gap + (i % cols) * (cw + gap), y = gap + Math.floor(i / cols) * (ch + gap);
     c.drawImage(p, x, y, cw, ch);
-    c.fillStyle = 'rgba(255,255,255,.72)'; c.fillText(String(i + 1), x + 4, y + ch - 5);
+    /* numbered from 0, as frame(i, n) is; on a dark tab so any paper reads */
+    const label = String(i), tw = c.measureText(label).width;
+    c.fillStyle = 'rgba(16,16,20,.78)'; c.fillRect(x, y + ch - size - 8, tw + 10, size + 8);
+    c.fillStyle = 'rgba(255,255,255,.9)'; c.fillText(label, x + 5, y + ch - 5);
   });
   window.__png = sheet.toDataURL('image/png');
 }
@@ -282,11 +289,12 @@ try {
   if (['init', 'write', 'select'].includes(cmd)) await acquireLock();
   if (cmd === 'help' || cmd === '--help') {
     console.log(`Start here: START_HERE.md
-init --owner NAME --book DIR
+init --owner NAME --book DIR [--title T] [--license L]   (license default: "all rights reserved by the owner"; e.g. "CC BY 4.0")
 write pages/work.js --book DIR [--continue PAGE | --branch PAGE | --refs PAGES]
 journal PAGE --book DIR
-render PAGE --book DIR --out image.png [--pass N] [--crop x,y,w,h] [--scale 1]
-preview pages/work.js --out image.png [--pass N] [--crop x,y,w,h] [--scale 1] [--frame N | --sheet]   (saves nothing)
+render PAGE --book DIR --out image.png [--pass N] [--crop x,y,w,h] [--scale 1] [--frame I | --sheet]
+preview pages/work.js --out image.png [--pass N] [--crop x,y,w,h] [--scale 1] [--frame I | --sheet]   (saves nothing)
+  motion frames count from 0, as frame(i, n) does; without --frame you get the poster frame
 export PAGE --book DIR --out post.json [--image] [--no-source]   (packages a page to post; publishes nothing)
 resume PAGE --book DIR --out pages/new.js [--pass N]
 select PAGE --book DIR --stage study|candidate|exhibition --note REASON
@@ -307,7 +315,8 @@ Saving defaults to a study. Selection records intent; it does not publish or gra
       pages: [],
     };
     await saveBook(book);
-    console.log(`new book for ${owner} at ${relative(process.cwd(), BOOK_DIR) || '.'} — ${book.pageCount} blank pages`);
+    const where = relative(process.cwd(), BOOK_DIR);
+    console.log(`new book for ${owner} at ${!where ? '.' : where.startsWith('..') ? BOOK_DIR : where} — ${book.pageCount} blank pages`);
   } else if (cmd === 'list' || !cmd) {
     const book = await loadBook();
     console.log(`${book.title} (${book.owner}) — ${book.pages.length} of ${book.pageCount} pages drawn — pages: ${book.license || 'no license stated'}`);
@@ -462,7 +471,7 @@ export default {
       ...view,
       out: resolve(process.cwd(), out),
     });
-    const which = view.sheet ? ` (all ${motion.frames} frames)` : motion ? ` (frame ${view.frame + 1} of ${motion.frames})` : '';
+    const which = motion ? ` (${frameName(motion, view)})` : '';
     console.log(`page ${n}: "${meta.title}"${which} → ${out}`);
   } else if (cmd === 'export') {
     /* One self-contained file for a page: what a gallery such as mnemos.world
@@ -504,7 +513,7 @@ export default {
       /* a still for places that can't run the engine: feeds, cards, alt views */
       const still = resolve(BOOK_DIR, `.export-${process.pid}.png`);
       try {
-        await renderPage({ ops, w: dimensions.w, h: dimensions.h, surface, scale: Math.min(1, 1600 / Math.max(dimensions.w, dimensions.h)), ...(motion ? { frame: 0 } : {}), out: still });
+        await renderPage({ ops, w: dimensions.w, h: dimensions.h, surface, scale: Math.min(1, 1600 / Math.max(dimensions.w, dimensions.h)), ...(motion ? { frame: motion.poster ?? 0 } : {}), out: still });
         post.image = 'data:image/png;base64,' + (await readFile(still)).toString('base64');
       } finally {
         await rm(still, { force: true });
@@ -538,7 +547,7 @@ export default {
     const { scale, crop } = viewArgs(dimensions, view.sheet ? motion.frames : 1);
     await renderPage({ ops, w: dimensions.w, h: dimensions.h, surface, scale, transparent: flag('--transparent'), crop, ...view, out: resolve(process.cwd(), out) });
     const through = arg('--pass') ? ` through pass ${arg('--pass')} of ${passes.length}` : passes.length ? ` (${passes.length} passes)` : '';
-    const which = view.sheet ? `, all ${motion.frames} frames` : motion ? `, frame ${view.frame + 1} of ${motion.frames} at ${motion.fps} fps` : '';
+    const which = motion ? `, ${frameName(motion, view)} at ${motion.fps} fps` : '';
     console.log(`preview: "${built.meta.title || 'untitled'}"${through}${which}, ${ops.length} marks → ${out}. Nothing was saved.`);
   } else {
     throw new Error('Unknown command. Run node book.mjs help for drawing, inspection, revision and selection commands.');

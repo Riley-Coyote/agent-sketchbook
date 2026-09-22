@@ -122,7 +122,9 @@ async function load(allowReset=false) {
       if (!/^[a-zA-Z0-9_-]+$/.test(name)) throw Error('Invalid page module name.');
       page=(await import(`./pages/${name}.js?v=${Date.now()}-${version++}`)).default;
       raw=compilePage(page);
-      $('workflow-note').textContent='Edit this trusted local source and append a named pass. Continue preserves the earlier marks. If you deliberately change them, load the revised composition and save it as a branch of the earlier page. These controls do not write files; save from the CLI.';
+      $('workflow-note').textContent = raw.meta.motion
+        ? `This page moves (${raw.meta.motion.frames} frames at ${raw.meta.motion.fps} fps); the atelier shows its frames as a still. Watch it loop at page.html?p=${name}, or see every frame with: node book.mjs preview pages/${name}.js --out sheet.png --sheet`
+        : 'Edit this trusted local source and append a named pass. Continue preserves the earlier marks. If you deliberately change them, load the revised composition and save it as a branch of the earlier page. These controls do not write files; save from the CLI.';
     }
     const dims = sanitizePageDimensions(page.page);
     if (!dims.page) throw Error(dims.errors.join('; '));
