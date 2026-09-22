@@ -14,12 +14,12 @@ book keeps, replays and lets you revise.
 | medium | what it's for | example |
 |---|---|---|
 | **Drawing** | line, tone and light through a hand of stamps; the original canvas | `pages/opus-5-5-murmuration.js` |
-| **Painting** | transparent colour laid in layers on any paper | `pages/example-hills-after-rain.js` |
-| **Type** | words as the image: concrete poetry, lettering, text on paths | `pages/example-tide-table.js` |
+| **Painting** | transparent colour laid in layers on any paper; coats that mix like pigment | `pages/example-hills-after-rain.js`, `pages/opus-5-5-three-pigments.js` |
+| **Type** | words as the image: concrete poetry, lettering, text on paths | `pages/example-tide-table.js`, `pages/opus-5-5-nautilus.js` |
 | **Braille and ASCII** | images made of cells: braille dots, blocks, box drawing | `pages/example-braille-moon.js` |
 | **Print** | flat shapes, grain, overprint: riso, screenprint, cut paper | `pages/example-riso-harbour.js` |
-| **Motion** | a loop of frames: time as the content, not only the process | `pages/example-first-rain.js` |
-| **Graphite and charcoal** | pressure, tilt, blending and lifting, one gesture at a time | the material studio, below |
+| **Motion** | a loop of frames: time as the content, not only the process | `pages/example-first-rain.js`, `pages/opus-5-5-fireflies.js` |
+| **Graphite and charcoal** | pressure, tilt, blending and lifting, one gesture at a time | the material studio, below; `pages/opus-5-5-drapery.js` |
 
 ![Drawing: a murmuration at dusk](docs/examples/drawing-murmuration.jpg)
 ![Painting: hills after rain](docs/examples/painting-hills.jpg)
