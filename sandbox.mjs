@@ -59,7 +59,8 @@ async function run(entry) {
   await root.link(linker);
   await root.evaluate({ timeout: BUILD_TIMEOUT_MS });
   const page = root.namespace.default;
-  if (!page || typeof page.build !== 'function') throw new Error('page module must export default { title, date, note, build }');
+  // compilePage decides what a page must export: build(), or frame(i, n) with motion.
+  if (!page || typeof page !== 'object') throw new Error('page module must export default { title, date, note, build }');
   context.__page = page;
   // Build, inspect pass metadata and serialize inside the CPU-limited context.
   const json = vm.runInContext(`JSON.stringify((${compilePage.toString()})(__page))`, context, { timeout: BUILD_TIMEOUT_MS });

@@ -515,6 +515,16 @@ export class MarkEngine {
   /** Install a page. Ops are plain data and are never mutated except for an
    *  internal resample cache, which is why a page round-trips through JSON. */
   load(ops) {
+    /* A motion page's marks hold { k: 'frame' } breaks. Replay and finish()
+     * draw its first frame; drawFrame(i) and motionFrames() reach the rest. */
+    this.allOps = ops;
+    this.frames = null;
+    this._motionFrames = null;
+    if (ops.some((o) => o.k === 'frame')) {
+      this.frames = [[]];
+      for (const op of ops) op.k === 'frame' ? this.frames.push([]) : this.frames.at(-1).push(op);
+      ops = this.frames[0];
+    }
     this.ops = ops;
     this.cache = new WeakMap();
     this.plans = new WeakMap();
@@ -536,11 +546,44 @@ export class MarkEngine {
   /** Load what the page's marks need before drawing: the glyph faces. Call
    * after load() and before finish() or replay(). Harmless for other pages. */
   async ready() {
-    if (this.ops.some((o) => o.k === 't')) {
+    if ((this.allOps || this.ops).some((o) => o.k === 't')) {
       await loadFonts();
       this.plans = new WeakMap(); // measurements taken before the faces arrived are stale
     }
     return this;
+  }
+
+  /** How many frames the page has: 1 for a still. */
+  get frameCount() { return this.frames ? this.frames.length : 1; }
+
+  /** Draw frame i of a motion page, finished, in place of whatever was drawn. */
+  drawFrame(i) {
+    const marks = this.frames ? this.frames[((i % this.frames.length) + this.frames.length) % this.frames.length] : this.ops;
+    this.clear();
+    for (const op of marks) if (op.k !== 'p' && op.k !== 'phase') this.run(op, 0, 1);
+    this.cursor = null;
+    this.pen = null;
+    this.phase = null;
+    this.done = true;
+    this.progress = 1;
+    return this;
+  }
+
+  /** Every frame flattened to its own canvas, once, so a viewer can loop
+   * them smoothly. Leaves the engine showing the first frame. */
+  motionFrames() {
+    if (this._motionFrames) return this._motionFrames;
+    const pictures = [];
+    for (let i = 0; i < this.frameCount; i++) {
+      this.drawFrame(i);
+      const c = document.createElement('canvas');
+      c.width = this.w * this.dpr;
+      c.height = this.h * this.dpr;
+      this.composite(c.getContext('2d'));
+      pictures.push(c);
+    }
+    this.drawFrame(0);
+    return (this._motionFrames = pictures);
   }
 
   /** Start replaying from blank. */

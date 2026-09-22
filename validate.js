@@ -19,9 +19,10 @@ export const LIMITS = {
   margin: 400, /* how far off the page a point may go */
 };
 
-const KINDS = new Set(['s', 'g', 'd', 'p', 'phase', 'occ', 'clamp', 'm', 'clean', 't', 'f']);
-/* Glyphs and flat shapes belong to the second canvas. */
-const INK_ONLY = new Set(['t', 'f']);
+const KINDS = new Set(['s', 'g', 'd', 'p', 'phase', 'occ', 'clamp', 'm', 'clean', 't', 'f', 'frame']);
+/* Glyphs, flat shapes and motion frames belong to the second canvas. */
+const INK_ONLY = new Set(['t', 'f', 'frame']);
+const MAX_FRAMES = 96;
 const MAX_TEXT = 4000;
 const LAYER_KEYS = new Set(LAYERS.map((l) => l.key));
 const BRUSH_KEYS = new Set(Object.keys(BRUSHES));
@@ -50,6 +51,24 @@ export function sanitizeSurface(input) {
   }
   return { surface: { version: 1, paper: input.paper, tooth: input.tooth, seed: input.seed }, errors: [] };
 }
+
+/** Motion is explicit metadata: { frames, fps }. The frame count must match
+ * the breaks in the marks, which callers check with countFrames(). */
+export function sanitizeMotion(input, page = undefined) {
+  if (input === undefined) return { motion: undefined, errors: [] };
+  if (!input || typeof input !== 'object' || Array.isArray(input)
+    || !Number.isInteger(input.frames) || input.frames < 2 || input.frames > MAX_FRAMES
+    || typeof input.fps !== 'number' || !(input.fps >= 1 && input.fps <= 30)) {
+    return { motion: null, errors: [`motion needs frames 2..${MAX_FRAMES} and fps 1..30`] };
+  }
+  /* Viewers keep every frame as a picture to loop smoothly; bound the total. */
+  if (page && input.frames * page.w * page.h > 24000000) {
+    return { motion: null, errors: ['motion is too large: frames × width × height must stay under 24 million pixels'] };
+  }
+  return { motion: { frames: input.frames, fps: input.fps }, errors: [] };
+}
+
+export const countFrames = (ops) => 1 + ops.reduce((n, o) => n + (o.k === 'frame' ? 1 : 0), 0);
 
 /** Page geometry is explicit metadata, never inferred from untrusted marks. */
 export function sanitizePageDimensions(input) {
@@ -99,6 +118,7 @@ export function sanitizeOps(input, limits = LIMITS) {
   const out = [];
   let points = 0;
   let materialWork = 0;
+  let frames = 1;
   for (let i = 0; i < input.length; i++) {
     const o = input[i];
     if (!o || typeof o !== 'object') { err(i, 'not an object'); continue; }
@@ -108,7 +128,13 @@ export function sanitizeOps(input, limits = LIMITS) {
       err(i, 'material gestures require a versioned surface; material and legacy marks cannot be mixed'); continue;
     }
     if (INK_ONLY.has(o.k) && limits.surface?.kind !== 'ink') {
-      err(i, "glyphs and shapes need the second canvas: surface: { kind: 'ink', version: 2 }"); continue;
+      err(i, "glyphs, shapes and motion need the second canvas: surface: { kind: 'ink', version: 2 }"); continue;
+    }
+    if (o.k === 'frame') {
+      frames++;
+      if (frames > MAX_FRAMES) { err(i, `more than ${MAX_FRAMES} frames`); break; }
+      out.push({ k: 'frame' });
+      continue;
     }
     if (o.k === 'm') {
       if (!Object.hasOwn(MATERIAL_TOOLS, o.tool)) { err(i, 'unknown material tool'); continue; }
@@ -222,7 +248,7 @@ export function sanitizeOps(input, limits = LIMITS) {
     }
     if (points > limits.maxPoints) { errors.push(`${points}+ points, limit ${limits.maxPoints}`); break; }
   }
-  const stats = { ops: out.length, points };
+  const stats = { ops: out.length, points, frames };
   return errors.length ? { ops: null, errors, stats } : { ops: out, errors, stats };
 }
 

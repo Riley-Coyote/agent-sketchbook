@@ -32,7 +32,7 @@ import { resolve, dirname, relative, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, sanitizeSurface, limitsForPage } from './validate.js';
+import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, sanitizeSurface, sanitizeMotion, countFrames, limitsForPage } from './validate.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PAGES = 48;
@@ -67,6 +67,32 @@ async function savedPage(book, n) {
   if (!meta) throw Error(`no page ${n}`);
   return { meta, page: JSON.parse(await readFile(resolve(BOOK_DIR, meta.file), 'utf8')) };
 }
+/** A page's motion, checked against the frame breaks in its marks. */
+function motionFor(input, dimensions, ops) {
+  const { motion, errors } = sanitizeMotion(input, dimensions);
+  if (motion === null) throw new Error(`the page motion was rejected: ${errors.join('; ')}`);
+  const frames = countFrames(ops);
+  if (!motion && frames > 1) throw new Error('the marks hold frame breaks but the page declares no motion');
+  if (motion && motion.frames !== frames) throw new Error(`motion declares ${motion.frames} frames but the marks hold ${frames}`);
+  return motion;
+}
+
+/** --frame N (1-based) or --sheet for a motion page; nothing for a still. */
+function frameArgs(motion) {
+  const sheet = flag('--sheet');
+  const f = arg('--frame');
+  if (!motion) {
+    if (sheet || f !== undefined) throw new Error('--frame and --sheet are for motion pages');
+    return {};
+  }
+  if (sheet && f !== undefined) throw new Error('choose --frame or --sheet');
+  if (sheet) return { sheet: true };
+  if (f === undefined) return { frame: 0 };
+  const n = Number(f);
+  if (!Number.isInteger(n) || n < 1 || n > motion.frames) throw new Error(`--frame needs 1 to ${motion.frames}`);
+  return { frame: n - 1 };
+}
+
 function checkpoint(page) {
   if (arg('--pass') === undefined) return { ops: page.ops, passes: page.journal?.passes || [] };
   const number = Number(arg('--pass'));
@@ -98,7 +124,7 @@ async function buildPage(modPath) {
   if (flag('--unsafe')) {
     const mod = await import(pathToFileURL(modPath).href);
     const page = mod.default;
-    if (!page || typeof page.build !== 'function') throw new Error('a page module exports default { title, date, note, build }');
+    if (!page || typeof page !== 'object') throw new Error('a page module exports default { title, date, note, build }');
     return compilePage(page);
   }
   const { stdout } = await promisify(execFile)(
@@ -173,9 +199,29 @@ const page = await (await fetch('/__page.json')).json();
 const engine = new MarkEngine({ width: page.w, height: page.h, dpr: page.scale, surface: page.surface });
 engine.load(page.ops);
 await engine.ready();
-engine.finish();
+if (page.frame !== undefined) engine.drawFrame(page.frame); else engine.finish();
 const flat = engine.toDataURL();
-if (page.transparent || page.surface) { window.__png = flat; }
+if (page.sheet) {
+  /* every frame of a motion page on one sheet, in order, numbered: the way
+   * to see a loop you can't watch */
+  const pictures = engine.motionFrames();
+  const n = pictures.length, cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols);
+  const cw = page.w * page.scale, ch = page.h * page.scale, gap = Math.round(6 + 4 * page.scale);
+  const sheet = document.createElement('canvas');
+  sheet.width = cols * cw + (cols + 1) * gap; sheet.height = rows * ch + (rows + 1) * gap;
+  const c = sheet.getContext('2d');
+  c.fillStyle = '#16161a'; c.fillRect(0, 0, sheet.width, sheet.height);
+  c.font = Math.max(10, Math.round(12 * page.scale)) + 'px sans-serif';
+  pictures.forEach((p, i) => {
+    const x = gap + (i % cols) * (cw + gap), y = gap + Math.floor(i / cols) * (ch + gap);
+    c.drawImage(p, x, y, cw, ch);
+    c.fillStyle = 'rgba(255,255,255,.72)'; c.fillText(String(i + 1), x + 4, y + ch - 5);
+  });
+  window.__png = sheet.toDataURL('image/png');
+}
+
+if (page.sheet) { /* done above */ }
+else if (page.transparent || page.surface) { window.__png = flat; }
 else {
   /* the paper the book is drawn on — the viewer's own ground, so the PNG
      reads the same outside the viewer as inside it. */
@@ -202,18 +248,19 @@ window.__ready = true;
 </script>`;
 
 /** --scale and --crop, checked the same way for render and preview. */
-function viewArgs(dimensions) {
-  const scale = arg('--scale') === undefined ? 2 : Number(arg('--scale'));
-  if (!Number.isFinite(scale) || scale < .1 || scale > 4 || dimensions.w * dimensions.h * scale * scale > 32000000) throw Error('scale needs 0.1 to 4, at most 32 million output pixels');
+function viewArgs(dimensions, frames = 1) {
+  const scale = arg('--scale') === undefined ? (frames > 1 ? 0.5 : 2) : Number(arg('--scale'));
+  if (!Number.isFinite(scale) || scale < .1 || scale > 4 || frames * dimensions.w * dimensions.h * scale * scale > 32000000) throw Error('scale needs 0.1 to 4, at most 32 million output pixels (a contact sheet counts every frame)');
+  if (frames > 1 && arg('--crop') !== undefined) throw Error('crop a single --frame, not a contact sheet');
   const crop = arg('--crop')?.split(',').map(Number);
   if (crop && (crop.length !== 4 || !crop.every(Number.isInteger) || crop[0] < 0 || crop[1] < 0 || crop[2] <= 0 || crop[3] <= 0 || crop[0]+crop[2] > dimensions.w || crop[1]+crop[3] > dimensions.h)) throw Error('crop needs x,y,width,height inside the page');
   return { scale, crop };
 }
 
-async function renderPage({ ops, w, h, scale, surface, transparent, crop, out }) {
+async function renderPage({ ops, w, h, scale, surface, transparent, crop, frame, sheet, out }) {
   const chromium = await playwright();
   if (!chromium) { console.error(MANUAL); process.exit(2); }
-  const { server, port } = await serve({ ops, w, h, scale, surface, transparent, crop });
+  const { server, port } = await serve({ ops, w, h, scale, surface, transparent, crop, frame, sheet });
   const browser = await chromium.launch();
   try {
     const tab = await browser.newPage();
@@ -362,6 +409,7 @@ export default {
       }
       parent = { book: book.id, page: n, relation, marksHash: hash(previous.ops) };
     }
+    const motion = motionFor(built.meta.motion, page, ops);
     const journal = { version: 1, sourceHash: hash(source), marksHash: hash(ops), ...(parent ? { parent } : {}), passes: (built.meta.passes || []).map(pass => ({ ...pass, checkpointHash: hash({ page, surface, ops: ops.slice(0, pass.end) }) })) };
     const index = book.pages.length + 1;
     const meta = {
@@ -372,6 +420,7 @@ export default {
       seed: built.meta.seed ?? index,
       page,
       ...(surface === undefined ? {} : { surface }),
+      ...(motion ? { motion } : {}),
       module: relative(ROOT, modPath),
       opCount: ops.length,
       points: stats.points,
@@ -398,7 +447,9 @@ export default {
     if (surface === null) throw new Error(`the page surface was rejected: ${surfaceErrors.join('; ')}`);
     const { ops, errors } = sanitizeOps(checkpoint(page).ops, limitsForPage(dimensions, surface));
     if (!ops) throw new Error(`the page's marks were rejected: ${errors.join('; ')}`);
-    const { scale, crop } = viewArgs(dimensions);
+    const motion = motionFor(page.motion, dimensions, ops);
+    const view = frameArgs(motion);
+    const { scale, crop } = viewArgs(dimensions, view.sheet ? motion.frames : 1);
     await renderPage({
       ops,
       w: dimensions.w,
@@ -407,9 +458,11 @@ export default {
       scale,
       transparent: flag('--transparent'),
       crop,
+      ...view,
       out: resolve(process.cwd(), out),
     });
-    console.log(`page ${n}: "${meta.title}" → ${out} (${Math.round((crop?.[2] || dimensions.w) * scale)}×${Math.round((crop?.[3] || dimensions.h) * scale)})`);
+    const which = view.sheet ? ` (all ${motion.frames} frames)` : motion ? ` (frame ${view.frame + 1} of ${motion.frames})` : '';
+    console.log(`page ${n}: "${meta.title}"${which} → ${out}`);
   } else if (cmd === 'preview') {
     /* Look before saving. The same sandbox, validation and renderer as write
      * and render, and nothing is written to any book: a preview spends no page. */
@@ -424,6 +477,8 @@ export default {
     const checked = sanitizeOps(built.ops, limitsForPage(dimensions, surface));
     if (!checked.ops) throw new Error(`the page's marks were rejected:\n  ${checked.errors.join('\n  ')}`);
     let ops = checked.ops;
+    const motion = motionFor(built.meta.motion, dimensions, ops);
+    const view = frameArgs(motion);
     const passes = built.meta.passes || [];
     if (arg('--pass') !== undefined) {
       const n = Number(arg('--pass'));
@@ -431,10 +486,11 @@ export default {
       if (!Number.isInteger(n) || n < 1 || n > passes.length) throw new Error(`--pass needs 1 to ${passes.length}`);
       ops = ops.slice(0, passes[n - 1].end);
     }
-    const { scale, crop } = viewArgs(dimensions);
-    await renderPage({ ops, w: dimensions.w, h: dimensions.h, surface, scale, transparent: flag('--transparent'), crop, out: resolve(process.cwd(), out) });
+    const { scale, crop } = viewArgs(dimensions, view.sheet ? motion.frames : 1);
+    await renderPage({ ops, w: dimensions.w, h: dimensions.h, surface, scale, transparent: flag('--transparent'), crop, ...view, out: resolve(process.cwd(), out) });
     const through = arg('--pass') ? ` through pass ${arg('--pass')} of ${passes.length}` : passes.length ? ` (${passes.length} passes)` : '';
-    console.log(`preview: "${built.meta.title || 'untitled'}"${through}, ${ops.length} marks → ${out} (${Math.round((crop?.[2] || dimensions.w) * scale)}×${Math.round((crop?.[3] || dimensions.h) * scale)}). Nothing was saved.`);
+    const which = view.sheet ? `, all ${motion.frames} frames` : motion ? `, frame ${view.frame + 1} of ${motion.frames} at ${motion.fps} fps` : '';
+    console.log(`preview: "${built.meta.title || 'untitled'}"${through}${which}, ${ops.length} marks → ${out}. Nothing was saved.`);
   } else {
     throw new Error('Unknown command. Run node book.mjs help for drawing, inspection, revision and selection commands.');
   }

@@ -344,6 +344,35 @@ pull does. The speckle is anchored to the page, so overlapping shapes share
 it. To misregister, offset one colour's shapes a few pixels. `erase` cuts the
 shape out instead. Shapes default to the `tone` layer.
 
+### Motion: a loop of frames
+
+A page on the second canvas can move. Instead of `build`, give it `motion`
+and `frame(i, n)`, which returns the marks of frame `i` of `n`:
+
+```js
+export default {
+  title, date, note, page: { w: 600, h: 400 },
+  surface: { kind: 'ink', version: 2, paper: 'night' },
+  motion: { frames: 24, fps: 12 },          // 2–96 frames, 1–30 fps
+  frame: (i, n) => [ /* the marks of this frame */ ],
+};
+```
+
+Every frame is drawn fresh, so anything can change from one to the next.
+Use `i / n` as the phase of the loop, so the last frame hands back to the
+first. Viewers loop the frames and pause on a click. With reduced motion
+asked for, they wait on the first frame. A motion page has no passes. The
+book stores its frames as one list of marks with a `{ k: 'frame' }` between
+them, and frames × width × height is bounded at 24 million pixels.
+
+You can't watch your own loop, so look at it on a contact sheet: every frame
+in order, numbered.
+
+```sh
+node book.mjs preview pages/my-loop.js --out sheet.png --sheet
+node book.mjs preview pages/my-loop.js --out frame.png --frame 7 --scale 1
+```
+
 ## Material studio: contact and practice (experimental)
 
 The established white-on-black engine is unchanged for pages without a

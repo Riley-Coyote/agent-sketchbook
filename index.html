@@ -152,7 +152,7 @@
 
 <script type="module">
 import { MarkEngine, surfaceIsLight, loadFonts } from './mark-engine.js';
-import { sanitizeOps, sanitizePageDimensions, sanitizeSurface, limitsForPage } from './validate.js';
+import { sanitizeOps, sanitizePageDimensions, sanitizeSurface, sanitizeMotion, countFrames, limitsForPage } from './validate.js';
 /* glyph pages need their faces before any page or thumbnail is drawn */
 await loadFonts();
 
@@ -179,7 +179,9 @@ async function loadPage(meta) {
       if (surface === null) throw new Error(`page ${meta.index} surface rejected: ${surfaceErrors.join('; ')}`);
       const { ops, errors } = sanitizeOps(page.ops, limitsForPage(dimensions, surface));
       if (!ops) throw new Error(`page ${meta.index} rejected: ${errors.join('; ')}`);
-      return { ...page, page: dimensions, surface, ops };
+      const { motion, errors: motionErrors } = sanitizeMotion(page.motion, dimensions);
+      if (motion === null || (motion?.frames || 1) !== countFrames(ops)) throw new Error(`page ${meta.index} motion rejected: ${motionErrors.join('; ') || 'frame count does not match its marks'}`);
+      return { ...page, page: dimensions, surface, ops, motion };
     }));
   }
   return pageCache.get(meta.index);
@@ -292,8 +294,17 @@ async function open(index, push) {
   }
   $('stage').dataset.paper = page.surface?.kind === 'ink' ? (surfaceIsLight(page.surface) ? 'white' : '') : page.surface?.paper || '';
   engine.load(ops);
-  /* a page animates the first time you reach it, and is flat thereafter */
-  if (seen.has(index)) engine.finish(); else { engine.replay(); markSeen(index); }
+  await engine.ready();
+  if (current !== meta) return;
+  if (engine.frameCount > 1) {
+    /* a motion page loops its frames; click the stage to pause or play.
+       With reduced motion asked for, it waits on its first frame. */
+    motion = { pictures: engine.motionFrames(), fps: page.motion.fps, started: performance.now(), playing: !matchMedia('(prefers-reduced-motion: reduce)').matches };
+  } else {
+    motion = null;
+    /* a page animates the first time you reach it, and is flat thereafter */
+    if (seen.has(index)) engine.finish(); else { engine.replay(); markSeen(index); }
+  }
 
   $('pn').textContent = `page ${meta.index} of ${book.pageCount}`;
   $('title').textContent = meta.title;
@@ -355,12 +366,24 @@ window.addEventListener('keydown', (e) => {
 });
 
 const phaseEl = $('phase'), pctEl = $('pct'), dotEl = $('dot');
+let motion = null;
+cv.addEventListener('click', () => { if (motion) { motion.playing = !motion.playing; motion.started = performance.now(); } });
 let last = performance.now();
 (function frame() {
   requestAnimationFrame(frame);
   const now = performance.now();
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  if (motion) {
+    const n = motion.pictures.length;
+    const k = motion.playing ? Math.floor((now - motion.started) / 1000 * motion.fps) % n : 0;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.drawImage(motion.pictures[k], 0, 0, cv.width, cv.height);
+    phaseEl.textContent = motion.playing ? 'Motion' : 'Paused · click to play';
+    pctEl.textContent = `frame ${k + 1} of ${n}`;
+    return;
+  }
   engine.tick(dt, speed);
   engine.composite(ctx);
   if (engine.pen) {

@@ -210,6 +210,39 @@ try {
   ok(g.grainPores > 400 && g.grainPores < 9000 && g.grainSame, `grain knocks pores out of a shape, deterministically (${g.grainPores} px)`);
   ok(g.replayDiff === 0, `replay types the glyphs and ends on the finished page (${g.replayDiff} differing bytes)`);
 
+  console.log('motion');
+  const mo = await page.evaluate(async () => {
+    const { MarkEngine, GLYPHS, OP } = await import('/mark-engine.js');
+    const { compilePage } = await import('/page-program.js');
+    const surface = { kind: 'ink', version: 2, paper: '#000000' };
+    const loop = { title: 'loop', date: '2026-09-22', note: 'x', page: { w: 120, h: 60 }, surface, motion: { frames: 6, fps: 8 },
+      frame: (i, n) => [OP('s', [[10 + i * 15, 10], [10 + i * 15, 50]], 'line', 'brush', 2), GLYPHS(String(i), 100, 30, { size: 14 })] };
+    const { ops, meta } = compilePage(loop);
+    const out = { breaks: ops.filter((o) => o.k === 'frame').length, meta: meta.motion };
+    const e = new MarkEngine({ width: 120, height: 60, dpr: 1, surface });
+    e.load(ops); await e.ready();
+    out.count = e.frameCount;
+    const grab = () => { const c = document.createElement('canvas'); c.width = 120; c.height = 60; e.composite(c.getContext('2d')); return c.toDataURL(); };
+    e.finish(); const still = grab();
+    e.drawFrame(0); const f0 = grab();
+    e.drawFrame(3); const f3 = grab();
+    out.stillIsFirst = still === f0;
+    out.framesDiffer = f0 !== f3;
+    out.pictures = e.motionFrames().length;
+    e.drawFrame(0); out.leftOnFirst = grab() === f0;
+    const errs = [];
+    for (const bad of [{ ...loop, frame: undefined }, { ...loop, motion: { frames: 1 } }, { ...loop, motion: { frames: 97 } }, { ...loop, motion: { frames: 6, fps: 60 } }, { ...loop, passes: [] }]) {
+      try { compilePage(bad); errs.push('accepted'); } catch (err) { errs.push(err.message); }
+    }
+    out.refused = errs.filter((m) => m !== 'accepted').length;
+    return out;
+  });
+  ok(mo.breaks === 5 && mo.meta.frames === 6 && mo.meta.fps === 8, 'frame(i, n) compiles to one list of marks with frame breaks');
+  ok(mo.count === 6, 'the engine splits the frames');
+  ok(mo.stillIsFirst && mo.framesDiffer, 'finish() shows the first frame, and frames differ');
+  ok(mo.pictures === 6 && mo.leftOnFirst, 'every frame flattens once for looping, leaving the first frame showing');
+  ok(mo.refused === 5, 'a motion page needs frame(), 2..96 frames, fps 1..30, and no passes');
+
   const { sanitizeSurface, sanitizeOps, limitsForPage } = await import('../validate.js');
   console.log('validation');
   ok(sanitizeSurface({ kind: 'ink', version: 2, paper: 'cream' }).surface?.paper === '#f3eee2', 'a named paper resolves to its colour');
@@ -228,6 +261,42 @@ try {
   ok(sanitizeOps([{ k: 'f', poly: [[0, 0], [10, 0], [10, 10]], grain: 2 }], inkLimits).ops === null, 'grain outside 0..1 is refused');
   const t = sanitizeOps([{ k: 't', text: 'line one\nline two', pts: [[0, 0], [50, 50]], size: 12, font: 'sans', weight: 300, rot: 0.1, erase: true, junk: 1 }], inkLimits).ops;
   ok(t && t[0].pts && t[0].weight === 300 && t[0].erase === true && !('junk' in t[0]), 'glyph marks keep only the fields the engine reads');
+  const { sanitizeMotion, countFrames } = await import('../validate.js');
+  ok(sanitizeOps([{ k: 'frame' }], legacyLimits).ops === null, 'frames are refused without the second canvas');
+  ok(sanitizeOps(Array.from({ length: 97 }, () => ({ k: 'frame' })), inkLimits).ops === null, 'more than 96 frames is refused');
+  ok(countFrames([{ k: 'p', ms: 1 }, { k: 'frame' }, { k: 'frame' }]) === 3, 'frames are counted from their breaks');
+  ok(sanitizeMotion({ frames: 96, fps: 12 }, { w: 1000, h: 1000 }).motion === null, 'motion is bounded by frames × page area');
+  ok(sanitizeMotion({ frames: 24, fps: 12 }, { w: 400, h: 300 }).motion?.fps === 12, 'ordinary motion is accepted');
+
+  console.log('motion in the book');
+  {
+    const { mkdtemp, writeFile: write, readFile: read, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const run = (args) => execFileSync(process.execPath, ['book.mjs', ...args], { cwd: ROOT, encoding: 'utf8' });
+    const module = join(ROOT, 'pages', `_motion-test-${process.pid}.js`);
+    const dir = await mkdtemp(join(tmpdir(), 'sketch-motion-'));
+    await write(module, `import { OP } from '../mark-engine.js';
+export default { title: 'test loop', date: '2026-09-22', note: 'a bar that walks', page: { w: 160, h: 90 },
+  surface: { kind: 'ink', version: 2, paper: 'cream' }, motion: { frames: 4, fps: 6 },
+  frame: (i) => [OP('s', [[20 + i * 30, 20], [20 + i * 30, 70]], 'line', 'brush', 3)] };
+`);
+    try {
+      const preview = run(['preview', module, '--out', join(dir, 'sheet.png'), '--sheet']);
+      ok(/all 4 frames/.test(preview) && /Nothing was saved/.test(preview), 'preview renders a contact sheet and saves nothing');
+      run(['init', '--owner', 'Test', '--book', join(dir, 'book')]);
+      run(['write', module, '--book', join(dir, 'book')]);
+      const saved = JSON.parse(await read(join(dir, 'book', 'pages', '001.json'), 'utf8'));
+      ok(saved.motion?.frames === 4 && saved.motion?.fps === 6 && saved.ops.filter((o) => o.k === 'frame').length === 3, 'write keeps the motion and its frame breaks');
+      const render = run(['render', '1', '--book', join(dir, 'book'), '--out', join(dir, 'f2.png'), '--frame', '2', '--scale', '1']);
+      ok(/frame 2 of 4/.test(render), 'render draws a chosen frame of a saved motion page');
+      const sheet = await read(join(dir, 'sheet.png'));
+      ok(sheet.length > 2000 && sheet.readUInt32BE(16) > 160 * 0.5 * 2, `the contact sheet holds the frames side by side (${sheet.readUInt32BE(16)} px wide)`);
+    } finally {
+      await rm(module, { force: true });
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
   ok(errors.length === 0, `no page errors${errors.length ? ': ' + errors[0] : ''}`);
 } finally {
   await browser.close();

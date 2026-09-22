@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { compilePage } from '../page-program.js';
 import { surfaceIsLight } from '../mark-engine.js';
-import { sanitizeSurface, sanitizeOps, sanitizePageMeta, sanitizePageDimensions, limitsForPage } from '../validate.js';
+import { sanitizeSurface, sanitizeOps, sanitizePageMeta, sanitizePageDimensions, sanitizeMotion, countFrames, limitsForPage } from '../validate.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const run = promisify(execFile);
@@ -57,7 +57,7 @@ const node = () => ({
   getContext: () => ({}), setAttribute() {},
   replaceChildren(...children) { this.children = children; },
 });
-const validation = { sanitizeSurface, sanitizeOps, sanitizePageMeta, sanitizePageDimensions, limitsForPage };
+const validation = { sanitizeSurface, sanitizeOps, sanitizePageMeta, sanitizePageDimensions, sanitizeMotion, countFrames, limitsForPage };
 async function checkViewerTransitions() {
   class ElementProbe {
     attachShadow() {

@@ -11,13 +11,15 @@
  * Attributes: src, autoplay (draw on load; otherwise show it finished),
  * controls (draw-again / finish chips), speed (1–8), hud (phase and progress,
  * on by default; hud="off" hides it).
+ * A motion page (frames and fps in its meta) loops instead of replaying; click
+ * the stage to pause or play. With prefers-reduced-motion it waits, paused.
  * Events: sketch-load { ops, meta }, sketch-done, sketch-error { message }.
  * Every list of marks passes validate.js before the engine draws it.
  * Size it with CSS width; the height follows the page's dimensions (4:3 by default).
  */
 
 import { MarkEngine, surfaceIsLight } from './mark-engine.js';
-import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, sanitizeSurface, limitsForPage } from './validate.js';
+import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, sanitizeSurface, sanitizeMotion, countFrames, limitsForPage } from './validate.js';
 
 const W = 880, H = 660;
 const STYLE = `
@@ -72,6 +74,8 @@ export class SketchPage extends HTMLElement {
     this._doneFired = false;
     root.querySelector('[data-act="replay"]').onclick = () => this.replay();
     root.querySelector('[data-act="finish"]').onclick = () => this.finish();
+    this._motion = null;
+    this._cv.onclick = () => { if (this._motion) this._motion.playing ? this.finish() : this.replay(); };
   }
 
   connectedCallback() {
@@ -92,8 +96,15 @@ export class SketchPage extends HTMLElement {
   get meta() { return this._meta; }
   get engine() { return this._engine; }
 
-  replay() { if (this._ops.length) { this._doneFired = false; this._engine.replay(); } }
-  finish() { if (this._ops.length) { this._engine.finish(); this._fireDone(); } }
+  /* for a motion page, replay plays the loop from its start and finish pauses it */
+  replay() {
+    if (this._motion) { this._motion.playing = true; this._motion.started = performance.now(); return; }
+    if (this._ops.length) { this._doneFired = false; this._engine.replay(); }
+  }
+  finish() {
+    if (this._motion) { this._motion.playing = false; return; }
+    if (this._ops.length) { this._engine.finish(); this._fireDone(); }
+  }
   toDataURL(type) { return this._engine.toDataURL(type); }
 
   async _load(src) {
@@ -112,8 +123,10 @@ export class SketchPage extends HTMLElement {
     if (surface === null) { this._error('page surface rejected: ' + surfaceErrors.join('; ')); return; }
     const { ops, errors } = sanitizeOps(page.ops, limitsForPage(dimensions, surface));
     if (!ops) { this._error('marks rejected: ' + errors.slice(0, 3).join('; ')); return; }
+    const { motion, errors: motionErrors } = sanitizeMotion(page.motion, dimensions);
+    if (motion === null || (motion?.frames || 1) !== countFrames(ops)) { this._error('motion rejected: ' + (motionErrors.join('; ') || 'frame count does not match the marks')); return; }
     this._ops = ops;
-    this._meta = { ...sanitizePageMeta(page).meta, page: dimensions, ...(surface === undefined ? {} : { surface }) };
+    this._meta = { ...sanitizePageMeta(page).meta, page: dimensions, ...(surface === undefined ? {} : { surface }), ...(motion ? { motion } : {}) };
     if (dimensions.w !== this._page.w || dimensions.h !== this._page.h || JSON.stringify(surface) !== JSON.stringify(this._surface)) {
       const dpr = Math.max(1 / Math.min(dimensions.w, dimensions.h), Math.min(2, 1760 / Math.max(dimensions.w, dimensions.h)));
       this._engine = new MarkEngine({ width: dimensions.w, height: dimensions.h, dpr, surface });
@@ -128,9 +141,13 @@ export class SketchPage extends HTMLElement {
     const engine = this._engine;
     engine.load(ops);
     this._doneFired = false;
+    this._motion = null;
     const start = () => {
-      if (engine !== this._engine || engine.ops !== ops) return; // a newer page arrived meanwhile
-      if (this.hasAttribute('autoplay')) engine.replay(); else { engine.finish(); this._doneFired = true; }
+      if (engine !== this._engine || (engine.allOps ?? engine.ops) !== ops) return; // a newer page arrived meanwhile
+      if (motion && engine.motionFrames) {
+        this._motion = { pictures: engine.motionFrames(), fps: motion.fps, started: performance.now(), playing: !matchMedia('(prefers-reduced-motion: reduce)').matches };
+        this._doneFired = true;
+      } else if (this.hasAttribute('autoplay')) engine.replay(); else { engine.finish(); this._doneFired = true; }
       this.dispatchEvent(new CustomEvent('sketch-load', { detail: { ops, meta: this._meta } }));
       if (!this._raf && this.isConnected) this._loop();
     };
@@ -161,6 +178,18 @@ export class SketchPage extends HTMLElement {
       const now = performance.now();
       const dt = Math.min(0.05, (now - this._last) / 1000);
       this._last = now;
+      const m = this._motion;
+      if (m) {
+        const n = m.pictures.length;
+        const k = m.playing ? Math.floor((now - m.started) / 1000 * m.fps) % n : 0;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, this._cv.width, this._cv.height);
+        ctx.drawImage(m.pictures[k], 0, 0, this._cv.width, this._cv.height);
+        phase.textContent = m.playing ? 'Motion' : 'Paused · click to play';
+        pct.textContent = `${k + 1} / ${n}`;
+        dot.classList.toggle('live', m.playing);
+        return;
+      }
       const e = this._engine;
       const was = !!e.cursor;
       e.tick(dt, this.speed);

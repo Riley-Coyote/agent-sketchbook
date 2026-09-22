@@ -1,6 +1,25 @@
 /* One compilation contract for the CLI, browser sandbox and trusted atelier.
  * Keep this function self-contained: sandboxes evaluate its source locally. */
 export function compilePage(page) {
+  if (page && page.motion !== undefined) {
+    /* A motion page is a loop of frames: frame(i, n) draws frame i of n, and
+     * the frames are kept as one list of marks with a { k: 'frame' } break
+     * between them, so everything that stores and checks marks still works. */
+    const m = page.motion;
+    if (!m || typeof m !== 'object' || !Number.isInteger(m.frames) || m.frames < 2 || m.frames > 96) throw Error('motion needs frames: 2 to 96');
+    const fps = m.fps === undefined ? 12 : m.fps;
+    if (typeof fps !== 'number' || !(fps >= 1 && fps <= 30)) throw Error('motion fps needs 1 to 30');
+    if (typeof page.frame !== 'function') throw Error('a motion page draws with frame(i, n), which returns the marks of frame i');
+    if (page.passes !== undefined) throw Error('a motion page has frames, not passes');
+    const ops = [];
+    for (let i = 0; i < m.frames; i++) {
+      const marks = page.frame(i, m.frames);
+      if (!Array.isArray(marks)) throw Error(`frame(${i}) must return an array of marks`);
+      if (i) ops.push({ k: 'frame' });
+      for (const op of marks) ops.push(op);
+    }
+    return { ops, meta: { title: page.title, date: page.date, note: page.note, refs: page.refs, seed: page.seed, page: page.page, surface: page.surface, motion: { frames: m.frames, fps } } };
+  }
   if (!page || typeof page.build !== 'function') throw Error('page module must export default { title, date, note, build }');
   const ops = page.build();
   if (!Array.isArray(ops)) throw Error('build must return an array of marks');

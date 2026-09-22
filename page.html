@@ -39,12 +39,21 @@
   Object.assign(document.getElementById('stage').style, { width: `min(${w}px, 100%)`, height: 'auto', aspectRatio: `${w}/${h}` });
   Object.assign(cv.style, { width: '100%', height: '100%' });
   if (surfaceIsLight(paper.surface)) document.getElementById('hud').style.color = '#333';
-  const checked = sanitizeOps(page.build(), limitsForPage(dimensions.page, paper.surface));
+  const { compilePage } = await import('./page-program.js');
+  const compiled = compilePage(page);
+  const checked = sanitizeOps(compiled.ops, limitsForPage(dimensions.page, paper.surface));
   if (!checked.ops) throw new Error(checked.errors.join('; '));
   const ops = checked.ops;
   engine.load(ops);
   await engine.ready();
-  engine.replay();
+  /* a motion page loops its frames (unless the reader asked for less motion);
+     a still is drawn as it was made */
+  const fps = compiled.meta.motion?.fps || 12;
+  const pictures = engine.frameCount > 1 ? engine.motionFrames() : null;
+  let playing = pictures && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let started = performance.now();
+  if (pictures) cv.onclick = () => { playing = !playing; started = performance.now(); };
+  else engine.replay();
   window.engine = engine; window.ops = ops;
   document.getElementById('note').textContent = `${page.title} — ${page.date} — ${page.note}`;
   document.getElementById('replay').onclick = () => engine.replay();
@@ -55,6 +64,14 @@
     requestAnimationFrame(frame);
     const now = performance.now();
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (pictures) {
+      const k = playing ? Math.floor((now - started) / 1000 * fps) % pictures.length : 0;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      ctx.drawImage(pictures[k], 0, 0, cv.width, cv.height);
+      hud.textContent = `frame ${k + 1} of ${pictures.length} · ${fps} fps${playing ? '' : ' · paused, click to play'}`;
+      return;
+    }
     engine.tick(dt, 3);
     engine.composite(ctx);
     hud.textContent = engine.phase || (engine.done ? `${ops.length} ops` : 'Ready');
