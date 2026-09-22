@@ -151,8 +151,10 @@
   </main>
 
 <script type="module">
-import { MarkEngine, surfaceIsLight } from './mark-engine.js';
+import { MarkEngine, surfaceIsLight, loadFonts } from './mark-engine.js';
 import { sanitizeOps, sanitizePageDimensions, sanitizeSurface, limitsForPage } from './validate.js';
+/* glyph pages need their faces before any page or thumbnail is drawn */
+await loadFonts();
 
 const $ = (id) => document.getElementById(id);
 /* ?book=<dir> opens another mind's book; one folder each */

@@ -133,6 +133,74 @@ export const LAYERS = [
   { key: 'accent', name: 'Accent',       op: 1 },
 ];
 
+/* ------------------------------------------------------------ glyphs */
+/* Text as marks, on the second canvas. Type is the medium a language mind is
+ * most at home in: ASCII and braille images, concrete poetry, calligrams,
+ * lettering. Glyphs are set in two bundled faces so a page renders the same
+ * everywhere, and they are typed out one by one on replay. Braille patterns
+ * and block elements are drawn as geometry — dots and cells — so grids tile
+ * without font seams. There is still no raster op: a glyph is a vector mark
+ * from a known face, like a stroke is a run of stamps. */
+export const FONTS = {
+  mono: { family: 'SketchMono', file: './fonts/jetbrains-mono-nl.woff', advance: 0.6 },
+  sans: { family: 'SketchSans', file: './fonts/inter.woff', weight: '100 900' },
+};
+let fontsLoading = null;
+/** Register and load the bundled faces once per document. Never throws: a
+ * missing face falls back to the platform's, rather than losing the page. */
+export function loadFonts() {
+  if (typeof document === 'undefined' || !document.fonts || typeof FontFace === 'undefined') return Promise.resolve();
+  fontsLoading ||= Promise.all(Object.values(FONTS).map(async (f) => {
+    const face = new FontFace(f.family, `url(${new URL(f.file, import.meta.url)}) format('woff')`, f.weight ? { weight: f.weight } : {});
+    document.fonts.add(face);
+    await face.load();
+  })).catch(() => {});
+  return fontsLoading;
+}
+
+const GLYPH_KEYS = ['size', 'font', 'layer', 'c', 'alpha', 'rot', 'track', 'align', 'line', 'weight', 'wob', 'erase'];
+const glyphOpts = (o) => Object.fromEntries(GLYPH_KEYS.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
+
+/** A run of glyphs from (x, y) on its baseline. `\n` starts a new line.
+ * opts: size px (16) · font 'mono' | 'sans' · layer ('line') · c [r,g,b] ·
+ * alpha · rot radians · track (extra em between glyphs) · align
+ * 'left' | 'center' | 'right' · line (line height px) · weight 100–900 (sans)
+ * · wob 0–1 (the hand's unevenness) · erase (cut the text out of the layer). */
+export const GLYPHS = (text, x, y, opts = {}) => ({ k: 't', text, x, y, ...glyphOpts(opts) });
+/** Glyphs set along a path, each turned to it: `pts` is the baseline. */
+export const ALONG = (text, pts, opts = {}) => ({ k: 't', text, pts, ...glyphOpts(opts) });
+/** A monospace block — ASCII, braille, box drawing — one op per non-empty row.
+ * Cells are 0.6 × size wide and `line` (1.25 × size) tall, and tile exactly. */
+export function GRID(rows, x, y, opts = {}) {
+  const size = opts.size ?? 12;
+  const line = opts.line ?? size * 1.25;
+  const out = [];
+  rows.forEach((row, i) => { if (row.length) out.push({ k: 't', text: row, x, y: y + i * line, ...glyphOpts({ ...opts, size, line, font: 'mono' }) }); });
+  return out;
+}
+
+/** A flat shape: print, cut paper, a colour field. `grain` (0–1) takes ink out
+ * in a fixed speckle anchored to the page, as a screen or riso pull does; the
+ * same grain lines up across every shape. `erase` cuts the shape out instead. */
+export const SHAPE = (poly, c = undefined, opts = {}) => ({ k: 'f', poly, ...(c ? { c } : {}), ...Object.fromEntries(['layer', 'alpha', 'grain', 'erase'].filter((k) => opts[k] !== undefined).map((k) => [k, opts[k]])) });
+
+const hash01 = (a, b) => frac(Math.sin(a * 127.1 + b * 311.7) * 43758.5453);
+const BRAILLE_DOTS = [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2], [0, 3], [1, 3]];
+
+/* Block elements as cells [x0, y0, x1, y1] in eighths of the cell, plus shade. */
+function blockCells(cp) {
+  const Q = { ul: [0, 0, 4, 4], ur: [4, 0, 8, 4], ll: [0, 4, 4, 8], lr: [4, 4, 8, 8] };
+  if (cp === 0x2580) return [[0, 0, 8, 4]];
+  if (cp >= 0x2581 && cp <= 0x2588) { const n = cp - 0x2580; return [[0, 8 - n, 8, 8]]; }
+  if (cp >= 0x2589 && cp <= 0x258f) { const n = 0x2590 - cp; return [[0, 0, n, 8]]; }
+  if (cp === 0x2590) return [[4, 0, 8, 8]];
+  if (cp >= 0x2591 && cp <= 0x2593) return [[0, 0, 8, 8, (cp - 0x2590) * 0.25]];
+  if (cp === 0x2594) return [[0, 0, 8, 1]];
+  if (cp === 0x2595) return [[7, 0, 8, 8]];
+  const quads = { 0x2596: ['ll'], 0x2597: ['lr'], 0x2598: ['ul'], 0x2599: ['ul', 'll', 'lr'], 0x259a: ['ul', 'lr'], 0x259b: ['ul', 'ur', 'll'], 0x259c: ['ul', 'ur', 'lr'], 0x259d: ['ur'], 0x259e: ['ur', 'll'], 0x259f: ['ur', 'll', 'lr'] }[cp];
+  return quads ? quads.map((q) => Q[q]) : [];
+}
+
 /* ------------------------------------------------------------------ helpers */
 
 export const frac = (v) => v - Math.floor(v);
@@ -465,6 +533,16 @@ export class MarkEngine {
     }
   }
 
+  /** Load what the page's marks need before drawing: the glyph faces. Call
+   * after load() and before finish() or replay(). Harmless for other pages. */
+  async ready() {
+    if (this.ops.some((o) => o.k === 't')) {
+      await loadFonts();
+      this.plans = new WeakMap(); // measurements taken before the faces arrived are stale
+    }
+    return this;
+  }
+
   /** Start replaying from blank. */
   replay() {
     this.clear();
@@ -607,6 +685,8 @@ export class MarkEngine {
     if (op.k === 'clamp') return 0.02;
     if (op.k === 'occ') return 0.03;
     if (op.k === 'd') return 0.12;
+    if (op.k === 'f') return 0.25;
+    if (op.k === 't') return Math.max(0.05, Array.from(op.text).length * Math.min(0.04, Math.max(0.006, (op.size ?? 16) * 0.0015)));
     const br = BRUSHES[op.brush] || BRUSHES.brush;
     const px = op.k === 'g' ? 1300 : br === BRUSHES.wash ? 1500 : 620;
     return Math.max(0.05, this.resample(op).len / px);
@@ -645,6 +725,189 @@ export class MarkEngine {
     else ctx.arc(gx, gy, w, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
+  }
+
+  /** Where each glyph of a text op goes, fixed once per op (after ready()). */
+  glyphPlan(op) {
+    let plan = this.plans.get(op);
+    if (plan) return plan;
+    const size = op.size ?? 16;
+    const mono = (op.font ?? 'mono') === 'mono';
+    const lh = op.line ?? size * 1.25;
+    const css = mono ? `${size}px ${FONTS.mono.family}, monospace` : `${op.weight ?? 400} ${size}px ${FONTS.sans.family}, sans-serif`;
+    /* Measure on a context of our own, set once: the layer contexts change
+     * font and state as they draw, so they can't be trusted to hold this one. */
+    this._measure ||= document.createElement('canvas').getContext('2d');
+    const ctx = this._measure;
+    ctx.font = css;
+    const advance = (ch) => (mono ? size * FONTS.mono.advance : ctx.measureText(ch).width);
+    const track = (op.track ?? 0) * size;
+    const rot = op.rot ?? 0;
+    const wob = op.wob ?? 0;
+    const glyphs = [];
+    const push = (ch, x, y, a, w) => {
+      const i = glyphs.length;
+      glyphs.push({
+        ch, w,
+        x: x + (hash01(i, 1.3) - 0.5) * wob * size * 0.12,
+        y: y + (hash01(i, 2.7) - 0.5) * wob * size * 0.12,
+        a: a + (hash01(i, 4.1) - 0.5) * wob * 0.22,
+      });
+    };
+    if (op.pts) {
+      const P = op.pts;
+      const cum = [0];
+      for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]));
+      const L = cum.at(-1);
+      const chars = Array.from(op.text.replace(/\n/g, ' '));
+      const widths = chars.map(advance);
+      const total = widths.reduce((a, b) => a + b, 0) + track * Math.max(0, chars.length - 1);
+      /* Past either end, text runs on along the path's end direction rather
+       * than piling up where the path stops. */
+      const at = (s) => {
+        let j = 0;
+        while (j < P.length - 2 && cum[j + 1] < s) j++;
+        const seg = cum[j + 1] - cum[j] || 1;
+        const t = (s - cum[j]) / seg;
+        return [P[j][0] + (P[j + 1][0] - P[j][0]) * t, P[j][1] + (P[j + 1][1] - P[j][1]) * t, Math.atan2(P[j + 1][1] - P[j][1], P[j + 1][0] - P[j][0])];
+      };
+      let s = op.align === 'center' ? (L - total) / 2 : op.align === 'right' ? L - total : 0;
+      chars.forEach((ch, i) => {
+        const [x, y] = at(s);
+        const [, , a] = at(s + widths[i] / 2);
+        if (ch !== ' ') push(ch, x, y, a + rot, widths[i]);
+        s += widths[i] + track;
+      });
+    } else {
+      const cos = Math.cos(rot), sin = Math.sin(rot);
+      op.text.split('\n').forEach((line, li) => {
+        const chars = Array.from(line);
+        const widths = chars.map(advance);
+        const total = widths.reduce((a, b) => a + b, 0) + track * Math.max(0, chars.length - 1);
+        let ox = op.align === 'center' ? -total / 2 : op.align === 'right' ? -total : 0;
+        const oy = li * lh;
+        chars.forEach((ch, i) => {
+          if (ch !== ' ') push(ch, op.x + ox * cos - oy * sin, op.y + ox * sin + oy * cos, rot, widths[i]);
+          ox += widths[i] + track;
+        });
+      });
+    }
+    plan = { css, size, lh, glyphs };
+    this.plans.set(op, plan);
+    return plan;
+  }
+
+  drawGlyph(g, op, plan) {
+    const L = this.layers[op.layer ?? 'line'] || this.layers.line;
+    const ctx = L.ctx;
+    const [r, gg, b] = op.c || this.ink;
+    ctx.save();
+    ctx.translate(g.x, g.y);
+    ctx.rotate(g.a);
+    if (op.erase) ctx.globalCompositeOperation = 'destination-out';
+    ctx.globalAlpha *= op.alpha ?? 1;
+    ctx.fillStyle = `rgb(${r},${gg},${b})`;
+    const cp = g.ch.codePointAt(0);
+    const top = -0.8 * plan.lh;
+    if (cp >= 0x2800 && cp <= 0x28ff) {
+      const bits = cp - 0x2800;
+      const rad = Math.min(g.w, plan.lh / 2) * 0.17;
+      BRAILLE_DOTS.forEach(([col, row], i) => {
+        if (!(bits & (1 << i))) return;
+        ctx.beginPath();
+        ctx.arc(g.w * (0.3 + col * 0.4), top + plan.lh * (0.14 + row * 0.24), rad, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    } else if (cp >= 0x2580 && cp <= 0x259f) {
+      /* Upright cells snap their edges to device pixels, so neighbours meet
+       * exactly: no antialiased seam, no double-darkened overlap, even at
+       * partial alpha. Turned cells can't snap, so solid ones bleed a hair. */
+      const upright = Math.abs(g.a) < 1e-9;
+      const snapX = (v) => (upright ? Math.round((g.x + v) * this.dpr) / this.dpr - g.x : v);
+      const snapY = (v) => (upright ? Math.round((g.y + v) * this.dpr) / this.dpr - g.y : v);
+      for (const [x0, y0, x1, y1, shade] of blockCells(cp)) {
+        const bleed = upright || shade ? 0 : 0.3;
+        if (shade) ctx.globalAlpha *= shade;
+        const l = snapX(g.w * x0 / 8) - bleed / 2, r = snapX(g.w * x1 / 8) + bleed / 2;
+        const t = snapY(top + plan.lh * y0 / 8) - bleed / 2, b = snapY(top + plan.lh * y1 / 8) + bleed / 2;
+        ctx.fillRect(l, t, r - l, b - t);
+      }
+    } else {
+      ctx.font = plan.css;
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(g.ch, 0, 0);
+    }
+    ctx.restore();
+    this.pen = { x: g.x, y: g.y };
+  }
+
+  drawShape(op) {
+    const L = this.layers[op.layer ?? 'tone'] || this.layers.tone;
+    const [r, gg, b] = op.c || this.ink;
+    const trace = (ctx) => {
+      ctx.beginPath();
+      op.poly.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+      ctx.closePath();
+    };
+    const grain = op.grain ?? 0;
+    if (!grain) {
+      const ctx = L.ctx;
+      ctx.save();
+      if (op.erase) ctx.globalCompositeOperation = 'destination-out';
+      ctx.globalAlpha *= op.alpha ?? 1;
+      ctx.fillStyle = `rgb(${r},${gg},${b})`;
+      trace(ctx);
+      ctx.fill();
+      ctx.restore();
+    } else {
+      /* Pull the shape on a scratch sheet, knock the grain out of it there,
+       * then lay it down: the speckle is anchored to the page, not the shape. */
+      const xs = op.poly.map((p) => p[0]), ys = op.poly.map((p) => p[1]);
+      const x0 = Math.max(0, Math.floor(Math.min(...xs) * this.dpr) - 2), y0 = Math.max(0, Math.floor(Math.min(...ys) * this.dpr) - 2);
+      const x1 = Math.min(L.cv.width, Math.ceil(Math.max(...xs) * this.dpr) + 2), y1 = Math.min(L.cv.height, Math.ceil(Math.max(...ys) * this.dpr) + 2);
+      if (x1 <= x0 || y1 <= y0) return;
+      const sheet = document.createElement('canvas');
+      sheet.width = x1 - x0; sheet.height = y1 - y0;
+      const s = this.v2 ? sheet.getContext('2d', { colorType: 'float16' }) : sheet.getContext('2d');
+      s.setTransform(this.dpr, 0, 0, this.dpr, -x0, -y0);
+      s.fillStyle = `rgb(${r},${gg},${b})`;
+      trace(s);
+      s.fill();
+      s.setTransform(1, 0, 0, 1, 0, 0);
+      s.globalCompositeOperation = 'destination-out';
+      s.globalAlpha = Math.min(1, grain);
+      const pattern = s.createPattern(this.grainTile(), 'repeat');
+      pattern.setTransform(new DOMMatrix().translate(-x0, -y0));
+      s.fillStyle = pattern;
+      s.fillRect(0, 0, sheet.width, sheet.height);
+      const ctx = L.ctx;
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      if (op.erase) ctx.globalCompositeOperation = 'destination-out';
+      ctx.globalAlpha = op.alpha ?? 1;
+      ctx.drawImage(sheet, x0, y0);
+      ctx.restore();
+    }
+    this.pen = { x: op.poly[0][0], y: op.poly[0][1] };
+  }
+
+  /** A fixed speckle, the same on every machine: most of the tile is solid,
+   * and a scatter of pores and small voids is where the ink didn't take. */
+  grainTile() {
+    if (this._grain) return this._grain;
+    const n = 192;
+    const tile = document.createElement('canvas');
+    tile.width = tile.height = n;
+    const t = tile.getContext('2d');
+    const im = t.createImageData(n, n);
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        const v = hash01(x + 0.5, y + 0.5) * 0.7 + hash01(Math.floor(x / 3) + 0.25, Math.floor(y / 3) + 0.75) * 0.3;
+        im.data[(y * n + x) * 4 + 3] = v > 0.62 ? Math.min(255, (v - 0.62) * 900) : 0;
+      }
+    }
+    t.putImageData(im, 0, 0);
+    return (this._grain = tile);
   }
 
   /** The second canvas's stamp positions for a stroke, fixed once per op.
@@ -733,6 +996,19 @@ export class MarkEngine {
         ctx.fill();
         ctx.restore();
       }
+      return;
+    }
+
+    if (op.k === 't') {
+      const plan = this.glyphPlan(op);
+      const N = plan.glyphs.length;
+      const k0 = Math.floor(from * N);
+      const k1 = to >= 1 ? N : Math.floor(to * N);
+      for (let k = k0; k < k1; k++) this.drawGlyph(plan.glyphs[k], op, plan);
+      return;
+    }
+    if (op.k === 'f') {
+      if (from === 0) this.drawShape(op);
       return;
     }
 

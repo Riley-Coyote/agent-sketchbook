@@ -30,7 +30,7 @@ try {
   console.log(`  skip legacy parity: tag ${TAG} is not in this clone`);
 }
 
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json' };
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.woff': 'font/woff' };
 const server = createServer(async (req, res) => {
   const path = decodeURIComponent((req.url || '/').split('?')[0]);
   if (path === '/__blank.html') { res.writeHead(200, { 'content-type': 'text/html' }); return res.end('<!doctype html><meta charset="utf-8"><body>'); }
@@ -143,6 +143,73 @@ try {
   ok(near(r.paper, [243, 238, 226], 1), `cream paper is painted under the page (${r.paper})`);
   ok(r.darkInk, 'default ink is dark on light paper and light on night');
 
+  console.log('glyphs and shapes');
+  const g = await page.evaluate(async () => {
+    const { MarkEngine, GLYPHS, GRID, ALONG, SHAPE, OP, loadFonts } = await import('/mark-engine.js');
+    await loadFonts();
+    const surface = { kind: 'ink', version: 2, paper: '#ffffff' };
+    const draw = async (ops, w = 200, h = 80, dpr = 1) => {
+      const e = new MarkEngine({ width: w, height: h, dpr, surface });
+      e.load(ops); await e.ready(); e.finish();
+      const c = document.createElement('canvas'); c.width = w * dpr; c.height = h * dpr;
+      e.composite(c.getContext('2d'));
+      return c.getContext('2d').getImageData(0, 0, w * dpr, h * dpr).data;
+    };
+    const inked = (d) => { let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 200) n++; return n; };
+    const out = {};
+    out.faces = document.fonts.check('16px SketchMono') && document.fonts.check('400 16px SketchSans');
+    // A block grid is solid: no seam where cells meet, across columns or rows.
+    const solid = await draw(GRID(['████████', '████████', '████████'], 20, 30, { size: 16 }));
+    const px = (d, x, y, w = 200) => d[(y * w + x) * 4];
+    const cw = 16 * 0.6, lh = 16 * 1.25, top = 30 - 0.8 * lh;
+    const seams = [];
+    for (let c = 1; c < 8; c++) seams.push(px(solid, Math.round(20 + c * cw), Math.round(top + lh * 1.5)));
+    for (let r = 1; r < 3; r++) seams.push(px(solid, Math.round(20 + cw * 3.5), Math.round(top + r * lh)));
+    out.seams = Math.max(...seams);
+    out.solid = px(solid, Math.round(20 + cw * 3.5), Math.round(top + lh * 1.5));
+    // At half alpha an overlap would show as a darker line and a gap as a lighter one.
+    const half = await draw(GRID(['████████', '████████', '████████'], 20, 30, { size: 16, alpha: 0.5 }));
+    const halfSeams = [];
+    for (let c = 1; c < 8; c++) halfSeams.push(px(half, Math.round(20 + c * cw), Math.round(top + lh * 1.5)));
+    for (let r = 1; r < 3; r++) halfSeams.push(px(half, Math.round(20 + cw * 3.5), Math.round(top + r * lh)));
+    out.halfSolid = px(half, Math.round(20 + cw * 3.5), Math.round(top + lh * 1.5));
+    out.halfSeams = Math.max(...halfSeams.map((v) => Math.abs(v - out.halfSolid))) + out.halfSolid;
+    // Braille is drawn as dots: the blank pattern draws nothing, the full one does.
+    out.brailleBlank = inked(await draw([GLYPHS('⠀⠀⠀', 20, 40, { size: 24 })]));
+    out.brailleFull = inked(await draw([GLYPHS('⣿⣿⣿', 20, 40, { size: 24 })]));
+    // Glyphs set in the bundled face, and text on a path is laid along it.
+    out.text = inked(await draw([GLYPHS('mark', 10, 50, { font: 'sans', size: 40 })]));
+    out.along = inked(await draw([ALONG('along', [[10, 60], [190, 20]], { size: 18 })]));
+    // Erased text lifts pigment out of what is beneath it.
+    const field = SHAPE([[0, 0], [200, 0], [200, 80], [0, 80]], [20, 20, 20]);
+    out.fieldInk = inked(await draw([field]));
+    out.cutInk = inked(await draw([field, GLYPHS('HOLE', 10, 60, { font: 'sans', size: 50, weight: 800, layer: 'tone', erase: true })]));
+    // Grain knocks pores out of a shape, the same way every time.
+    const grainy = [SHAPE([[0, 0], [200, 0], [200, 80], [0, 80]], [20, 20, 20], { grain: 0.8 })];
+    const a = await draw(grainy), b = await draw(grainy);
+    let same = true; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) { same = false; break; }
+    out.grainPores = 200 * 80 - inked(a);
+    out.grainSame = same;
+    // Replay types glyphs one by one and ends on the finished page.
+    const ops = [field, ...GRID(['a⣿█▚', '╭──╮'], 10, 30, { size: 14, c: [240, 240, 240] }), ALONG('path', [[10, 70], [150, 50]], { font: 'sans', size: 16, c: [200, 60, 40] }), OP('s', [[5, 5], [190, 75]], 'line', 'pencil', 1)];
+    const f = new MarkEngine({ width: 200, height: 80, dpr: 1, surface }); f.load(ops); await f.ready(); f.finish();
+    const r = new MarkEngine({ width: 200, height: 80, dpr: 1, surface }); r.load(ops); await r.ready(); r.replay();
+    let steps = 0; while (r.tick(0.009 + (steps % 5) * 0.007, 2) && steps < 100000) steps++;
+    const flatten = (e) => { const c = document.createElement('canvas'); c.width = 200; c.height = 80; e.composite(c.getContext('2d')); return c.getContext('2d').getImageData(0, 0, 200, 80).data; };
+    const fa = flatten(f), fb = flatten(r);
+    let diff = 0; for (let i = 0; i < fa.length; i++) if (fa[i] !== fb[i]) diff++;
+    out.replayDiff = diff;
+    return out;
+  });
+  ok(g.faces, 'the bundled mono and sans faces load');
+  ok(g.seams <= g.solid + 2, `a block grid has no seams between cells or rows (seam ${g.seams}, solid ${g.solid})`);
+  ok(g.halfSeams <= g.halfSolid + 2, `a half-alpha block grid neither gaps nor darkens at joins (seam ${g.halfSeams}, solid ${g.halfSolid})`);
+  ok(g.brailleBlank === 0 && g.brailleFull > 80, `braille is drawn as dots (blank pattern ${g.brailleBlank} px, full ${g.brailleFull} px)`);
+  ok(g.text > 150 && g.along > 60, `glyphs render, on a baseline and along a path (${g.text}, ${g.along} px)`);
+  ok(g.fieldInk === 16000 && g.cutInk < 15000, `erased text lifts the pigment beneath (${16000 - g.cutInk} px cut)`);
+  ok(g.grainPores > 400 && g.grainPores < 9000 && g.grainSame, `grain knocks pores out of a shape, deterministically (${g.grainPores} px)`);
+  ok(g.replayDiff === 0, `replay types the glyphs and ends on the finished page (${g.replayDiff} differing bytes)`);
+
   const { sanitizeSurface, sanitizeOps, limitsForPage } = await import('../validate.js');
   console.log('validation');
   ok(sanitizeSurface({ kind: 'ink', version: 2, paper: 'cream' }).surface?.paper === '#f3eee2', 'a named paper resolves to its colour');
@@ -153,6 +220,14 @@ try {
   const inkLimits = limitsForPage({ w: 400, h: 300 }, { kind: 'ink', version: 2 });
   ok(sanitizeOps([{ k: 's', pts: [[0, 0], [10, 10]], layer: 'line', brush: 'liner' }], inkLimits).ops?.length === 1, 'ink pages take ordinary marks');
   ok(sanitizeOps([{ k: 'clean', tool: 'stump' }], inkLimits).ops === null, 'ink pages refuse material gestures');
+  const legacyLimits = limitsForPage({ w: 400, h: 300 });
+  ok(sanitizeOps([{ k: 't', text: 'hi', x: 10, y: 10 }], legacyLimits).ops === null, 'glyphs are refused on pages without the second canvas');
+  ok(sanitizeOps([{ k: 't', text: 'hi', x: 10, y: 10, font: 'serif' }], inkLimits).ops === null, 'an unbundled face is refused');
+  ok(sanitizeOps([{ k: 't', text: 'x'.repeat(4001), x: 10, y: 10 }], inkLimits).ops === null, 'text over 4000 characters is refused');
+  ok(sanitizeOps([{ k: 't', text: 'a\u0007b', x: 10, y: 10 }], inkLimits).ops === null, 'control characters are refused');
+  ok(sanitizeOps([{ k: 'f', poly: [[0, 0], [10, 0], [10, 10]], grain: 2 }], inkLimits).ops === null, 'grain outside 0..1 is refused');
+  const t = sanitizeOps([{ k: 't', text: 'line one\nline two', pts: [[0, 0], [50, 50]], size: 12, font: 'sans', weight: 300, rot: 0.1, erase: true, junk: 1 }], inkLimits).ops;
+  ok(t && t[0].pts && t[0].weight === 300 && t[0].erase === true && !('junk' in t[0]), 'glyph marks keep only the fields the engine reads');
   ok(errors.length === 0, `no page errors${errors.length ? ': ' + errors[0] : ''}`);
 } finally {
   await browser.close();

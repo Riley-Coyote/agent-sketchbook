@@ -124,7 +124,7 @@ async function buildPage(modPath) {
  * the same three calls by hand and exits 2.
  */
 
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.css': 'text/css' };
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.css': 'text/css', '.woff': 'font/woff' };
 
 const MANUAL = `render draws the page in a real browser — the engine needs a canvas — and
 playwright is not installed here.
@@ -171,7 +171,9 @@ const RENDER_HTML = `<!doctype html><meta charset="utf-8"><title>render</title>
 import { MarkEngine } from '/mark-engine.js';
 const page = await (await fetch('/__page.json')).json();
 const engine = new MarkEngine({ width: page.w, height: page.h, dpr: page.scale, surface: page.surface });
-engine.load(page.ops).finish();
+engine.load(page.ops);
+await engine.ready();
+engine.finish();
 const flat = engine.toDataURL();
 if (page.transparent || page.surface) { window.__png = flat; }
 else {

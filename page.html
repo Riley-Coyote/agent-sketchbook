@@ -42,7 +42,9 @@
   const checked = sanitizeOps(page.build(), limitsForPage(dimensions.page, paper.surface));
   if (!checked.ops) throw new Error(checked.errors.join('; '));
   const ops = checked.ops;
-  engine.load(ops).replay();
+  engine.load(ops);
+  await engine.ready();
+  engine.replay();
   window.engine = engine; window.ops = ops;
   document.getElementById('note').textContent = `${page.title} — ${page.date} — ${page.note}`;
   document.getElementById('replay').onclick = () => engine.replay();

@@ -8,6 +8,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { compilePage } from '../page-program.js';
+import { surfaceIsLight } from '../mark-engine.js';
 import { sanitizeSurface, sanitizeOps, sanitizePageMeta, sanitizePageDimensions, limitsForPage } from '../validate.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -71,7 +72,7 @@ async function checkViewerTransitions() {
   }
   const source = (await readFile(join(ROOT, 'sketch-page.js'), 'utf8'))
     .replace(/^import .*;$/gm, '').replace('export class SketchPage', 'class SketchPage');
-  const context = vm.createContext({ ...validation, MarkEngine: EngineProbe, HTMLElement: ElementProbe, customElements: { get: () => true }, CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } } });
+  const context = vm.createContext({ ...validation, surfaceIsLight, MarkEngine: EngineProbe, HTMLElement: ElementProbe, customElements: { get: () => true }, CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } } });
   vm.runInContext(source + '\nthis.SketchPage = SketchPage;', context);
   const element = new context.SketchPage();
   const set = (paper, ops = materialOps) => { element.ops = { page: dimensions, surface: paper, ops }; };
@@ -105,7 +106,7 @@ async function checkViewerTransitions() {
   const controller = (await readFile(join(ROOT, 'atelier.js'), 'utf8'))
     .replace(/^import .*;$/gm, '')
     .replace(/await import\(`\.\/pages\/\$\{name\}\.js\?v=\$\{Date\.now\(\)\}-\$\{version\+\+\}`\)/, 'await getCandidate()');
-  const atelierContext = vm.createContext({ ...validation, compilePage, MarkEngine: EngineProbe, document, URLSearchParams, location: { search: '?p=test' }, requestAnimationFrame() {}, getCandidate: () => ({ default: candidate }) });
+  const atelierContext = vm.createContext({ ...validation, compilePage, loadFonts: async () => {}, MarkEngine: EngineProbe, document, URLSearchParams, location: { search: '?p=test' }, requestAnimationFrame() {}, getCandidate: () => ({ default: candidate }) });
   const atelier = await vm.runInContext(`(async () => { ${controller}\nreturn { load, snapshot: () => ({ engine, passes, allOps, currentSurface }) }; })()`, atelierContext);
   const first = atelier.snapshot();
   await atelier.load();

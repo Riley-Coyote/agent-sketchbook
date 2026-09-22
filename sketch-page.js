@@ -125,11 +125,17 @@ export class SketchPage extends HTMLElement {
     }
     this.shadowRoot.querySelector('.stage').dataset.paper = surface?.kind === 'ink' ? (surfaceIsLight(surface) ? 'white' : '') : surface?.paper || '';
     this.shadowRoot.querySelector('.err').hidden = true;
-    this._engine.load(ops);
+    const engine = this._engine;
+    engine.load(ops);
     this._doneFired = false;
-    if (this.hasAttribute('autoplay')) this._engine.replay(); else { this._engine.finish(); this._doneFired = true; }
-    this.dispatchEvent(new CustomEvent('sketch-load', { detail: { ops, meta: this._meta } }));
-    if (!this._raf && this.isConnected) this._loop();
+    const start = () => {
+      if (engine !== this._engine || engine.ops !== ops) return; // a newer page arrived meanwhile
+      if (this.hasAttribute('autoplay')) engine.replay(); else { engine.finish(); this._doneFired = true; }
+      this.dispatchEvent(new CustomEvent('sketch-load', { detail: { ops, meta: this._meta } }));
+      if (!this._raf && this.isConnected) this._loop();
+    };
+    /* glyph pages wait for their faces; every other page starts at once */
+    if (ops.some((o) => o.k === 't')) engine.ready().then(start); else start();
   }
 
   _error(message) {

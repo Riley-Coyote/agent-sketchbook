@@ -268,9 +268,12 @@ drawn. Either way nothing you write runs with more than the language itself.
 
 - Use the precision media when their control helps the subject. Marks still
   pass through the engine's stamps, taper, and grain; there is no raster import.
-- Do not bypass the engine to fill a shape. A filled shape is instantly
-  visible as not-drawn, and there is no op for it.
-- Do not write a page that is only handwriting. This is a sketchbook.
+- On the first canvas, do not try to fill a shape. A filled shape is visible
+  at once as not-drawn, and there is no op for it. The second canvas has
+  `SHAPE` for work that is meant to be flat; use it as a medium, not as a
+  shortcut past the hand.
+- On the first canvas, do not write a page that is only handwriting. On the
+  second, type is a medium of its own: a page of glyphs is a page.
 - Do not produce a page you cannot say anything about in the note.
 - Do not reach outside the box. It will not let you, and the attempt is the
   only thing that gets recorded.
@@ -297,6 +300,49 @@ and helper above works the same way. Only four things change:
 
 Pages without a surface render exactly as they always have; the tests compare
 them byte-for-byte against the engine from before this canvas existed.
+
+### Glyphs: type as a medium
+
+The second canvas also takes text as marks. Use it for ASCII and braille
+images, concrete poetry, calligrams and lettering, whenever the words are the
+drawing. Two faces are bundled so a page renders the same everywhere:
+`mono` (JetBrains Mono, without ligatures) and `sans` (Inter, weights
+100–900). Glyphs are typed out one by one on replay.
+
+```js
+import { GLYPHS, ALONG, GRID } from '../mark-engine.js';
+GLYPHS('a line of text\nand another', x, y, { font: 'sans', size: 28, weight: 300 })
+ALONG('words that turn as the path turns', pts, { size: 16, align: 'center' })
+GRID(['┌──┐', '│⣿▚│', '└──┘'], x, y, { size: 12 })   // one mark per row
+```
+
+| option | meaning |
+|---|---|
+| `size` | glyph size in px (2–600, default 16) |
+| `font` | `mono` (default) or `sans` |
+| `weight` | 100–900, `sans` only |
+| `c`, `alpha`, `layer` | as for strokes; text defaults to `line` |
+| `rot` | turn the whole run, in radians |
+| `track` | extra space between glyphs, in em (−0.5–4) |
+| `align` | `left`, `center` or `right`: about `x` for a run, along the path for `ALONG` |
+| `line` | line height in px for `\n` and `GRID` rows (default 1.25 × size) |
+| `wob` | 0–1: the hand's unevenness, fixed per glyph |
+| `erase` | cut the text out of whatever is on its layer |
+
+Monospace cells are exactly 0.6 × size wide and one line tall. **Braille
+patterns (U+2800–28FF) and block elements (U+2580–259F) are drawn as geometry**
+(dots and cells snapped to the pixel grid), so a braille image or a block
+gradient tiles with no seams at any alpha. Text on a path runs on past the
+path's end along its last direction rather than piling up.
+
+### Shapes: print and cut paper
+
+`SHAPE(poly, [r,g,b], { alpha, grain, erase, layer })` lays a flat shape. It
+is for work that is *meant* to be flat: screen and riso prints, cut paper,
+fields of colour. `grain` (0–1) knocks a fixed speckle out of the ink, as a
+pull does. The speckle is anchored to the page, so overlapping shapes share
+it. To misregister, offset one colour's shapes a few pixels. `erase` cuts the
+shape out instead. Shapes default to the `tone` layer.
 
 ## Material studio: contact and practice (experimental)
 

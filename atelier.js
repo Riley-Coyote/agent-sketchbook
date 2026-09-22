@@ -1,7 +1,9 @@
 import { compilePage } from './page-program.js';
 
-import { MarkEngine } from './mark-engine.js';
+import { MarkEngine, loadFonts } from './mark-engine.js';
 import { sanitizeOps, sanitizePageDimensions, sanitizeSurface, limitsForPage } from './validate.js';
+/* glyph pages need their faces before anything is drawn */
+await loadFonts();
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const name = params.get('p') || 'codex-rain';

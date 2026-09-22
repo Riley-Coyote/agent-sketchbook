@@ -11,7 +11,7 @@ import { SketchSession } from './sketch-session.js';
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const MAX_BODY = 32 * 1024 * 1024;
 const MAX_OUTPUT_PIXELS = 4_000_000;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.woff': 'font/woff' };
 const inside = (file, folder) => file === folder || file.startsWith(folder + sep);
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const loopback = host => ['127.0.0.1', 'localhost', '[::1]'].includes(host);

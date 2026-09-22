@@ -19,7 +19,10 @@ export const LIMITS = {
   margin: 400, /* how far off the page a point may go */
 };
 
-const KINDS = new Set(['s', 'g', 'd', 'p', 'phase', 'occ', 'clamp', 'm', 'clean']);
+const KINDS = new Set(['s', 'g', 'd', 'p', 'phase', 'occ', 'clamp', 'm', 'clean', 't', 'f']);
+/* Glyphs and flat shapes belong to the second canvas. */
+const INK_ONLY = new Set(['t', 'f']);
+const MAX_TEXT = 4000;
 const LAYER_KEYS = new Set(LAYERS.map((l) => l.key));
 const BRUSH_KEYS = new Set(Object.keys(BRUSHES));
 
@@ -104,6 +107,9 @@ export function sanitizeOps(input, limits = LIMITS) {
     if (material ? !['m', 'clean', 'p', 'phase'].includes(o.k) : ['m', 'clean'].includes(o.k)) {
       err(i, 'material gestures require a versioned surface; material and legacy marks cannot be mixed'); continue;
     }
+    if (INK_ONLY.has(o.k) && limits.surface?.kind !== 'ink') {
+      err(i, "glyphs and shapes need the second canvas: surface: { kind: 'ink', version: 2 }"); continue;
+    }
     if (o.k === 'm') {
       if (!Object.hasOwn(MATERIAL_TOOLS, o.tool)) { err(i, 'unknown material tool'); continue; }
       const size = o.size ?? MATERIAL_TOOLS[o.tool].size, strength = o.strength ?? 1;
@@ -164,6 +170,51 @@ export function sanitizeOps(input, limits = LIMITS) {
       if (!num(a) || a < 0 || a > 1) { err(i, 'occlusion alpha out of range'); continue; }
       points += poly.length;
       out.push({ k: 'occ', poly, a });
+    } else if (o.k === 't') {
+      if (typeof o.text !== 'string' || !o.text.length || o.text.length > MAX_TEXT || /[\u0000-\u0009\u000b-\u001f\u007f]/.test(o.text)) { err(i, `text needs 1..${MAX_TEXT} characters, no control characters but newline`); continue; }
+      const t = { k: 't', text: o.text };
+      if (o.pts !== undefined) {
+        const pts = cleanPts(i, o.pts, limits.maxStrokePoints);
+        if (!pts) continue;
+        t.pts = pts;
+        points += pts.length;
+      } else {
+        if (!inRange([o.x, o.y])) { err(i, 'text needs an on-page x, y or a path in pts'); continue; }
+        t.x = o.x; t.y = o.y;
+      }
+      const size = o.size ?? 16;
+      if (!num(size) || size < 2 || size > 600) { err(i, 'text size needs 2..600 px'); continue; }
+      t.size = size;
+      const font = o.font ?? 'mono';
+      if (font !== 'mono' && font !== 'sans') { err(i, "font needs 'mono' or 'sans'"); continue; }
+      t.font = font;
+      const layer = o.layer ?? 'line';
+      if (!LAYER_KEYS.has(layer)) { err(i, `unknown layer ${JSON.stringify(layer)}`); continue; }
+      t.layer = layer;
+      if (o.c !== undefined) { const c = colour(o.c); if (!c) { err(i, 'colour is not [r, g, b]'); continue; } t.c = c; }
+      if (o.alpha !== undefined) { if (!num(o.alpha) || o.alpha < 0 || o.alpha > 1) { err(i, 'alpha out of range'); continue; } t.alpha = o.alpha; }
+      if (o.rot !== undefined) { if (!num(o.rot) || Math.abs(o.rot) > 32) { err(i, 'rot needs radians, |rot| ≤ 32'); continue; } t.rot = o.rot; }
+      if (o.track !== undefined) { if (!num(o.track) || o.track < -0.5 || o.track > 4) { err(i, 'track needs -0.5..4 em'); continue; } t.track = o.track; }
+      if (o.align !== undefined) { if (!['left', 'center', 'right'].includes(o.align)) { err(i, 'align needs left, center or right'); continue; } t.align = o.align; }
+      if (o.line !== undefined) { if (!num(o.line) || o.line < size * 0.5 || o.line > size * 4) { err(i, 'line height needs 0.5..4 × size'); continue; } t.line = o.line; }
+      if (o.weight !== undefined) { if (!Number.isInteger(o.weight) || o.weight < 100 || o.weight > 900) { err(i, 'weight needs 100..900'); continue; } t.weight = o.weight; }
+      if (o.wob !== undefined) { if (!num(o.wob) || o.wob < 0 || o.wob > 1) { err(i, 'wob needs 0..1'); continue; } t.wob = o.wob; }
+      if (o.erase !== undefined) { if (typeof o.erase !== 'boolean') { err(i, 'erase is true or false'); continue; } if (o.erase) t.erase = true; }
+      points += o.text.length;
+      out.push(t);
+    } else if (o.k === 'f') {
+      const poly = cleanPts(i, o.poly, limits.maxPolyPoints, 3);
+      if (!poly) continue;
+      const f = { k: 'f', poly };
+      const layer = o.layer ?? 'tone';
+      if (!LAYER_KEYS.has(layer)) { err(i, `unknown layer ${JSON.stringify(layer)}`); continue; }
+      f.layer = layer;
+      if (o.c !== undefined) { const c = colour(o.c); if (!c) { err(i, 'colour is not [r, g, b]'); continue; } f.c = c; }
+      if (o.alpha !== undefined) { if (!num(o.alpha) || o.alpha < 0 || o.alpha > 1) { err(i, 'alpha out of range'); continue; } f.alpha = o.alpha; }
+      if (o.grain !== undefined) { if (!num(o.grain) || o.grain < 0 || o.grain > 1) { err(i, 'grain needs 0..1'); continue; } f.grain = o.grain; }
+      if (o.erase !== undefined) { if (typeof o.erase !== 'boolean') { err(i, 'erase is true or false'); continue; } if (o.erase) f.erase = true; }
+      points += poly.length;
+      out.push(f);
     } else if (o.k === 'clamp') {
       if (!LAYER_KEYS.has(o.layer)) { err(i, `unknown layer ${JSON.stringify(o.layer)}`); continue; }
       if (!num(o.max) || o.max < 0 || o.max > 1) { err(i, 'clamp out of range'); continue; }
