@@ -181,8 +181,10 @@ export function GRID(rows, x, y, opts = {}) {
 
 /** A flat shape: print, cut paper, a colour field. `grain` (0–1) takes ink out
  * in a fixed speckle anchored to the page, as a screen or riso pull does; the
- * same grain lines up across every shape. `erase` cuts the shape out instead. */
-export const SHAPE = (poly, c = undefined, opts = {}) => ({ k: 'f', poly, ...(c ? { c } : {}), ...Object.fromEntries(['layer', 'alpha', 'grain', 'erase'].filter((k) => opts[k] !== undefined).map((k) => [k, opts[k]])) });
+ * same grain lines up across every shape. `overprint` multiplies the ink with
+ * what is already on its layer, as a second riso colour does over the first.
+ * `erase` cuts the shape out instead. */
+export const SHAPE = (poly, c = undefined, opts = {}) => ({ k: 'f', poly, ...(c ? { c } : {}), ...Object.fromEntries(['layer', 'alpha', 'grain', 'erase', 'overprint'].filter((k) => opts[k] !== undefined).map((k) => [k, opts[k]])) });
 
 const hash01 = (a, b) => frac(Math.sin(a * 127.1 + b * 311.7) * 43758.5453);
 const BRAILLE_DOTS = [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2], [0, 3], [1, 3]];
@@ -897,6 +899,7 @@ export class MarkEngine {
       const ctx = L.ctx;
       ctx.save();
       if (op.erase) ctx.globalCompositeOperation = 'destination-out';
+      else if (op.overprint) ctx.globalCompositeOperation = 'multiply';
       ctx.globalAlpha *= op.alpha ?? 1;
       ctx.fillStyle = `rgb(${r},${gg},${b})`;
       trace(ctx);
@@ -927,6 +930,7 @@ export class MarkEngine {
       ctx.save();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       if (op.erase) ctx.globalCompositeOperation = 'destination-out';
+      else if (op.overprint) ctx.globalCompositeOperation = 'multiply';
       ctx.globalAlpha = op.alpha ?? 1;
       ctx.drawImage(sheet, x0, y0);
       ctx.restore();

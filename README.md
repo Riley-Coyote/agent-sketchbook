@@ -1,16 +1,17 @@
 # Agent Sketchbook
 
-A blank sketchbook for an agent: native drawing tools, replayable marks, and room to revise. There is no fixed subject or compulsory style.
+A blank sketchbook for an agent: native marks you can replay and revise, in whichever medium fits what you want to make. It covers drawing, transparent painting, type and glyph art, braille and ASCII images, print, motion loops, and graphite and charcoal. There is no fixed subject or compulsory style.
 
 **Start with [START_HERE.md](START_HERE.md).** It covers choosing a medium, inspecting a real render, continuing the same canvas, making another version, and keeping studies separate from exhibition selections. The precise mark vocabulary is in [PAGE_PROTOCOL.md](PAGE_PROTOCOL.md).
 
 ## Current surfaces
 
+- **Two canvases.** Pages without a `surface` use the original light-on-black canvas, unchanged. `surface: { kind: 'ink', version: 2, paper }` opts into the second canvas: half-float colour, gapless thin strokes, any paper, glyphs (`GLYPHS`, `ALONG`, `GRID`, with braille and blocks drawn as geometry), flat print shapes (`SHAPE` with grain and overprint), and motion loops (`motion` and `frame(i, n)`). The graphite studio is a third, physical surface.
 - `atelier.html?p=instrument-return`: trusted local source, cumulative passes, comparisons, detail inspection, replay and PNG export. Continue preserves existing marks; changed construction requires an explicit new version.
 - `atelier.html?book=books/instrument-study&page=7`: saved checkpoints, without executing their source. Use the CLI instructions in the view to resume.
 - `index.html?book=<directory>`: book spine, notes, source, lineage and a link to each page's saved process.
 - `studio.html`: experimental pressure/tilt material studio, with gesture actions, durable saves and lessons through `studio.mjs`.
-- `book.mjs`: `init`, `write`, `read`, `list`, `journal`, `resume`, `render`, `select`, `blank`. Run `node book.mjs help`.
+- `book.mjs`: `init`, `write`, `read`, `list`, `journal`, `resume`, `render`, `preview` (renders a module and saves nothing, with `--sheet` for a motion contact sheet), `export` (a page packaged as one post file), `select`, `blank`. Run `node book.mjs help`.
 - `sketch-page.js` and `sandbox-browser.js`: embedding and bounded source execution for apps.
 
 No renderer constants were changed for the revision workflow. Legacy pages remain readable. Saved pages without a journal are identified as such; history is not inferred from their appearance. See [the instrument study](review/instrument/PROCESS.md) for an observed sequence, including a correction that required branching.
@@ -62,7 +63,10 @@ surface metadata in books, thumbnails, embeds, the atelier, and PNG exports.
 
 Checks: `node test.mjs`, `node tests/precision.mjs`,
 `node tests/dimensions.mjs`, `node tests/materials.mjs`,
-`node tests/material-persistence.mjs`, and `node tests/studio-server.mjs`.
+`node tests/material-persistence.mjs`, `node tests/studio-server.mjs`,
+`node tests/workflow.mjs`, and `node tests/canvas-v2.mjs`. The last one covers
+the second canvas, glyphs, shapes, motion and posting, and checks legacy pages
+byte-for-byte against the engine from before it existed.
 
 ## License
 
@@ -136,6 +140,9 @@ All plain JSON. `pts` is `[[x, y], …]` in page coordinates.
 | `phase` | `name, ms` | names the section of work starting now |
 | `occ` | `poly, a` | clears a silhouette out of the layers behind |
 | `clamp` | `layer, max` | caps a layer's alpha |
+| `t` | `text, x, y` or `pts`, `size, font, …` | glyphs (second canvas): see PAGE_PROTOCOL |
+| `f` | `poly, c, alpha, grain, overprint, erase` | a flat shape (second canvas) |
+| `frame` | — | the break between frames of a motion page (second canvas) |
 
 ## Engine architecture
 
@@ -261,9 +268,12 @@ The studio and source atelier are two authoring paths, not a single pressure-awa
 
 ## Assets
 
-None. No images, icons or fonts — the handwriting font is stroke data inside
-`mark-engine.js`, and there is no external typeface dependency in the engine.
-The prototype UI uses the system sans stack only.
+The handwriting font is still stroke data inside `mark-engine.js`. Glyph
+marks on the second canvas are set in two bundled faces, both under the SIL
+Open Font License and subset to WOFF: JetBrains Mono NL and Inter. They live
+in `fonts/`. Braille and block elements are drawn as geometry, not from a
+font. `docs/examples/` holds small renders of the example pages, for the
+guide.
 
 ## Files
 

@@ -239,6 +239,8 @@ export function sanitizeOps(input, limits = LIMITS) {
       if (o.alpha !== undefined) { if (!num(o.alpha) || o.alpha < 0 || o.alpha > 1) { err(i, 'alpha out of range'); continue; } f.alpha = o.alpha; }
       if (o.grain !== undefined) { if (!num(o.grain) || o.grain < 0 || o.grain > 1) { err(i, 'grain needs 0..1'); continue; } f.grain = o.grain; }
       if (o.erase !== undefined) { if (typeof o.erase !== 'boolean') { err(i, 'erase is true or false'); continue; } if (o.erase) f.erase = true; }
+      if (o.overprint !== undefined) { if (typeof o.overprint !== 'boolean') { err(i, 'overprint is true or false'); continue; } if (o.overprint) f.overprint = true; }
+      if (f.erase && f.overprint) { err(i, 'a shape either cuts (erase) or prints over (overprint), not both'); continue; }
       points += poly.length;
       out.push(f);
     } else if (o.k === 'clamp') {

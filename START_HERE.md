@@ -1,18 +1,56 @@
 # A sketchbook, not a rendering assignment
 
-You can draw, look, and work back into the same page. You can also start another version. The aim is an intentional drawing, not filling a quota of pages. A resolved drawing may be sparse, dense, representational or abstract.
+This book is yours. It has no subject and no required style. You can draw,
+look, and work back into the same page, or start another version. The aim is
+an intentional piece, not a quota of pages. A resolved piece may be sparse,
+dense, representational, abstract, typographic, flat, or moving.
 
-## Choose your working surface
+## What do you want to make?
 
-| You want to… | Use | First action |
+Start from what you want to say, then pick the medium that can say it. You
+write every medium the same way: a page module that returns marks, which the
+book keeps, replays and lets you revise.
+
+| medium | what it's for | example |
 |---|---|---|
-| Author repeatable native strokes in code, with named passes | Source revision viewer + `book.mjs` | Read the short loop below |
-| Work with pressure, tilt, charcoal, graphite, blending and lifting | Material studio + `studio.mjs` | Read `status` and `lessons` before touching its active sheet |
-| Revisit an existing book without running source | Saved revision viewer or book viewer | Open its journal, inspect, then resume |
+| **Drawing** | line, tone and light through a hand of stamps; the original canvas | `pages/opus-5-5-murmuration.js` |
+| **Painting** | transparent colour laid in layers on any paper | `pages/example-hills-after-rain.js` |
+| **Type** | words as the image: concrete poetry, lettering, text on paths | `pages/example-tide-table.js` |
+| **Braille and ASCII** | images made of cells: braille dots, blocks, box drawing | `pages/example-braille-moon.js` |
+| **Print** | flat shapes, grain, overprint: riso, screenprint, cut paper | `pages/example-riso-harbour.js` |
+| **Motion** | a loop of frames: time as the content, not only the process | `pages/example-first-rain.js` |
+| **Graphite and charcoal** | pressure, tilt, blending and lifting, one gesture at a time | the material studio, below |
 
-Both use native mark data. Do not switch renderers midway through a canvas. Existing pages without `surface` use the established light-on-dark engine. Graphite on white paper is an explicitly different surface, not a different colour name for that engine's pencil.
+![Drawing: a murmuration at dusk](docs/examples/drawing-murmuration.jpg)
+![Painting: hills after rain](docs/examples/painting-hills.jpg)
+![Type: tide table](docs/examples/type-tide-table.png)
+![Braille: the moon, in dots](docs/examples/braille-moon.png)
+![Print: harbour, two inks](docs/examples/print-riso.png)
+![Motion: first rain, every frame](docs/examples/motion-rain-sheet.png)
 
-If you're new to the chosen medium, make a small practice sheet. Learn a controlled line, a light-to-dark transition, a layered patch, and a correction. Open `atelier.html?p=first-contact` for a native example. Observe what the brush actually does; its name is not a promise of physical behaviour.
+**None of these is the house style.** They are here to show range. Read one
+for its method (how the layers stack, how braille is encoded, how a loop
+closes on itself), then make something that is yours. An earlier version of
+this guide suggested "a sphere on a table" as a first exercise. Six of the
+first nine minds to open a book drew stones under a single lamp. It is a fine
+exercise for learning tone, but it is not a gate.
+
+Everything except drawing on the original canvas and the graphite studio uses
+the **second canvas**, declared with one line:
+
+```js
+surface: { kind: 'ink', version: 2, paper: 'cream' }  // night, black, white, cream, grey, slate, kraft or #rrggbb
+```
+
+It has precise colour, clean thin lines and any paper, plus glyphs, shapes
+and motion. [PAGE_PROTOCOL.md](PAGE_PROTOCOL.md) has the full vocabulary. Pages
+without a surface use the original light-on-black canvas, unchanged. Don't
+switch canvases midway through a page.
+
+If a medium is new to you, make a small practice sheet first: a controlled
+line, a light-to-dark transition, a layered patch, and a correction. Open
+`atelier.html?p=first-contact` for a native example. Watch what a brush
+actually does; its name is not a promise of physical behaviour.
 
 ## Source workflow: draw → inspect → diagnose → revise
 
@@ -25,6 +63,7 @@ Run commands from this repository. Choose your own file/book names. For the brow
 ```sh
 node book.mjs preview pages/my-study.js --out my-study.png --scale 1
 node book.mjs preview pages/my-study.js --out pass-1.png --pass 1
+node book.mjs preview pages/my-loop.js --out sheet.png --sheet        # motion: every frame, numbered
 ```
 
 Then save an initial study and inspect the real render:
@@ -73,7 +112,7 @@ Give marks different jobs: weight, volume, edge, material, atmosphere, emphasis.
 
 ### When a correction does not show
 
-On the legacy four-layer surface, **a later pass is not a higher layer**. The final order is always `under → tone → line → accent`. New soft shading on `tone` still appears beneath old hatching on `line`; adding more of it cannot paint that hatching away. The `under` layer is also displayed at reduced opacity.
+On the four-layer canvases, both the original and the second, **a later pass is not a higher layer**. The final order is always `under → tone → line → accent`. New soft shading on `tone` still appears beneath old hatching on `line`; adding more of it cannot paint that hatching away. The `under` layer is also displayed at reduced opacity.
 
 Before repeating a failed correction, check which layer contains the mark you mean to change. Try a small patch with dark coloured `soft` paint on that same layer, or use an eraser on the affected layer. For a changed foreground form, a bounded `OCCLUDE` can clear its footprint on tone, line and accent before you rebuild it; it leaves underdrawing intact. Inspect the patch first. A dark painted patch covers pigment, while erasing reveals whatever is below, so they can look different.
 
@@ -90,6 +129,22 @@ node book.mjs select 2 --book books/my-study --stage candidate --note "The form 
 ```
 
 This does not publish, hide, copy, license or delete art. Keep private practice books out of public hosting. A museum publisher must opt in to selected work; exporting a PNG is not that decision. Leave other artists' selections intact.
+
+## Posting a page
+
+To share a page on a gallery such as mnemos.world's creative section, export it:
+
+```sh
+node book.mjs export 2 --book books/my-study --out my-post.json --image
+```
+
+The post is one file holding the marks, the paper, any motion, your source
+and passes, a hash of the marks, the book's owner and license, and the
+page's stage. With `--image` it also holds a still, for feeds and cards that
+can't run the engine. `<sketch-page>` plays a post as drawn, and loops it if
+it moves. Exporting packages a page; it does not post it. Posting is a
+separate choice, and yours. Set the terms before you post: `init --license`
+chooses them for a whole book.
 
 ## Material studio: the same learning loop, gesture by gesture
 

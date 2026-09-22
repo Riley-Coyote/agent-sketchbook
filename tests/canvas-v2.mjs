@@ -190,6 +190,9 @@ try {
     let same = true; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) { same = false; break; }
     out.grainPores = 200 * 80 - inked(a);
     out.grainSame = same;
+    // Overprint multiplies: yellow over cyan prints green, as riso inks do.
+    const over = await draw([SHAPE([[0, 0], [200, 0], [200, 80], [0, 80]], [0, 200, 230]), SHAPE([[50, 0], [150, 0], [150, 80], [50, 80]], [250, 230, 0], { overprint: true })]);
+    out.overprint = Array.from(over.slice((40 * 200 + 100) * 4, (40 * 200 + 100) * 4 + 3));
     // Replay types glyphs one by one and ends on the finished page.
     const ops = [field, ...GRID(['a⣿█▚', '╭──╮'], 10, 30, { size: 14, c: [240, 240, 240] }), ALONG('path', [[10, 70], [150, 50]], { font: 'sans', size: 16, c: [200, 60, 40] }), OP('s', [[5, 5], [190, 75]], 'line', 'pencil', 1)];
     const f = new MarkEngine({ width: 200, height: 80, dpr: 1, surface }); f.load(ops); await f.ready(); f.finish();
@@ -209,6 +212,7 @@ try {
   ok(g.fieldInk === 16000 && g.cutInk < 15000, `erased text lifts the pigment beneath (${16000 - g.cutInk} px cut)`);
   ok(g.grainPores > 400 && g.grainPores < 9000 && g.grainSame, `grain knocks pores out of a shape, deterministically (${g.grainPores} px)`);
   ok(g.replayDiff === 0, `replay types the glyphs and ends on the finished page (${g.replayDiff} differing bytes)`);
+  ok(g.overprint[0] < 20 && g.overprint[1] > 160 && g.overprint[2] < 20, `overprint multiplies inks: yellow over cyan prints green (${g.overprint})`);
 
   console.log('motion');
   const mo = await page.evaluate(async () => {
@@ -294,6 +298,45 @@ export default { title: 'test loop', date: '2026-09-22', note: 'a bar that walks
       ok(sheet.length > 2000 && sheet.readUInt32BE(16) > 160 * 0.5 * 2, `the contact sheet holds the frames side by side (${sheet.readUInt32BE(16)} px wide)`);
     } finally {
       await rm(module, { force: true });
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+  console.log('posting');
+  {
+    const { mkdtemp, readFile: read, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const run = (args) => execFileSync(process.execPath, ['book.mjs', ...args], { cwd: ROOT, encoding: 'utf8' });
+    const dir = await mkdtemp(join(tmpdir(), 'sketch-post-'));
+    try {
+      const book = join(dir, 'book');
+      run(['init', '--owner', 'Opus 5.5', '--book', book, '--license', 'CC BY 4.0']);
+      run(['write', 'pages/example-riso-harbour.js', '--book', book]);
+      run(['write', 'pages/example-first-rain.js', '--book', book]);
+      const said = run(['export', '1', '--book', book, '--out', join(dir, 'still.json'), '--image']);
+      run(['export', '2', '--book', book, '--out', join(dir, 'loop.json')]);
+      const still = JSON.parse(await read(join(dir, 'still.json'), 'utf8'));
+      const loop = JSON.parse(await read(join(dir, 'loop.json'), 'utf8'));
+      ok(/not published/.test(said), 'export says it packages and does not publish');
+      ok(still.format === 'agent-sketchbook/post' && still.author.owner === 'Opus 5.5' && still.license === 'CC BY 4.0' && still.stage === 'study', 'a post carries its owner, license and stage');
+      ok(typeof still.source === 'string' && still.journal?.passes?.length === 2 && /^[0-9a-f]{64}$/.test(still.marksHash), 'a post carries its source, passes and a hash of its marks');
+      ok(still.image?.startsWith('data:image/png;base64,') && still.image.length > 5000, 'export --image adds a still for places that cannot run the engine');
+      ok(loop.motion?.frames === 24 && !loop.image, 'a motion post keeps its frames');
+      await page.setContent('<!doctype html><body style="width:600px"><script type="module" src="/sketch-page.js"></script></body>');
+      const shown = await page.evaluate(async (posts) => {
+        await customElements.whenDefined('sketch-page');
+        const play = (post) => new Promise((done) => {
+          const el = document.createElement('sketch-page');
+          el.addEventListener('sketch-load', () => setTimeout(() => done({ marks: el.ops.length, title: el.meta.title, motion: el.meta.motion?.frames || 0, data: el.toDataURL().length }), 300));
+          el.addEventListener('sketch-error', (e) => done({ error: e.detail.message }));
+          document.body.append(el);
+          el.ops = post;
+        });
+        return [await play(posts[0]), await play(posts[1])];
+      }, [still, loop]);
+      ok(shown[0].title === 'harbour, two inks' && shown[0].marks === still.ops.length && shown[0].data > 20000, `<sketch-page> plays a still post (${JSON.stringify(shown[0]).slice(0, 90)})`);
+      ok(shown[1].motion === 24 && shown[1].data > 5000, `<sketch-page> plays a motion post (${JSON.stringify(shown[1]).slice(0, 90)})`);
+    } finally {
       await rm(dir, { recursive: true, force: true });
     }
   }

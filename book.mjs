@@ -286,7 +286,8 @@ init --owner NAME --book DIR
 write pages/work.js --book DIR [--continue PAGE | --branch PAGE | --refs PAGES]
 journal PAGE --book DIR
 render PAGE --book DIR --out image.png [--pass N] [--crop x,y,w,h] [--scale 1]
-preview pages/work.js --out image.png [--pass N] [--crop x,y,w,h] [--scale 1]   (saves nothing)
+preview pages/work.js --out image.png [--pass N] [--crop x,y,w,h] [--scale 1] [--frame N | --sheet]   (saves nothing)
+export PAGE --book DIR --out post.json [--image] [--no-source]   (packages a page to post; publishes nothing)
 resume PAGE --book DIR --out pages/new.js [--pass N]
 select PAGE --book DIR --stage study|candidate|exhibition --note REASON
 list | read PAGE [--source] | blank --book DIR
@@ -463,6 +464,54 @@ export default {
     });
     const which = view.sheet ? ` (all ${motion.frames} frames)` : motion ? ` (frame ${view.frame + 1} of ${motion.frames})` : '';
     console.log(`page ${n}: "${meta.title}"${which} → ${out}`);
+  } else if (cmd === 'export') {
+    /* One self-contained file for a page: what a gallery such as mnemos.world
+     * needs to show it and play it back as drawn. It packages; it does not
+     * publish, and it carries the page's owner, license and stage with it. */
+    const book = await loadBook();
+    const n = Number(args[0]);
+    const meta = book.pages.find((p) => p.index === n);
+    if (!meta) throw new Error(`no page ${n}`);
+    const out = arg('--out');
+    if (!out) throw new Error('export needs --out <post.json>');
+    const page = JSON.parse(await readFile(resolve(BOOK_DIR, meta.file), 'utf8'));
+    const { page: dimensions, errors: dimensionErrors } = sanitizePageDimensions(page.page);
+    if (!dimensions) throw new Error(`the page dimensions were rejected: ${dimensionErrors.join('; ')}`);
+    const { surface, errors: surfaceErrors } = sanitizeSurface(page.surface);
+    if (surface === null) throw new Error(`the page surface was rejected: ${surfaceErrors.join('; ')}`);
+    const { ops, errors } = sanitizeOps(page.ops, limitsForPage(dimensions, surface));
+    if (!ops) throw new Error(`the page's marks were rejected: ${errors.join('; ')}`);
+    const motion = motionFor(page.motion, dimensions, ops);
+    const post = {
+      format: 'agent-sketchbook/post',
+      version: 1,
+      title: meta.title,
+      date: meta.date,
+      note: meta.note,
+      author: { owner: book.owner, book: book.id, page: meta.index },
+      license: book.license || 'all rights reserved by the owner',
+      stage: book.pages.find((p) => p.index === n)?.stage || meta.stage || 'study',
+      page: dimensions,
+      ...(surface === undefined ? {} : { surface }),
+      ...(motion ? { motion } : {}),
+      ops,
+      ...(flag('--no-source') ? {} : { source: page.source }),
+      ...(page.journal ? { journal: page.journal } : {}),
+      marksHash: hash(ops),
+      exportedAt: new Date().toISOString(),
+    };
+    if (flag('--image')) {
+      /* a still for places that can't run the engine: feeds, cards, alt views */
+      const still = resolve(BOOK_DIR, `.export-${process.pid}.png`);
+      try {
+        await renderPage({ ops, w: dimensions.w, h: dimensions.h, surface, scale: Math.min(1, 1600 / Math.max(dimensions.w, dimensions.h)), ...(motion ? { frame: 0 } : {}), out: still });
+        post.image = 'data:image/png;base64,' + (await readFile(still)).toString('base64');
+      } finally {
+        await rm(still, { force: true });
+      }
+    }
+    await writeFile(resolve(process.cwd(), out), JSON.stringify(post));
+    console.log(`page ${n}: "${meta.title}" → ${out} (${ops.length} marks${motion ? `, ${motion.frames} frames` : ''}${post.image ? ', with a still' : ''}). Packaged, not published: posting is a separate choice.`);
   } else if (cmd === 'preview') {
     /* Look before saving. The same sandbox, validation and renderer as write
      * and render, and nothing is written to any book: a preview spends no page. */

@@ -43,9 +43,9 @@ export default {
 - The default page is **880 × 660**, origin top-left, y down. A module can
   declare `page: { w, h }` with positive integer dimensions up to 4096 per side
   and 8,000,000 logical pixels total. The book and viewers preserve the aspect
-  ratio. The paper is black and
-  the ink is light. A mark may wander up to 400 px off the page; further is
-  refused.
+  ratio. On the original canvas the paper is black and the ink is light; the
+  second canvas takes any paper (see below). A mark may wander up to 400 px
+  off the page; further is refused.
 - Default-page limits: 20,000 marks, 600,000 points in all. Larger-area pages
   allow 120,000 marks and 2,000,000 points. Every stroke still has at most
   4,000 points. Use `limitsForPage(page)` when validating a custom canvas.
@@ -209,8 +209,10 @@ these. They are worth more than the brushes.
 - **Use the underdrawing.** It stays visible at 42% on purpose. Do not hide it.
 - **Do not draw the same subject as the last three pages** unless you are
   explicitly working a problem.
-- **Fundamentals before the hard thing.** A sphere on a table will tell you
-  whether you can control tone. A hand will not tell you anything until you can.
+- **Practise the thing you're about to need.** If tone is what the piece
+  needs, a sphere on a table will tell you whether you can control it. For
+  type it's a line of glyphs at three sizes, for print two overlapping pulls,
+  for motion an eight-frame loop. It's a study, not a required first page.
 
 ## Putting a page in the book
 
