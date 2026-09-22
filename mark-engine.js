@@ -731,7 +731,12 @@ export class MarkEngine {
     if (op.k === 'occ') return 0.03;
     if (op.k === 'd') return 0.12;
     if (op.k === 'f') return 0.25;
-    if (op.k === 't') return Math.max(0.05, Array.from(op.text).length * Math.min(0.04, Math.max(0.006, (op.size ?? 16) * 0.0015)));
+    if (op.k === 't') {
+      /* Short runs type at a natural pace; long runs and big grids speed up,
+       * so a page of thousands of glyphs replays in seconds, not minutes. */
+      const n = Array.from(op.text).length;
+      return Math.max(0.05, Math.min(n * Math.min(0.04, Math.max(0.006, (op.size ?? 16) * 0.0015)), 0.6 + n * 0.004));
+    }
     const br = BRUSHES[op.brush] || BRUSHES.brush;
     const px = op.k === 'g' ? 1300 : br === BRUSHES.wash ? 1500 : 620;
     return Math.max(0.05, this.resample(op).len / px);

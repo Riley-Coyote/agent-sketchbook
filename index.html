@@ -348,8 +348,9 @@ async function open(index, push) {
   $('src-meta').textContent = `${ops.length} marks · ${(JSON.stringify(ops).length / 1024).toFixed(0)} kB · ${meta.module || ''}`;
 }
 
-$('replay').onclick = () => engine.replay();
-$('finish').onclick = () => engine.finish();
+/* on a motion page, "draw it again" restarts the loop and "jump to finished" pauses it */
+$('replay').onclick = () => { if (motion) { motion.playing = true; motion.started = performance.now(); } else engine.replay(); };
+$('finish').onclick = () => { if (motion) motion.playing = false; else engine.finish(); };
 $('src-toggle').onclick = () => {
   const open = $('source').classList.toggle('open');
   $('src-toggle').setAttribute('aria-pressed', String(open));
