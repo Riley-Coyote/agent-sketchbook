@@ -1,101 +1,27 @@
-# Handoff: Agent Sketchbook
+# Agent Sketchbook
 
-## Overview
+A blank sketchbook for an agent: native drawing tools, replayable marks, and room to revise. There is no fixed subject or compulsory style.
 
-A **blank sketchbook you hand to an agent.** The book ships with a drawing
-engine and an instruction protocol; the agent writes pages into it — whatever it
-wants, or whatever its user asks for. A human flips through and sees what the
-agent has been working on.
+**Start with [START_HERE.md](START_HERE.md).** It covers choosing a medium, inspecting a real render, continuing the same canvas, making another version, and keeping studies separate from exhibition selections. The precise mark vocabulary is in [PAGE_PROTOCOL.md](PAGE_PROTOCOL.md).
 
-There is no fixed subject and no dedicated purpose. That is the point. The
-product is a *substrate plus a protocol*, not a designed set of pages.
+## Current surfaces
 
-This bundle contains the engine (working, extracted, framework-free), one worked
-page as reference, a draft of the agent-facing protocol, and the original
-prototypes it all came out of.
+- `atelier.html?p=instrument-return`: trusted local source, cumulative passes, comparisons, detail inspection, replay and PNG export. Continue preserves existing marks; changed construction requires an explicit new version.
+- `atelier.html?book=books/instrument-study&page=7`: saved checkpoints, without executing their source. Use the CLI instructions in the view to resume.
+- `index.html?book=<directory>`: book spine, notes, source, lineage and a link to each page's saved process.
+- `studio.html`: experimental pressure/tilt material studio, with gesture actions, durable saves and lessons through `studio.mjs`.
+- `book.mjs`: `init`, `write`, `read`, `list`, `journal`, `resume`, `render`, `select`, `blank`. Run `node book.mjs help`.
+- `sketch-page.js` and `sandbox-browser.js`: embedding and bounded source execution for apps.
 
-## About the design files
+No renderer constants were changed for the revision workflow. Legacy pages remain readable. Saved pages without a journal are identified as such; history is not inferred from their appearance. See [the instrument study](review/instrument/PROCESS.md) for an observed sequence, including a correction that required branching.
 
-Two different kinds of file are in here, and the distinction matters:
+## Local viewing
 
-**`mark-engine.js` and `subjects/flower.js` are working source, not mockups.**
-They are plain ES modules with no dependencies and no framework. They have been
-verified to run and produce the drawing in `screenshots/`. Port them into your
-target environment or use them as-is — they are the actual asset being handed
-over. Everything in them was derived empirically; see *Five rules* below before
-changing values.
-
-**The design prototypes this was extracted from** (three `.dc.html` files and
-their runtime) are not in this repository: the runtime is Claude Design's, not
-ours to publish. The surrounding UI they showed — phase list, layer toggles,
-speed control, progress readout — is rebuilt in `index.html` and `harness.html`.
-
-## Fidelity
-
-Mixed, deliberately:
-
-- **The engine is production-grade.** Verified working: 882 ops for the flower,
-  four layers compositing correctly, wash clamping to exactly 102/255. Treat its
-  constants as tuned, not arbitrary.
-- **The drawing output is high-fidelity.** `screenshots/handoff-final.png` is
-  what the code in this bundle produces. That is the visual target.
-- **The sketchbook product around it is a specification, not a mockup.** There
-  is no page-turn UI, no spine rail, no cover in this bundle. `PAGE_PROTOCOL.md`
-  and *What to build* below specify it; the screens have not been designed yet.
-  Building them is the next design task, not a recreation task.
-
-## Status (2026-09-02) — ready to hand over
-
-Everything the brief listed as "what to build" now exists, except a cover.
-The folder is self-contained and framework-free.
-
-**For a mind that will draw in it:** read `PAGE_PROTOCOL.md`. That is the whole
-contract — the page module shape, the brushes and layers, the limits, the
-rules, and how to save a page. Then:
-
-```bash
-node book.mjs init --owner <name>          # a book of 48 blank pages, one folder per mind
-node book.mjs write pages/<page>.js        # runs the page in the sealed box, checks the marks, appends it
-node book.mjs write pages/<page>.js --refs 3   # …as a rework of page 3
-node book.mjs list · read <n> [--source] · blank
+```sh
+node studio-server.mjs --port 4194 --data books/my-studio-data
 ```
 
-**For an app that will show it:** `sketch-page.js` is a drawing as one tag
-(`<sketch-page src="book/pages/002.json" autoplay controls>`, or `el.ops = …`),
-and `sandbox-browser.js` runs page source a model wrote inside a sealed frame
-and returns checked marks. `embed.html` shows both in a chat. Every list of
-marks, from anywhere, passes `validate.js` before the engine draws it.
-
-**For a person:** `index.html` is the book — a spine of thumbnails, an open
-spread with the note, the lineage of reworks both ways, and the source beside
-the drawing. `?book=<dir>` opens another mind's book.
-
-**For sustained painting:** `atelier.html?p=codex-rain` shows *After the rain*,
-an eight-pass painting on a 1600 × 1000 canvas. Inspect cumulative passes,
-replay additions over completed work, zoom to full size, and export PNGs.
-**Continue from source** appends a matching new pass without clearing existing
-pigment. A rejected edit leaves the last good painting intact. The atelier is
-a trusted local-source development view, like `page.html`.
-
-Page modules may declare `page: { w, h }`; old pages keep 880 × 660. Fine
-`pencil`, feathered `soft`, and broad `glaze` media support controlled colour
-and per-mark opacity. The original brushes retain their rendering. The full
-contract and limits are in `PAGE_PROTOCOL.md`.
-
-**How it is sealed.** A page module is code another mind wrote. It runs in a
-bare context with no globals beyond the language (node: `vm` with hand-linked
-imports; browser: a worker inside an opaque-origin `<iframe sandbox>` under
-`default-src 'none'`, network functions removed), may import only the engine,
-the helpers and earlier pages, has 15 s of CPU and a wall-clock kill, and can
-only return JSON. The marks are then checked for kind, brush, layer, range and
-count. `node test.mjs` and `node tests/browser.mjs` prove all of this against
-six hostile pages.
-
-**Pages so far:** 1 moth · 2 sphere and cube (the tonal study, four attempts)
-· 3 a hand at rest · 4 the hand again, reworking 3. `screenshots/` has them.
-
-**Not built:** a cover; thinning page files further (0.6–1 MB each: hatch
-strokes carry a point every 4 px); a page-turn between spreads.
+Open `http://127.0.0.1:4194/atelier.html?p=instrument-return`. Reuse an existing server when appropriate; do not interrupt someone else's material session. `book.mjs render` runs its own temporary browser/server and does not require this one.
 
 ## Material studio (experimental, 2026-09-05)
 
@@ -152,20 +78,6 @@ choose. The page modules in `pages/` here are development examples by claude,
 kept in the software repo by their author for now; the examples that ship
 with a release will be drawn for that purpose.
 
-## Run it first
-
-```bash
-cd design_handoff_agent_sketchbook
-npx serve .          # or python3 -m http.server
-```
-
-Open `index.html`. ES modules need HTTP — `file://` will not work.
-
-Controls: replay, jump-to-finished, speed, and per-layer toggles. `window.engine`
-and `window.ops` are exposed for devtools.
-
----
-
 ## The one architectural decision
 
 **A page is a stroke program, not an image.**
@@ -194,7 +106,7 @@ Book
   cover?: dataURL
 
 Page
-  index      0-based, fixed at creation — pages do not reorder
+  index      1-based, fixed at creation — pages do not reorder
   title      string        drawn in the margin in the agent's handwriting
   date       ISO date
   note       string        what was attempted, and where it failed. Required.
@@ -203,6 +115,8 @@ Page
   source     string        the builder module source, or a module path
   ops        Op[]          the marks, in order
   state      'blank' | 'drawing' | 'drawn'
+  stage      'study' | 'candidate' | 'exhibition' (new writes)
+  journal    version, sourceHash, marksHash, parent?, passes[] (named ranges and review notes)
 ```
 
 `ops` is the saved artifact. `source` is kept so a page can be re-derived and so
@@ -285,9 +199,9 @@ matters more than it sounds.
 
 ---
 
-## Five rules
+## Lessons from representational studies
 
-Each was a specific, diagnosed failure while building the flower. They are the
+These are lessons from drawing dimensional objects, not restrictions on abstract or intentionally regular work. Each was a specific, diagnosed failure while building the flower. They are the
 most valuable thing in this bundle — a fresh implementation will hit all five in
 order. `subjects/flower.js` marks where each one applies.
 
@@ -326,41 +240,9 @@ Two smaller ones, both cosmetic but both very visible:
   wave; across a wash it beats against bead spacing into a woven checkerboard.
 - **Wash beads must be wider than their spacing,** or the pass dries as stripes
   — and stripes from forms at different angles cross into that same weave. The
-  wash also has a hard ceiling, so every true dark must be chalk or charcoal.
+  wash also has a hard ceiling, so every bright above the wash ceiling must live on a higher layer.
 
 ---
-
-## What to build
-
-Roughly in dependency order.
-
-**1. Port the engine.** Should be mechanical — it is framework-free and touches
-only 2d canvas. Verify against `screenshots/handoff-final.png` before moving on.
-
-**2. Page storage.** Ops in, ops out, JSON. Round coordinates to 1dp on save.
-Decide where the book lives — see *Open questions*.
-
-**3. The book shell.** A finite run of pages you can move through. Spreads
-rather than single pages: notes, thumbnails and failures on the left, the
-drawing on the right. Asymmetry for free, and it is how a sketchbook is actually
-read. A page animates the first time you reach it and is flat thereafter.
-
-Hold the line on **no skeuomorphism** — no paper texture, no page curl, no
-coffee rings. The sketchbook quality comes from structure, dates, marginalia and
-uneven pages. Black ground, one ink, tight type.
-
-**4. Page one is its own source.** The instructions are not a manual; they are a
-spread showing a drawing next to the ops that made it. An agent reads that once
-and can write page two. Self-documenting by construction, and a good object for
-a human to look at.
-
-**5. The agent-facing API.** Whatever tool surface an agent gets:
-`listPages()`, `readPage(n)`, `writePage(n, module)`, `blankPages()`. The
-protocol in `PAGE_PROTOCOL.md` is what you put in front of the model.
-
-**6. Sandboxing.** The agent is writing JavaScript that you execute. It must run
-in a worker or realm with no DOM and no network, returning only an op array,
-with a cap on op count and wall time. Do not skip this.
 
 ## Design tokens
 
@@ -373,21 +255,9 @@ Text: system sans; 29/600/-.026em titles, 13px/1.65 body at `rgba(255,255,255,.5
 11px/1.55 captions at `.42`, 9.5px/600/.12em uppercase labels at `.32`.
 Chips: 8–9px × 13–16px, `999px`, `.5px` border, selected `rgba(255,255,255,.12)`.
 
-## Open questions
+## Current limitations
 
-Two things the design is genuinely undecided on. Both are worth resolving before
-step 2.
-
-**Where do pages live?** Appended into the document itself, so the sketchbook is
-a single file you can hand to someone whole — or in storage, so it fills up as
-you use it but does not travel. Current lean is strongly toward the file: a
-sketchbook you cannot give to someone is missing the point of a sketchbook.
-
-**How much editorial pressure?** Hand an agent a blank book with no constraints
-and you get forty competent, samey pages. The draft protocol pushes back — you
-must note what failed, one subject per spread, redrawing an earlier page is
-encouraged. That may be exactly right, or it may be the thing that makes every
-book read the same. Unresolved.
+The studio and source atelier are two authoring paths, not a single pressure-aware editor. Source dependencies are not bundled into a book; saved marks and `resume` remain self-contained. Selection stages are editorial records, not publication or access controls. The book has no cover or animated page turn.
 
 ## Assets
 
@@ -403,14 +273,20 @@ mark-engine.js          the hand. Engine, brushes, layers, ops, vocabulary,
 validate.js             checks and strips any list of marks. node + browser.
 sandbox.mjs             runs a page module in a bare V8 context (node).
 sandbox-browser.js      runs page source in a sealed worker (browser).
-book.mjs                the agent-facing tool: init, list, read, write, blank.
+book.mjs                save, inspect, resume, branch and select; run help.
+page-program.js         shared build/pass compilation contract.
+atelier.html + .js      source and saved-checkpoint inspection.
+START_HERE.md           practical first-session workflow.
+start.html             visual introduction and worked revision examples.
+AGENTS.md              agent handoff and project boundaries.
 sketch-page.js          <sketch-page>: a drawing as one tag, for apps.
 index.html              the book viewer (spine, spread, lineage, source).
 embed.html              a chat with drawings inline + a studio that runs source.
 page.html               replay one module by name, without the book.
 harness.html            the original engine harness (replay, layers, speed).
 test.mjs                node tests: validator, hostile pages, every page, the tool.
-tests/                  hostile page modules and the browser test.
+tests/                  hostile page modules, browser and persistence checks;
+                        workflow.mjs and workflow-browser.mjs test revisions.
 PAGE_PROTOCOL.md        the agent-facing instructions that ship inside the book.
 README.md               this file.
 

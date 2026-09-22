@@ -17,6 +17,7 @@
  * caller should still pass it through validate.js — this module does.
  */
 
+import { compilePage } from './page-program.js';
 import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, sanitizeSurface, limitsForPage } from './validate.js';
 
 const FRAME_SRC = `<!doctype html>
@@ -62,8 +63,7 @@ const FRAME_SRC = `<!doctype html>
         'try { Object.defineProperty(self.navigator, "sendBeacon", { value: undefined }); } catch (e) {}' +
         'const m = await import(' + JSON.stringify(entry) + ');' +
         'const p = m.default; if (!p || typeof p.build !== "function") throw new Error("page module must export default { title, date, note, build }");' +
-        'const ops = p.build();' +
-        'postMessage(JSON.parse(JSON.stringify({ ops, meta: { title: p.title, date: p.date, note: p.note, refs: p.refs, seed: p.seed, page: p.page, surface: p.surface } })));';
+        'postMessage(JSON.parse(JSON.stringify((' + ${JSON.stringify(compilePage.toString())} + ')(p))));';
       worker = new Worker(mk(code), { type: 'module' });
     } catch (err) { reply({ error: String(err && err.message || err) }); return; }
     const t = setTimeout(() => { worker.terminate(); reply({ error: 'the page did not finish within ' + (timeoutMs / 1000) + 's' }); }, timeoutMs || 15000);
@@ -134,5 +134,5 @@ export async function runPageSource(source, { modules = {}, timeoutMs = 15000 } 
   const { ops, errors, stats } = sanitizeOps(result.ops, limitsForPage(page, surface));
   if (!ops) throw new Error('the marks were rejected: ' + errors.join('; '));
   const { meta } = sanitizePageMeta(result.meta || {});
-  return { ops, meta: { ...meta, page, ...(surface === undefined ? {} : { surface }) }, stats };
+  return { ops, meta: { ...meta, ...(result.meta?.passes ? { passes: result.meta.passes } : {}), page, ...(surface === undefined ? {} : { surface }) }, stats };
 }

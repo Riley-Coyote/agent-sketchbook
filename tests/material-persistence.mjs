@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+import { compilePage } from '../page-program.js';
 import { sanitizeSurface, sanitizeOps, sanitizePageMeta, sanitizePageDimensions, limitsForPage } from '../validate.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -51,7 +52,7 @@ class EngineProbe {
   composite() {}
 }
 const node = () => ({
-  style: { setProperty() {} }, dataset: {}, children: [], hidden: false,
+  style: { setProperty() {} }, dataset: {}, children: [], hidden: false, classList: {toggle() {}}, append() {},
   getContext: () => ({}), setAttribute() {},
   replaceChildren(...children) { this.children = children; },
 });
@@ -95,17 +96,16 @@ async function checkViewerTransitions() {
   assert.equal(element.engine.surface, undefined);
   assert.equal(Object.hasOwn(element.meta, 'surface'), false);
 
-  let candidate = { title: 'test', page: dimensions, surface, passes: [{ name: 'first', note: 'inspect', build: () => materialOps }] };
+  let candidate = { build() {return this.passes.flatMap(p=>p.build());}, title: 'test', page: dimensions, surface, passes: [{ name: 'first', note: 'inspect', build: () => materialOps }] };
   const nodes = new Map();
   const document = { getElementById: id => {
     if (!nodes.has(id)) nodes.set(id, node());
     return nodes.get(id);
   }, createElement: node };
-  const html = await readFile(join(ROOT, 'atelier.html'), 'utf8');
-  const controller = html.match(/<script type="module">([\s\S]*?)<\/script>/)[1]
+  const controller = (await readFile(join(ROOT, 'atelier.js'), 'utf8'))
     .replace(/^import .*;$/gm, '')
     .replace(/await import\(`\.\/pages\/\$\{name\}\.js\?v=\$\{Date\.now\(\)\}-\$\{version\+\+\}`\)/, 'await getCandidate()');
-  const atelierContext = vm.createContext({ ...validation, MarkEngine: EngineProbe, document, URLSearchParams, location: { search: '?p=test' }, requestAnimationFrame() {}, getCandidate: () => ({ default: candidate }) });
+  const atelierContext = vm.createContext({ ...validation, compilePage, MarkEngine: EngineProbe, document, URLSearchParams, location: { search: '?p=test' }, requestAnimationFrame() {}, getCandidate: () => ({ default: candidate }) });
   const atelier = await vm.runInContext(`(async () => { ${controller}\nreturn { load, snapshot: () => ({ engine, passes, allOps, currentSurface }) }; })()`, atelierContext);
   const first = atelier.snapshot();
   await atelier.load();
@@ -123,7 +123,9 @@ async function checkViewerTransitions() {
   assert.equal(atelier.snapshot().allOps, complete.allOps);
   candidate = { ...candidate, surface: { ...surface, paper: 'toned' } };
   await atelier.load();
-  assert.notEqual(atelier.snapshot().engine, complete.engine, 'paper edits recreate the surface even with identical marks');
+  assert.equal(atelier.snapshot().engine, complete.engine, 'paper edits cannot silently clear a continuing canvas');
+  await atelier.load(true);
+  assert.notEqual(atelier.snapshot().engine, complete.engine, 'explicit new version recreates the surface');
   assert.equal(atelier.snapshot().currentSurface.paper, 'toned');
 }
 

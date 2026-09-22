@@ -13,6 +13,7 @@
  */
 
 import vm from 'node:vm';
+import { compilePage } from './page-program.js';
 import { readFile } from 'node:fs/promises';
 import { resolve, dirname, relative, isAbsolute, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -60,12 +61,8 @@ async function run(entry) {
   const page = root.namespace.default;
   if (!page || typeof page.build !== 'function') throw new Error('page module must export default { title, date, note, build }');
   context.__page = page;
-  const ops = vm.runInContext('__page.build()', context, { timeout: BUILD_TIMEOUT_MS });
-  /* everything crosses back as plain JSON; nothing from the context survives */
-  const json = JSON.stringify({
-    ops,
-    meta: { title: page.title, date: page.date, note: page.note, refs: page.refs, seed: page.seed, page: page.page, surface: page.surface },
-  });
+  // Build, inspect pass metadata and serialize inside the CPU-limited context.
+  const json = vm.runInContext(`JSON.stringify((${compilePage.toString()})(__page))`, context, { timeout: BUILD_TIMEOUT_MS });
   return JSON.parse(json);
 }
 

@@ -1,3 +1,5 @@
+> New to the book? Read [START_HERE.md](START_HERE.md) first. This is the detailed mark contract.
+
 # Page protocol — what ships inside the book
 
 This is the document a mind reads once, when it is handed a sketchbook and has
@@ -136,10 +138,11 @@ There is no `drawFlower` and no `drawHand`. There is a frame with a width
 profile, and a flower is what you get when you point nineteen of them outward.
 If you find yourself wanting a subject helper, you want a page module instead.
 
-## Five rules the book enforces on itself
+## Lessons from representational studies
 
-You will get a flat, diagrammatic drawing if you ignore these. They are not
-style preferences; each one was a specific failure.
+These diagnose unwanted flatness when drawing dimensional subjects. They are
+not validation rules: symmetry, flatness, repetition and multiple light sources
+can all be intentional artistic choices. Each lesson came from a specific study.
 
 **1. Nothing is seen flat on.** Pick a viewing angle and squash the form about
 its horizon. A rosette drawn face-on is a mandala; a palm shaded in rings
@@ -227,8 +230,13 @@ example `pages/codex-rain.js` demonstrates eight inspected passes.
    stable so the history records what was actually seen.
 4. Pass buttons show cumulative checkpoints. **Replay this pass** starts with
    the earlier passes already complete. Export captures the selected checkpoint.
-5. Save the complete page through `book.mjs write` when ready. The book remains
-   append-only; the atelier is the working canvas before that save.
+5. Save checkpoints through `book.mjs write` throughout the work, initially as a study.
+   Use `--continue PAGE` for retained earlier marks or `--branch PAGE` for changed
+   construction. The book remains append-only; see `START_HERE.md` for resuming.
+6. Saved `journal.passes` retain each name, note, start/end op range, optional
+   review (`observation`, `change`, `next`, `region: [x,y,w,h]`) and checkpoint hash.
+   `build()` must exactly equal the concatenated builders. A pass label is not
+   proof of inspection. Legacy pages without passes remain valid.
 
 The atelier imports local modules directly, like `page.html`. Use it for your own
 trusted drawing source; use the sealed sandbox for source from other people.
@@ -237,7 +245,7 @@ current drawing is finished. It preserves existing pigment and resample caches.
 
 ### Saving
 
-From a shell, in the book's folder:
+From a shell, in the agent-sketchbook repository root (use `--book books/YOUR_BOOK` to choose storage):
 
 ```bash
 node book.mjs write pages/your-page.js --refs 3
@@ -247,7 +255,9 @@ node book.mjs read 3 --source
 
 Your module runs in the sealed box, its marks are checked, and the page is
 appended with the next number. It cannot be reordered or overwritten. A book
-that is full is full.
+that is full is full. New saves default to `study`; `select` records a separate
+curatorial decision without publishing the page. Selection events live in the
+book index, while the saved page preserves its original checkpoint metadata.
 
 In an app, one of two things happens: your **source** is handed to the same
 sealed box in the browser and the marks come back checked, or you hand over

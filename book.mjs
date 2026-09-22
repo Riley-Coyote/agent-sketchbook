@@ -10,6 +10,9 @@
  *   node book.mjs read  <n> [--source]     [--book <dir>]
  *   node book.mjs write <module.js> [--refs 2,3] [--title ..] [--note ..] [--date ..]
  *   node book.mjs render <n> --out <file.png> [--scale 2] [--transparent]
+ *   node book.mjs journal <n>
+ *   node book.mjs resume <n> --out <new-module.js> [--pass N]
+ *   node book.mjs select <n> --stage study|candidate|exhibition --note <reason>
  *   node book.mjs blank
  *
  * `--book <dir>` picks the book (default: ./book). One folder per mind.
@@ -20,7 +23,9 @@
  * while developing, never for someone else's.
  */
 
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename, rm } from 'node:fs/promises';
+import { compilePage } from './page-program.js';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { resolve, dirname, relative, extname } from 'node:path';
@@ -45,7 +50,36 @@ async function loadBook() {
 }
 async function saveBook(book) {
   await mkdir(resolve(BOOK_DIR, 'pages'), { recursive: true });
-  await writeFile(INDEX, JSON.stringify(book, null, 2) + '\n');
+  const temporary = `${INDEX}.${process.pid}.tmp`;
+  await writeFile(temporary, JSON.stringify(book, null, 2) + '\n');
+  await rename(temporary, INDEX);
+}
+
+const hash = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
+const stageNames = ['study', 'candidate', 'exhibition'];
+function stageArg(fallback = 'study') {
+  const stage = arg('--stage') || fallback;
+  if (!stageNames.includes(stage)) throw Error('stage must be study, candidate or exhibition');
+  return stage;
+}
+async function savedPage(book, n) {
+  const meta = book.pages.find(p => p.index === n);
+  if (!meta) throw Error(`no page ${n}`);
+  return { meta, page: JSON.parse(await readFile(resolve(BOOK_DIR, meta.file), 'utf8')) };
+}
+function checkpoint(page) {
+  if (arg('--pass') === undefined) return { ops: page.ops, passes: page.journal?.passes || [] };
+  const number = Number(arg('--pass'));
+  const passes = page.journal?.passes;
+  if (!Number.isInteger(number) || !passes?.[number - 1]) throw Error('that saved pass does not exist; use journal <page> to inspect the checkpoints');
+  return { ops: page.ops.slice(0, passes[number - 1].end), passes: passes.slice(0, number) };
+}
+let lock;
+async function acquireLock() {
+  await mkdir(BOOK_DIR, { recursive: true });
+  lock = resolve(BOOK_DIR, '.write-lock');
+  try { await writeFile(lock, String(process.pid), { flag: 'wx' }); }
+  catch (error) { lock = null; if (error.code === 'EEXIST') throw Error('book is being written; retry after the other writer finishes (check .write-lock if a process crashed)'); throw error; }
 }
 
 const r1 = (v) => Math.round(v * 10) / 10;
@@ -65,7 +99,7 @@ async function buildPage(modPath) {
     const mod = await import(pathToFileURL(modPath).href);
     const page = mod.default;
     if (!page || typeof page.build !== 'function') throw new Error('a page module exports default { title, date, note, build }');
-    return { ops: page.build(), meta: { title: page.title, date: page.date, note: page.note, refs: page.refs, seed: page.seed, page: page.page, surface: page.surface } };
+    return compilePage(page);
   }
   const { stdout } = await promisify(execFile)(
     process.execPath,
@@ -155,21 +189,30 @@ else {
   c.drawImage(ink, 0, 0);
   window.__png = out.toDataURL('image/png');
 }
+if (page.crop) {
+  const [x,y,w,h] = page.crop;
+  const image = new Image(); image.src = window.__png; await image.decode();
+  const crop = document.createElement('canvas'); crop.width = Math.round(w * page.scale); crop.height = Math.round(h * page.scale);
+  crop.getContext('2d').drawImage(image, x*page.scale,y*page.scale,w*page.scale,h*page.scale,0,0,crop.width,crop.height);
+  window.__png = crop.toDataURL('image/png');
+}
+window.__ready = true;
 </script>`;
 
-async function renderPage({ ops, w, h, scale, surface, transparent, out }) {
+async function renderPage({ ops, w, h, scale, surface, transparent, crop, out }) {
   const chromium = await playwright();
   if (!chromium) { console.error(MANUAL); process.exit(2); }
-  const { server, port } = await serve({ ops, w, h, scale, surface, transparent });
+  const { server, port } = await serve({ ops, w, h, scale, surface, transparent, crop });
   const browser = await chromium.launch();
   try {
     const tab = await browser.newPage();
     const failures = [];
     tab.on('pageerror', (e) => failures.push(String(e)));
     await tab.goto(`http://127.0.0.1:${port}/__render.html`);
-    await tab.waitForFunction('typeof window.__png === "string"', null, { timeout: 60000 })
+    await tab.waitForFunction('window.__ready === true', null, { timeout: 60000 })
       .catch(() => { throw new Error(`the page did not draw${failures.length ? `: ${failures[0]}` : ''}`); });
     const url = await tab.evaluate('window.__png');
+    await mkdir(dirname(out), { recursive: true });
     await writeFile(out, Buffer.from(url.slice(url.indexOf(',') + 1), 'base64'));
   } finally {
     await browser.close();
@@ -178,7 +221,18 @@ async function renderPage({ ops, w, h, scale, surface, transparent, out }) {
 }
 
 try {
-  if (cmd === 'init') {
+  if (['init', 'write', 'select'].includes(cmd)) await acquireLock();
+  if (cmd === 'help' || cmd === '--help') {
+    console.log(`Start here: START_HERE.md
+init --owner NAME --book DIR
+write pages/work.js --book DIR [--continue PAGE | --branch PAGE | --refs PAGES]
+journal PAGE --book DIR
+render PAGE --book DIR --out image.png [--pass N] [--crop x,y,w,h] [--scale 1]
+resume PAGE --book DIR --out pages/new.js [--pass N]
+select PAGE --book DIR --stage study|candidate|exhibition --note REASON
+list | read PAGE [--source] | blank --book DIR
+Saving defaults to a study. Selection records intent; it does not publish or grant access.`);
+  } else if (cmd === 'init') {
     const owner = arg('--owner');
     if (!owner) throw new Error('init needs --owner <name>');
     if (existsSync(INDEX)) throw new Error(`a book already exists at ${relative(process.cwd(), BOOK_DIR)}`);
@@ -199,7 +253,7 @@ try {
     console.log(`${book.title} (${book.owner}) — ${book.pages.length} of ${book.pageCount} pages drawn — pages: ${book.license || 'no license stated'}`);
     for (const p of book.pages) {
       const refs = p.refs?.length ? `  ↺ ${p.refs.join(',')}` : '';
-      console.log(`  ${String(p.index).padStart(2)}  ${p.date}  ${p.title}${refs}  (${p.opCount} marks)`);
+      console.log(`  ${String(p.index).padStart(2)}  ${p.date}  ${p.title}${refs}  (${p.opCount} marks · ${p.stage || 'unclassified'})`);
     }
   } else if (cmd === 'read') {
     const book = await loadBook();
@@ -208,13 +262,56 @@ try {
     if (!meta) throw new Error(`no page ${n}`);
     const page = JSON.parse(await readFile(resolve(BOOK_DIR, meta.file), 'utf8'));
     const { ops, source, ...rest } = page;
-    console.log(JSON.stringify({ ...rest, opCount: ops.length, sourceBytes: source.length }, null, 2));
+    console.log(JSON.stringify({ ...rest, stage: meta.stage || rest.stage || 'unclassified', stageAtSave: rest.stage, ...(meta.selectionNote ? { selectionNote: meta.selectionNote } : {}), opCount: ops.length, sourceBytes: source.length }, null, 2));
     if (flag('--source')) console.log('\n' + source);
+  } else if (cmd === 'journal') {
+    const book = await loadBook();
+    const { meta, page } = await savedPage(book, Number(args[0]));
+    console.log(JSON.stringify({ title: meta.title, stage: meta.stage || 'unclassified', selectionNote: meta.selectionNote || '', journal: page.journal || null, note: page.journal ? undefined : 'Legacy page: no recorded passes. Source and marks remain available; no review history has been invented.' }, null, 2));
+  } else if (cmd === 'resume') {
+    const book = await loadBook();
+    const n = Number(args[0]);
+    const { page } = await savedPage(book, n);
+    const target = arg('--out');
+    if (!target || !target.endsWith('.js')) throw Error('resume needs --out pages/new-name.js');
+    const restored = checkpoint(page);
+    const passes = restored.passes.length ? restored.passes : [{ name: 'Saved marks', note: page.note, start: 0, end: restored.ops.length }];
+    const data = passes.map(pass => ({ name: pass.name, note: pass.note, ...(pass.review ? { review: pass.review } : {}), ops: restored.ops.slice(pass.start, pass.end) }));
+    const frozen = '[\n' + data.map(({ops, ...entry}) => `${JSON.stringify(entry).slice(0,-1)},"ops":[\n${ops.map(op=>JSON.stringify(op)).join(',\n')}\n]}`).join(',\n') + '\n]';
+    const source = `// Restored from book ${book.id}, page ${n}. Earlier marks are frozen data.
+// Add a new pass; do not change these checkpoints when continuing.
+// BEGIN FROZEN MARKS (one operation per line; fold this block while editing)\nconst saved = ${frozen};\n// END FROZEN MARKS — add your next pass below
+const passes = saved.map(({ops, ...entry}) => ({...entry, build: () => ops}));
+// passes.push({name: 'Next pass', note: 'What changed after looking', build: () => [...]});
+export default {
+  title: ${JSON.stringify(page.title)}, date: ${JSON.stringify(new Date().toISOString().slice(0,10))},
+  note: ${JSON.stringify(page.note)}, page: ${JSON.stringify(page.page || {w:880,h:660})},
+  ${page.surface ? `surface: ${JSON.stringify(page.surface)},` : ''}
+  passes, build: () => passes.flatMap(pass => pass.build())
+};
+`;
+    await writeFile(resolve(target), source, { flag: 'wx' });
+    console.log(`Restored page ${n}${arg('--pass') ? `, pass ${arg('--pass')}` : ''} to ${target}. Save with --${arg('--pass') ? 'branch' : 'continue'} ${n}. The original source remains in the book.`);
+  } else if (cmd === 'select') {
+    const book = await loadBook();
+    const { meta } = await savedPage(book, Number(args[0]));
+    const stage = stageArg();
+    const note = (arg('--note') || '').trim();
+    if (!note) throw Error('selection needs --note: an artistic reason, not a test result');
+    meta.stage = stage;
+    meta.selectionNote = note;
+    (book.selections ||= []).push({ page: meta.index, stage, note, at: new Date().toISOString() });
+    await saveBook(book);
+    console.log(`Page ${meta.index}: ${stage}. Recorded selection only; no gallery or sharing settings changed.`);
   } else if (cmd === 'blank') {
     const book = await loadBook();
     console.log(book.pageCount - book.pages.length);
   } else if (cmd === 'write') {
     const book = await loadBook();
+    if (['--continue', '--branch', '--refs'].filter(flag).length > 1) throw Error('choose one of --continue, --branch or --refs');
+    const stage = stageArg();
+    const selectionNote = (arg('--selection-note') || '').trim();
+    if (stage !== 'study' && !selectionNote) throw Error('candidate/exhibition needs --selection-note: why this work is selected');
     if (!args[0] || args[0].startsWith('--')) throw new Error('write needs a page module');
     const modPath = resolve(process.cwd(), args[0]);
     if (book.pages.length >= book.pageCount) throw new Error('the book is full');
@@ -223,8 +320,11 @@ try {
     if (!page) throw new Error(`the page dimensions were rejected: ${dimensionErrors.join('; ')}`);
     const { surface, errors: surfaceErrors } = sanitizeSurface(built.meta.surface);
     if (surface === null) throw new Error(`the page surface was rejected: ${surfaceErrors.join('; ')}`);
+    // Validate before rounding: JSON null must never be coerced into coordinate zero.
+    const raw = sanitizeOps(built.ops, limitsForPage(page, surface));
+    if (!raw.ops) throw new Error(`the page's marks were rejected:\n  ${raw.errors.join('\n  ')}`);
     // Material gestures retain pressure, tilt, time and subpixel coordinates exactly.
-    const prepared = Array.isArray(built.ops) ? built.ops.map(op => op?.k === 'm' ? op : roundOp(op)) : built.ops;
+    const prepared = raw.ops.map(op => op.k === 'm' ? op : roundOp(op));
     const { ops, errors, stats } = sanitizeOps(prepared, limitsForPage(page, surface));
     if (!ops) throw new Error(`the page's marks were rejected:\n  ${errors.join('\n  ')}`);
     if (ops.length === 0) throw new Error('the page has no marks');
@@ -232,11 +332,25 @@ try {
       title: arg('--title') || built.meta.title,
       date: arg('--date') || built.meta.date,
       note: arg('--note') || built.meta.note,
-      refs: (arg('--refs') || '').split(',').filter(Boolean).map(Number).concat(built.meta.refs || []),
+      refs: (arg('--refs') || arg('--continue') || arg('--branch') || '').split(',').filter(Boolean).map(Number).concat(built.meta.refs || []),
     });
     if (!m.note) throw new Error('a page needs a note: what was attempted, and where it failed');
     for (const r of m.refs) if (!book.pages.some((p) => p.index === r)) throw new Error(`refs page ${r}, which is not in the book`);
     const source = await readFile(modPath, 'utf8');
+    let parent;
+    const relation = flag('--continue') ? 'continue' : flag('--branch') ? 'branch' : null;
+    if (relation) {
+      const n = Number(arg(`--${relation}`));
+      const previous = (await savedPage(book, n)).page;
+      if (relation === 'continue') {
+        if (JSON.stringify(previous.page || {w:880,h:660}) !== JSON.stringify(page) || JSON.stringify(previous.surface) !== JSON.stringify(surface)) throw Error('continuation must keep the same paper and dimensions; use --branch for a new version');
+        if (previous.ops.length > ops.length || previous.ops.some((op,i) => JSON.stringify(op) !== JSON.stringify(ops[i]))) throw Error('continuation changed earlier marks; restore them or save a new version with --branch');
+        const earlier = previous.journal?.passes;
+        if (earlier?.some((pass,i) => built.meta.passes?.[i]?.start !== pass.start || built.meta.passes?.[i]?.end !== pass.end)) throw Error('continuation changed earlier pass boundaries; preserve checkpoints or use --branch');
+      }
+      parent = { book: book.id, page: n, relation, marksHash: hash(previous.ops) };
+    }
+    const journal = { version: 1, sourceHash: hash(source), marksHash: hash(ops), ...(parent ? { parent } : {}), passes: (built.meta.passes || []).map(pass => ({ ...pass, checkpointHash: hash({ page, surface, ops: ops.slice(0, pass.end) }) })) };
     const index = book.pages.length + 1;
     const meta = {
       index,
@@ -250,9 +364,11 @@ try {
       opCount: ops.length,
       points: stats.points,
       state: 'drawn',
+      stage,
+      ...(selectionNote ? { selectionNote } : {}),
     };
     await mkdir(resolve(BOOK_DIR, 'pages'), { recursive: true });
-    await writeFile(resolve(BOOK_DIR, meta.file), JSON.stringify({ ...meta, source, ops }));
+    await writeFile(resolve(BOOK_DIR, meta.file), JSON.stringify({ ...meta, journal, source, ops }), { flag: 'wx' });
     book.pages.push(meta);
     await saveBook(book);
     console.log(`page ${index}: "${meta.title}" — ${ops.length} marks${meta.refs.length ? `, reworks ${meta.refs.join(', ')}` : ''}`);
@@ -268,9 +384,12 @@ try {
     if (!dimensions) throw new Error(`the page dimensions were rejected: ${dimensionErrors.join('; ')}`);
     const { surface, errors: surfaceErrors } = sanitizeSurface(page.surface);
     if (surface === null) throw new Error(`the page surface was rejected: ${surfaceErrors.join('; ')}`);
-    const { ops, errors } = sanitizeOps(page.ops, limitsForPage(dimensions, surface));
+    const { ops, errors } = sanitizeOps(checkpoint(page).ops, limitsForPage(dimensions, surface));
     if (!ops) throw new Error(`the page's marks were rejected: ${errors.join('; ')}`);
-    const scale = Number(arg('--scale')) || 2;
+    const scale = arg('--scale') === undefined ? 2 : Number(arg('--scale'));
+    if (!Number.isFinite(scale) || scale < .1 || scale > 4 || dimensions.w * dimensions.h * scale * scale > 32000000) throw Error('scale needs 0.1 to 4, at most 32 million output pixels');
+    const crop = arg('--crop')?.split(',').map(Number);
+    if (crop && (crop.length !== 4 || !crop.every(Number.isInteger) || crop[0] < 0 || crop[1] < 0 || crop[2] <= 0 || crop[3] <= 0 || crop[0]+crop[2] > dimensions.w || crop[1]+crop[3] > dimensions.h)) throw Error('crop needs x,y,width,height inside the page');
     await renderPage({
       ops,
       w: dimensions.w,
@@ -278,13 +397,16 @@ try {
       surface,
       scale,
       transparent: flag('--transparent'),
+      crop,
       out: resolve(process.cwd(), out),
     });
-    console.log(`page ${n}: "${meta.title}" → ${out} (${dimensions.w * scale}×${dimensions.h * scale})`);
+    console.log(`page ${n}: "${meta.title}" → ${out} (${Math.round((crop?.[2] || dimensions.w) * scale)}×${Math.round((crop?.[3] || dimensions.h) * scale)})`);
   } else {
-    throw new Error('commands: init --owner <name>, list, read <n> [--source], write <module.js> [--refs a,b], render <n> --out <png> [--scale 2] [--transparent], blank   (--book <dir> on any)');
+    throw new Error('Unknown command. Run node book.mjs help for drawing, inspection, revision and selection commands.');
   }
 } catch (e) {
   console.error(e.message);
-  process.exit(1);
+  process.exitCode = 1;
+} finally {
+  if (lock) await rm(lock, { force: true });
 }

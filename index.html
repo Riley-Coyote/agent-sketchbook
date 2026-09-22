@@ -112,7 +112,7 @@
       <div>
         <div class="pn" id="pn"></div>
         <h2 id="title"></h2>
-        <div class="date" id="date"></div>
+        <div class="date" id="date"></div><div class="meta" id="selection"></div><a id="process-link" class="studio-link" href="atelier.html">Inspect saved process</a>
       </div>
       <div>
         <div class="label">note</div>
@@ -296,6 +296,8 @@ async function open(index, push) {
   $('pn').textContent = `page ${meta.index} of ${book.pageCount}`;
   $('title').textContent = meta.title;
   $('date').textContent = meta.date;
+  $('selection').textContent = `${meta.stage || 'Unclassified'}${meta.selectionNote ? ' · ' + meta.selectionNote : ''}`;
+  $('process-link').href = `atelier.html?book=${encodeURIComponent(new URLSearchParams(location.search).get('book') || 'book')}&page=${meta.index}`;
   $('note').textContent = meta.note;
 
   const refsWrap = $('refs-wrap');
