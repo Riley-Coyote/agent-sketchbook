@@ -227,7 +227,7 @@ export function sanitizeOps(input, limits = LIMITS) {
       if (!num(size) || size < 2 || size > 600) { err(i, 'text size needs 2..600 px'); continue; }
       t.size = size;
       const font = o.font ?? 'mono';
-      if (font !== 'mono' && font !== 'sans') { err(i, "font needs 'mono' or 'sans'"); continue; }
+      if (!['mono', 'sans', 'serif'].includes(font)) { err(i, "font needs 'mono', 'sans' or 'serif'"); continue; }
       t.font = font;
       const layer = o.layer ?? 'line';
       if (!LAYER_KEYS.has(layer)) { err(i, `unknown layer ${JSON.stringify(layer)}`); continue; }

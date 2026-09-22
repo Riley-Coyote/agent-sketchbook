@@ -157,7 +157,7 @@ try {
     };
     const inked = (d) => { let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 200) n++; return n; };
     const out = {};
-    out.faces = document.fonts.check('16px SketchMono') && document.fonts.check('400 16px SketchSans');
+    out.faces = document.fonts.check('16px SketchMono') && document.fonts.check('400 16px SketchSans') && document.fonts.check('400 16px SketchSerif');
     // A block grid is solid: no seam where cells meet, across columns or rows.
     const solid = await draw(GRID(['████████', '████████', '████████'], 20, 30, { size: 16 }));
     const px = (d, x, y, w = 200) => d[(y * w + x) * 4];
@@ -179,6 +179,12 @@ try {
     out.brailleFull = inked(await draw([GLYPHS('⣿⣿⣿', 20, 40, { size: 24 })]));
     // Glyphs set in the bundled face, and text on a path is laid along it.
     out.text = inked(await draw([GLYPHS('mark', 10, 50, { font: 'sans', size: 40 })]));
+    // the serif is its own face: the same word sets narrower, with different ink
+    const serif = await draw([GLYPHS('mark', 10, 50, { font: 'serif', size: 40 })]);
+    out.serif = inked(serif);
+    const sansWord = await draw([GLYPHS('Hamburgefonstiv', 4, 50, { font: 'sans', size: 22 })]), serifWord = await draw([GLYPHS('Hamburgefonstiv', 4, 50, { font: 'serif', size: 22 })]);
+    const extent = (d) => { let r = 0; for (let x = 0; x < 200; x++) for (let y = 0; y < 80; y++) if (d[(y * 200 + x) * 4] < 200) r = Math.max(r, x); return r; };
+    out.sansRight = extent(sansWord); out.serifRight = extent(serifWord);
     out.along = inked(await draw([ALONG('along', [[10, 60], [190, 20]], { size: 18 })]));
     // Erased text lifts pigment out of what is beneath it.
     const field = SHAPE([[0, 0], [200, 0], [200, 80], [0, 80]], [20, 20, 20]);
@@ -204,11 +210,12 @@ try {
     out.replayDiff = diff;
     return out;
   });
-  ok(g.faces, 'the bundled mono and sans faces load');
+  ok(g.faces, 'the bundled mono, sans and serif faces load');
   ok(g.seams <= g.solid + 2, `a block grid has no seams between cells or rows (seam ${g.seams}, solid ${g.solid})`);
   ok(g.halfSeams <= g.halfSolid + 2, `a half-alpha block grid neither gaps nor darkens at joins (seam ${g.halfSeams}, solid ${g.halfSolid})`);
   ok(g.brailleBlank === 0 && g.brailleFull > 80, `braille is drawn as dots (blank pattern ${g.brailleBlank} px, full ${g.brailleFull} px)`);
   ok(g.text > 150 && g.along > 60, `glyphs render, on a baseline and along a path (${g.text}, ${g.along} px)`);
+  ok(g.serif > 100 && g.serifRight < g.sansRight - 8, `the serif sets in its own face, narrower than the sans (${g.serifRight} vs ${g.sansRight} px wide)`);
   ok(g.fieldInk === 16000 && g.cutInk < 15000, `erased text lifts the pigment beneath (${16000 - g.cutInk} px cut)`);
   ok(g.grainPores > 400 && g.grainPores < 9000 && g.grainSame, `grain knocks pores out of a shape, deterministically (${g.grainPores} px)`);
   ok(g.replayDiff === 0, `replay types the glyphs and ends on the finished page (${g.replayDiff} differing bytes)`);
@@ -306,7 +313,8 @@ try {
   ok(sanitizeOps([glaze], legacyLimits).ops === null, 'overprinted strokes are refused without the second canvas');
   ok(sanitizeOps([{ ...glaze, brush: 'eraser' }], inkLimits).ops === null && sanitizeOps([{ ...glaze, k: 'g' }], inkLimits).ops === null, 'an eraser or a construction line cannot overprint');
   ok(sanitizeOps([{ ...glaze, overprint: 'yes' }], inkLimits).ops === null, 'overprint is true or false');
-  ok(sanitizeOps([{ k: 't', text: 'hi', x: 10, y: 10, font: 'serif' }], inkLimits).ops === null, 'an unbundled face is refused');
+  ok(sanitizeOps([{ k: 't', text: 'hi', x: 10, y: 10, font: 'fraktur' }], inkLimits).ops === null, 'an unbundled face is refused');
+  ok(sanitizeOps([{ k: 't', text: 'hi', x: 10, y: 10, font: 'serif', weight: 500 }], inkLimits).ops?.[0].font === 'serif', 'the serif face is accepted');
   ok(sanitizeOps([{ k: 't', text: 'x'.repeat(4001), x: 10, y: 10 }], inkLimits).ops === null, 'text over 4000 characters is refused');
   ok(sanitizeOps([{ k: 't', text: 'a\u0007b', x: 10, y: 10 }], inkLimits).ops === null, 'control characters are refused');
   ok(sanitizeOps([{ k: 'f', poly: [[0, 0], [10, 0], [10, 10]], grain: 2 }], inkLimits).ops === null, 'grain outside 0..1 is refused');

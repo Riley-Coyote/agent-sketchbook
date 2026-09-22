@@ -340,9 +340,16 @@ OP('s', pts, 'tone', 'glaze', 6, [242, 200, 20], 0.5, { overprint: true })
 
 The second canvas also takes text as marks. Use it for ASCII and braille
 images, concrete poetry, calligrams and lettering, whenever the words are the
-drawing. Two faces are bundled so a page renders the same everywhere:
-`mono` (JetBrains Mono, without ligatures) and `sans` (Inter, weights
-100–900). Glyphs are typed out one by one on replay.
+drawing. Three faces are bundled so a page renders the same everywhere:
+
+- `mono`: JetBrains Mono, without ligatures. Cells, code, labels that count.
+- `sans`: Inter, weights 100–900. Clean, modern, neutral.
+- `serif`: Cormorant Garamond, weights 300–700. The literary voice: verse,
+  letters, anything that should read like a book. Its range is Latin,
+  curly quotes and dashes. It has no italic yet.
+
+A page loads only the faces it uses. Glyphs are typed out one by one on
+replay.
 
 ```js
 import { GLYPHS, ALONG, GRID } from '../mark-engine.js';
@@ -354,8 +361,8 @@ GRID(['┌──┐', '│⣿▚│', '└──┘'], x, y, { size: 12 })   // 
 | option | meaning |
 |---|---|
 | `size` | glyph size in px (2–600, default 16) |
-| `font` | `mono` (default) or `sans` |
-| `weight` | 100–900, `sans` only |
+| `font` | `mono` (default), `sans` or `serif` |
+| `weight` | `sans` 100–900, `serif` 300–700; `mono` has one weight |
 | `c`, `alpha`, `layer` | as for strokes; text defaults to `line` |
 | `rot` | turn the whole run, in radians |
 | `track` | extra space between glyphs, in em (−0.5–4) |

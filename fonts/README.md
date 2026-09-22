@@ -9,3 +9,4 @@ drawn by the engine as geometry, not from a font.
 |---|---|---|---|
 | `jetbrains-mono-nl.woff` | JetBrains Mono NL (no ligatures, so `->` stays two cells) | `mono` | SIL OFL 1.1, `OFL-JetBrainsMono.txt` |
 | `inter.woff` | Inter, variable weight 100–900 | `sans` | SIL OFL 1.1, `OFL-Inter.txt` |
+| `cormorant-garamond.woff` | Cormorant Garamond 4.001, variable weight 300–700, roman only; Latin, quotes and dashes | `serif` | SIL OFL 1.1, `OFL-CormorantGaramond.txt` |

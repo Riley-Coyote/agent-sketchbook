@@ -142,29 +142,31 @@ export const LAYERS = [
  * without font seams. There is still no raster op: a glyph is a vector mark
  * from a known face, like a stroke is a run of stamps. */
 export const FONTS = {
-  mono: { family: 'SketchMono', file: './fonts/jetbrains-mono-nl.woff', advance: 0.6 },
-  sans: { family: 'SketchSans', file: './fonts/inter.woff', weight: '100 900' },
+  mono: { family: 'SketchMono', file: './fonts/jetbrains-mono-nl.woff', advance: 0.6, fallback: 'monospace' },
+  sans: { family: 'SketchSans', file: './fonts/inter.woff', weight: '100 900', fallback: 'sans-serif' },
+  serif: { family: 'SketchSerif', file: './fonts/cormorant-garamond.woff', weight: '300 700', fallback: 'serif' },
 };
-let fontsLoading = null;
-/** Register and load the bundled faces once per document. Never throws: a
- * missing face falls back to the platform's, rather than losing the page. */
-export function loadFonts() {
+const fontsLoading = {};
+/** Register and load bundled faces once per document: the ones named, or all
+ * of them. Never throws: a missing face falls back to the platform's, rather
+ * than losing the page. */
+export function loadFonts(names = Object.keys(FONTS)) {
   if (typeof document === 'undefined' || !document.fonts || typeof FontFace === 'undefined') return Promise.resolve();
-  fontsLoading ||= Promise.all(Object.values(FONTS).map(async (f) => {
+  return Promise.all(names.filter((n) => FONTS[n]).map((n) => (fontsLoading[n] ||= (async () => {
+    const f = FONTS[n];
     const face = new FontFace(f.family, `url(${new URL(f.file, import.meta.url)}) format('woff')`, f.weight ? { weight: f.weight } : {});
     document.fonts.add(face);
     await face.load();
-  })).catch(() => {});
-  return fontsLoading;
+  })().catch(() => {})))).then(() => {});
 }
 
 const GLYPH_KEYS = ['size', 'font', 'layer', 'c', 'alpha', 'rot', 'track', 'align', 'line', 'weight', 'wob', 'erase'];
 const glyphOpts = (o) => Object.fromEntries(GLYPH_KEYS.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
 
 /** A run of glyphs from (x, y) on its baseline. `\n` starts a new line.
- * opts: size px (16) · font 'mono' | 'sans' · layer ('line') · c [r,g,b] ·
+ * opts: size px (16) · font 'mono' | 'sans' | 'serif' · layer ('line') · c [r,g,b] ·
  * alpha · rot radians · track (extra em between glyphs) · align
- * 'left' | 'center' | 'right' · line (line height px) · weight 100–900 (sans)
+ * 'left' | 'center' | 'right' · line (line height px) · weight 100–900 (sans), 300–700 (serif)
  * · wob 0–1 (the hand's unevenness) · erase (cut the text out of the layer). */
 export const GLYPHS = (text, x, y, opts = {}) => ({ k: 't', text, x, y, ...glyphOpts(opts) });
 /** Glyphs set along a path, each turned to it: `pts` is the baseline. */
@@ -554,8 +556,9 @@ export class MarkEngine {
   /** Load what the page's marks need before drawing: the glyph faces. Call
    * after load() and before finish() or replay(). Harmless for other pages. */
   async ready() {
-    if ((this.allOps || this.ops).some((o) => o.k === 't')) {
-      await loadFonts();
+    const faces = new Set((this.allOps || this.ops).filter((o) => o.k === 't').map((o) => o.font ?? 'mono'));
+    if (faces.size) {
+      await loadFonts([...faces]);   // only the faces this page sets type in
       this.plans = new WeakMap(); // measurements taken before the faces arrived are stale
     }
     return this;
@@ -799,9 +802,10 @@ export class MarkEngine {
     let plan = this.plans.get(op);
     if (plan) return plan;
     const size = op.size ?? 16;
-    const mono = (op.font ?? 'mono') === 'mono';
+    const face = FONTS[op.font ?? 'mono'] || FONTS.mono;
+    const mono = face === FONTS.mono;
     const lh = op.line ?? size * 1.25;
-    const css = mono ? `${size}px ${FONTS.mono.family}, monospace` : `${op.weight ?? 400} ${size}px ${FONTS.sans.family}, sans-serif`;
+    const css = mono ? `${size}px ${face.family}, ${face.fallback}` : `${op.weight ?? 400} ${size}px ${face.family}, ${face.fallback}`;
     /* Measure on a context of our own, set once: the layer contexts change
      * font and state as they draw, so they can't be trusted to hold this one. */
     this._measure ||= document.createElement('canvas').getContext('2d');
