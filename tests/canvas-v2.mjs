@@ -221,6 +221,38 @@ try {
   ok(g.replayDiff === 0, `replay types the glyphs and ends on the finished page (${g.replayDiff} differing bytes)`);
   ok(g.overprint[0] < 20 && g.overprint[1] > 160 && g.overprint[2] < 20, `overprint multiplies inks: yellow over cyan prints green (${g.overprint})`);
 
+  console.log('halftone');
+  const ht = await page.evaluate(async () => {
+    const { MarkEngine, SHAPE } = await import('/mark-engine.js');
+    const surface = { kind: 'ink', version: 2, paper: '#ffffff' };
+    const draw = (ops, w = 240, h = 120) => {
+      const e = new MarkEngine({ width: w, height: h, dpr: 1, surface }); e.load(ops); e.finish();
+      const c = document.createElement('canvas'); c.width = w; c.height = h; e.composite(c.getContext('2d'));
+      return c.getContext('2d').getImageData(0, 0, w, h).data;
+    };
+    const share = (d, x0, y0, x1, y1, w = 240) => { let n = 0, all = 0; for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { all++; if (d[(y * w + x) * 4] < 128) n++; } return n / all; };
+    const sq = (x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
+    const flat = (t, shape = 'dot') => share(draw([SHAPE(sq(0, 0, 240, 120), [0, 0, 0], { halftone: { cell: 8, angle: 45, tone: t, shape } })]), 20, 20, 220, 100);
+    const out = { t30: flat(0.3), t70: flat(0.7), line50: flat(0.5, 'line') };
+    const ramp = draw([SHAPE(sq(0, 0, 240, 120), [0, 0, 0], { halftone: { cell: 6, angle: 30, tone: { from: [0, 0, 0.1], to: [240, 0, 0.9] } } })]);
+    out.rampLeft = share(ramp, 10, 10, 60, 110); out.rampRight = share(ramp, 180, 10, 230, 110);
+    // one screen, anchored to the page: two halves meet exactly as one whole
+    const whole = draw([SHAPE(sq(0, 0, 240, 120), [0, 0, 0], { halftone: { cell: 7, angle: 15, tone: 0.45 } })]);
+    const halves = draw([SHAPE(sq(0, 0, 120, 120), [0, 0, 0], { halftone: { cell: 7, angle: 15, tone: 0.45 } }), SHAPE(sq(120, 0, 120, 120), [0, 0, 0], { halftone: { cell: 7, angle: 15, tone: 0.45 } })]);
+    let seam = 0; for (let y = 0; y < 120; y++) for (let x = 112; x < 128; x++) { const k = (y * 240 + x) * 4; if (Math.abs(whole[k] - halves[k]) > 40) seam++; }
+    out.seam = seam;
+    return out;
+  });
+  ok(Math.abs(ht.t30 - 0.3) < 0.05 && Math.abs(ht.t70 - 0.7) < 0.05, `a halftone inks its tone: 0.3 → ${ht.t30.toFixed(2)}, 0.7 → ${ht.t70.toFixed(2)}`);
+  ok(Math.abs(ht.line50 - 0.5) < 0.06, `a line screen inks its tone: 0.5 → ${ht.line50.toFixed(2)}`);
+  ok(ht.rampRight > ht.rampLeft + 0.4, `a ramp shades across the shape (${ht.rampLeft.toFixed(2)} → ${ht.rampRight.toFixed(2)})`);
+  ok(ht.seam < 30, `the screen is anchored to the page: two halves meet as one (${ht.seam} px differ at the join)`);
+  const { sanitizeOps: checkOps, limitsForPage: limitsFor } = await import('../validate.js');
+  const inkPage = limitsFor({ w: 400, h: 300 }, { kind: 'ink', version: 2 });
+  const shape = (halftone) => checkOps([{ k: 'f', poly: [[0, 0], [10, 0], [10, 10]], halftone }], inkPage).ops;
+  ok(shape({ cell: 6, angle: 15, tone: { at: [5, 5], r: 10, inner: 1, outer: 0 } })?.[0].halftone.shape === 'dot', 'a halftone with a radial tone is accepted');
+  ok([{ cell: 1 }, { angle: 100 }, { tone: 1.5 }, { shape: 'hex' }, { tone: { from: [0, 0], to: [1, 1, 1] } }, 'dots'].every((h) => shape(h) === null), 'a halftone out of range is refused');
+
   console.log('transparent paint');
   const tp = await page.evaluate(async () => {
     const { MarkEngine, OP, DOT, PHASE } = await import('/mark-engine.js');

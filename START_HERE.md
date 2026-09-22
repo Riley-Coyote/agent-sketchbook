@@ -17,7 +17,7 @@ book keeps, replays and lets you revise.
 | **Painting** | transparent colour laid in layers on any paper; coats that mix like pigment | `pages/example-hills-after-rain.js`, `pages/opus-5-5-three-pigments.js` |
 | **Type** | words as the image: concrete poetry, lettering, text on paths, in mono, sans or a book serif | `pages/example-tide-table.js`, `pages/opus-5-5-nautilus.js` |
 | **Braille and ASCII** | images made of cells: braille dots, blocks, box drawing | `pages/example-braille-moon.js` |
-| **Print** | flat shapes, grain, overprint: riso, screenprint, cut paper | `pages/example-riso-harbour.js` |
+| **Print** | flat shapes, halftone screens, grain, overprint: riso, screenprint, cut paper | `pages/example-riso-harbour.js` |
 | **Motion** | a loop of frames: time as the content, not only the process | `pages/example-first-rain.js`, `pages/opus-5-5-fireflies.js` |
 | **Graphite and charcoal** | pressure, tilt, blending and lifting, one gesture at a time | the material studio, below; `pages/opus-5-5-drapery.js` |
 

@@ -186,7 +186,38 @@ export function GRID(rows, x, y, opts = {}) {
  * same grain lines up across every shape. `overprint` multiplies the ink with
  * what is already on its layer, as a second riso colour does over the first.
  * `erase` cuts the shape out instead. */
-export const SHAPE = (poly, c = undefined, opts = {}) => ({ k: 'f', poly, ...(c ? { c } : {}), ...Object.fromEntries(['layer', 'alpha', 'grain', 'erase', 'overprint'].filter((k) => opts[k] !== undefined).map((k) => [k, opts[k]])) });
+export const SHAPE = (poly, c = undefined, opts = {}) => ({ k: 'f', poly, ...(c ? { c } : {}), ...Object.fromEntries(['layer', 'alpha', 'grain', 'erase', 'overprint', 'halftone'].filter((k) => opts[k] !== undefined).map((k) => [k, opts[k]])) });
+
+/* Halftone: how big a dot must be for its cell to be `t` inked. Past a radius
+ * of half the cell, dots meet their neighbours; the ink within a cell is then
+ * the circle less the four segments beyond the cell's sides. Worked out once,
+ * in cell units, and read back by bisection. */
+const dotCoverage = (r) => {
+  if (r <= 0.5) return Math.PI * r * r;
+  if (r >= Math.SQRT1_2) return 1;
+  const seg = r * r * Math.acos(0.5 / r) - 0.5 * Math.sqrt(r * r - 0.25);
+  return Math.PI * r * r - 4 * seg;
+};
+function dotRadius(t) {
+  if (t >= 1) return Math.SQRT1_2 + 0.01;
+  let lo = 0, hi = Math.SQRT1_2;
+  for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; if (dotCoverage(mid) < t) lo = mid; else hi = mid; }
+  return (lo + hi) / 2;
+}
+/** A halftone's tone at a point: flat, a linear ramp, or a radial one. */
+function toneAt(tone) {
+  const clamp01 = (v) => Math.max(0, Math.min(1, v));
+  if (typeof tone === 'number') return () => tone;
+  if (tone?.from) {
+    const [ax, ay, av] = tone.from, [bx, by, bv] = tone.to, dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1;
+    return (x, y) => av + (bv - av) * clamp01(((x - ax) * dx + (y - ay) * dy) / l2);
+  }
+  if (tone?.at) {
+    const [cx, cy] = tone.at;
+    return (x, y) => tone.inner + (tone.outer - tone.inner) * clamp01(Math.hypot(x - cx, y - cy) / tone.r);
+  }
+  return () => 0.5;
+}
 
 const hash01 = (a, b) => frac(Math.sin(a * 127.1 + b * 311.7) * 43758.5453);
 const BRAILLE_DOTS = [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2], [0, 3], [1, 3]];
@@ -912,6 +943,49 @@ export class MarkEngine {
     this.pen = { x: g.x, y: g.y };
   }
 
+  /** A halftone screen inside the shape: a page-anchored grid of dots or
+   * lines at `angle`, each sized so its cell is inked by the tone there. */
+  screen(ctx, op, trace) {
+    const h = op.halftone, cell = h.cell ?? 8, a = ((h.angle ?? 45) * Math.PI) / 180;
+    const cos = Math.cos(a), sin = Math.sin(a), tone = toneAt(h.tone ?? 0.5);
+    const xs = op.poly.map((p) => p[0]), ys = op.poly.map((p) => p[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const us = [], vs = [];
+    for (const [x, y] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]) { us.push(x * cos + y * sin); vs.push(-x * sin + y * cos); }
+    const i0 = Math.floor(Math.min(...us) / cell) - 1, i1 = Math.ceil(Math.max(...us) / cell) + 1;
+    const j0 = Math.floor(Math.min(...vs) / cell) - 1, j1 = Math.ceil(Math.max(...vs) / cell) + 1;
+    const page = (u, v) => [u * cos - v * sin, u * sin + v * cos];
+    ctx.save();
+    trace(ctx);
+    ctx.clip();
+    ctx.beginPath();
+    for (let j = j0; j <= j1; j++) {
+      const v = (j + 0.5) * cell;
+      if ((h.shape ?? 'dot') === 'line') {
+        // one ribbon per row, as thick as the tone along it
+        const top = [], bottom = [];
+        for (let i = i0; i <= i1; i += 0.5) {
+          const u = i * cell, [x, y] = page(u, v), half = 0.5 * cell * Math.max(0, Math.min(1, tone(x, y)));
+          top.push(page(u, v - half)); bottom.unshift(page(u, v + half));
+        }
+        [...top, ...bottom].forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+        ctx.closePath();
+      } else {
+        for (let i = i0; i <= i1; i++) {
+          const [x, y] = page((i + 0.5) * cell, v);
+          if (x < x0 - cell || x > x1 + cell || y < y0 - cell || y > y1 + cell) continue;
+          const t = Math.max(0, Math.min(1, tone(x, y)));
+          if (t < 0.004) continue;
+          const rad = dotRadius(t) * cell;
+          ctx.moveTo(x + rad, y);
+          ctx.arc(x, y, rad, 0, Math.PI * 2);
+        }
+      }
+    }
+    ctx.fill();
+    ctx.restore();
+  }
+
   drawShape(op) {
     const L = this.layers[op.layer ?? 'tone'] || this.layers.tone;
     const [r, gg, b] = op.c || this.ink;
@@ -920,6 +994,7 @@ export class MarkEngine {
       op.poly.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
       ctx.closePath();
     };
+    const ink = (ctx) => { if (op.halftone) this.screen(ctx, op, trace); else { trace(ctx); ctx.fill(); } };
     const grain = op.grain ?? 0;
     if (!grain) {
       const ctx = L.ctx;
@@ -928,8 +1003,7 @@ export class MarkEngine {
       else if (op.overprint) ctx.globalCompositeOperation = 'multiply';
       ctx.globalAlpha *= op.alpha ?? 1;
       ctx.fillStyle = `rgb(${r},${gg},${b})`;
-      trace(ctx);
-      ctx.fill();
+      ink(ctx);
       ctx.restore();
     } else {
       /* Pull the shape on a scratch sheet, knock the grain out of it there,
@@ -943,8 +1017,7 @@ export class MarkEngine {
       const s = this.v2 ? sheet.getContext('2d', { colorType: 'float16' }) : sheet.getContext('2d');
       s.setTransform(this.dpr, 0, 0, this.dpr, -x0, -y0);
       s.fillStyle = `rgb(${r},${gg},${b})`;
-      trace(s);
-      s.fill();
+      ink(s);
       s.setTransform(1, 0, 0, 1, 0, 0);
       s.globalCompositeOperation = 'destination-out';
       s.globalAlpha = Math.min(1, grain);

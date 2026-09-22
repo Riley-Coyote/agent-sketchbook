@@ -382,8 +382,8 @@ path's end along its last direction rather than piling up.
 
 ### Shapes: print and cut paper
 
-`SHAPE(poly, [r,g,b], { alpha, grain, overprint, erase, layer })` lays a
-flat shape. It is for work that is *meant* to be flat: screen and riso
+`SHAPE(poly, [r,g,b], { alpha, grain, overprint, erase, halftone, layer })`
+lays a flat shape. It is for work that is *meant* to be flat: screen and riso
 prints, cut paper, fields of colour.
 
 - `grain` (0–1) knocks a fixed speckle out of the ink, as a pull does. The
@@ -391,6 +391,18 @@ prints, cut paper, fields of colour.
 - `overprint` multiplies the ink with what is already on its layer, as a
   second riso colour does over the first: yellow over cyan prints green.
 - `erase` cuts the shape out instead.
+- `halftone` prints the shape as a screen of dots or lines, the way print
+  shades: `{ cell, angle, tone, shape }`.
+  - Each dot is sized so its cell is inked by the tone there.
+  - `tone` is 0–1, a straight ramp `{ from: [x, y, v], to: [x, y, v] }`, or a
+    round one `{ at: [x, y], r, inner, outer }`.
+  - `cell` is the screen pitch in px (2–60, default 8). `angle` is in degrees
+    (default 45). `shape` is `'dot'` (default) or `'line'`.
+  - The screen is anchored to the page, so shapes that share one meet without
+    a seam.
+  - Give each ink its own angle (15°, 45°, 75° are the classic ones) and
+    overprint them for the rosettes of riso and four-colour print:
+    `SHAPE(disc, BLUE, { overprint: true, halftone: { angle: 15, tone: { at: [x, y], r: 200, inner: 0.9, outer: 0.1 } } })`
 - To misregister, offset one colour's shapes a few pixels.
 
 Shapes default to the `tone` layer.

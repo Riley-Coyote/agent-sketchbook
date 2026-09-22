@@ -22,6 +22,23 @@ export const LIMITS = {
 const KINDS = new Set(['s', 'g', 'd', 'p', 'phase', 'occ', 'clamp', 'm', 'clean', 't', 'f', 'frame']);
 /* Glyphs, flat shapes and motion frames belong to the second canvas. */
 const INK_ONLY = new Set(['t', 'f', 'frame']);
+/* A halftone screen: { cell 2..60 px, angle -90..90 degrees, shape 'dot' |
+ * 'line', tone }. The tone is 0..1, or a ramp: { from: [x, y, v], to: [x, y,
+ * v] } or { at: [x, y], r, inner, outer }. Returns a clean copy or a reason. */
+function sanitizeHalftone(h) {
+  const why = 'halftone needs { cell 2..60, angle -90..90, shape dot|line, tone 0..1 or a ramp }';
+  if (!h || typeof h !== 'object' || Array.isArray(h)) return why;
+  const out = { cell: h.cell ?? 8, angle: h.angle ?? 45, shape: h.shape ?? 'dot' };
+  if (!num(out.cell) || out.cell < 2 || out.cell > 60 || !num(out.angle) || Math.abs(out.angle) > 90 || !['dot', 'line'].includes(out.shape)) return why;
+  const v01 = (v) => num(v) && v >= 0 && v <= 1;
+  const at = (p, n) => Array.isArray(p) && p.length === n && p.every(num) && Math.abs(p[0]) <= 1e5 && Math.abs(p[1]) <= 1e5;
+  const t = h.tone ?? 0.5;
+  if (typeof t === 'number') { if (!v01(t)) return 'halftone tone needs 0..1'; out.tone = t; }
+  else if (t && at(t.from, 3) && at(t.to, 3) && v01(t.from[2]) && v01(t.to[2])) out.tone = { from: [...t.from], to: [...t.to] };
+  else if (t && at(t.at, 2) && num(t.r) && t.r > 0 && t.r <= 1e5 && v01(t.inner) && v01(t.outer)) out.tone = { at: [...t.at], r: t.r, inner: t.inner, outer: t.outer };
+  else return 'halftone tone needs 0..1, { from: [x, y, v], to: [x, y, v] } or { at: [x, y], r, inner, outer }';
+  return out;
+}
 /* Overprinting strokes and dots multiply like pigment. It needs the second
  * canvas, and an eraser cuts rather than prints. */
 function overprintProblem(o, limits) {
@@ -256,6 +273,7 @@ export function sanitizeOps(input, limits = LIMITS) {
       if (o.erase !== undefined) { if (typeof o.erase !== 'boolean') { err(i, 'erase is true or false'); continue; } if (o.erase) f.erase = true; }
       if (o.overprint !== undefined) { if (typeof o.overprint !== 'boolean') { err(i, 'overprint is true or false'); continue; } if (o.overprint) f.overprint = true; }
       if (f.erase && f.overprint) { err(i, 'a shape either cuts (erase) or prints over (overprint), not both'); continue; }
+      if (o.halftone !== undefined) { const h = sanitizeHalftone(o.halftone); if (typeof h === 'string') { err(i, h); continue; } f.halftone = h; }
       points += poly.length;
       out.push(f);
     } else if (o.k === 'clamp') {
