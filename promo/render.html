@@ -18,6 +18,18 @@ for (const s of SHOTS) { starts.push(total); total += s.beats * BEAT; }
 window.promo = { frames: Math.round(total * FPS), fps: FPS, shots: SHOTS.map((s, k) => ({ name: s.name, from: starts[k], seconds: s.beats * BEAT })) };
 
 const engineFor = (surface) => new MarkEngine({ width: W, height: H, dpr: scale, surface });
+/* A frames shot is drawn finished, except that a stroke still being drawn
+ * carries `upto`, how far along it the hand has got: it is drawn only that
+ * far, on the plan of the whole stroke, exactly as a replay would have it. */
+const develop = (engine) => {
+  engine.clear();
+  for (const op of engine.ops) {
+    if (op.k === 'p' || op.k === 'phase') { engine.endCoat(); continue; }
+    const upto = op.upto ?? 1;
+    if (upto > 0) engine.run(op, 0, Math.min(1, upto));
+  }
+  engine.endCoat();
+};
 const overlay = engineFor({ kind: 'ink', version: 2, paper: '#000000' });
 const layered = (engine, target) => { for (const l of LAYERS) { target.globalAlpha = l.op; target.drawImage(engine.layers[l.key].cv, 0, 0); } target.globalAlpha = 1; };
 
@@ -29,7 +41,7 @@ async function finalOf(name) {
   const engine = engineFor(shot.surface);
   engine.load(shot.kind === 'hand' ? shot.ops() : shot.frame(T, T));
   await engine.ready();
-  engine.finish();
+  if (shot.kind === 'hand') engine.finish(); else develop(engine);
   const c = document.createElement('canvas');
   c.width = out.width; c.height = out.height;
   // a prop (a handprint to hang on a wall) comes without its paper
@@ -62,7 +74,7 @@ window.renderFrame = async (f, type = 'image/png') => {
   } else {
     engine.load(shot.frame(local, T));
     await engine.ready();
-    engine.finish();
+    develop(engine);
   }
   engine.composite(ctx);
   for (const th of shot.thumbs?.(local, T) || []) {

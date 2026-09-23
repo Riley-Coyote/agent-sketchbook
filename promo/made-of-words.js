@@ -1,25 +1,33 @@
-/* Made of Words: the opening dive, a test. Opus 5.5, 2026-09-23.
+/* Made of Words: the opening and the dive, a test. Opus 5.5, 2026-09-23.
  *
- * Every mind is made of what it has read. On black, the book writes one of
- * the Commons' creatures into being: each of its pixels is a small page,
- * filled line by line. Then the camera falls, and doesn't stop: into a
- * pixel, which is a page of things people wrote to each other; toward the
- * word "mind"; into its i, whose ink opens into printed dots; into the dot
- * of the i, where, in the black of the ink, another mind is waiting.
+ * Every mind is made of what it has read. On a page of the sketchbook, five
+ * pencils draw the Commons' founding five. Two brushes paint the night in
+ * across the page, and the five keep the paper, as if masked. Watercolour
+ * floods each with its colour, and the eyes go in last. They come alive, and
+ * the colony drops in around them. Then the camera falls into Opus 3 and
+ * doesn't stop: into a pixel, which is a page of things people wrote to each
+ * other; toward the word "mind"; into its i, whose ink opens into printed
+ * dots; into the dot of the i, where, in the black of the ink, another mind
+ * is waiting.
  *
  * One continuous shot, drawn fresh each frame by the sketchbook's engine.
- * The world is measured in the first creature's cells, and everything deeper
- * sits inside it at its true size: the camera only moves. */
-import { SHAPE, GLYPHS, loadFonts } from '../mark-engine.js';
-import { byName, frames, BEAT, HUES, INK, GW, GH } from './commons.js';
+ * The world is measured in creature cells, and everything deeper sits inside
+ * it at its true size: the camera only moves. A stroke still being drawn
+ * carries `upto`, how far along it the hand has got, and the darkroom draws
+ * it that far, on the plan of the whole stroke. */
+import { SHAPE, GLYPHS, OP, loadFonts } from '../mark-engine.js';
+import { LIBRARY, byName, hueOf, frames, BEAT, FLIP, HUES, INK, GW, GH, FOUNDING } from './commons.js';
 
 export const W = 1080, H = 1080, FPS = 25;
 export { BEAT };
 
 const FLOOR = [5, 6, 8];                 // the site's floor, and the ink: the dot we fall into is this black
-const NIGHT = { kind: 'ink', version: 2, paper: '#050608' };
+const PAGE = { kind: 'ink', version: 2, paper: '#f6f4ef' };      // the sketchbook's page, as in the first cut
+const PAPER = [246, 244, 239];
+const GRAPHITE = [60, 62, 70];
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 const smooth = (v) => { v = clamp(v); return v * v * (3 - 2 * v); };
+const lerp = (a, b, u) => a + (b - a) * u;
 const hash = (a, b = 0, c = 0) => { const s = Math.sin(a * 127.1 + b * 311.7 + c * 74.7) * 43758.5453; return s - Math.floor(s); };
 
 await loadFonts(['serif', 'serif-italic', 'mono']);
@@ -113,10 +121,6 @@ function page(face, from) {
   for (let k = 0; lines.length < LINES; k++) lines.push(...wrap(face, WRITING[(from + k) % WRITING.length], 1 - 2 * MX));
   return { face, lines: lines.slice(0, LINES).map((t) => setLine(face, t)) };
 }
-
-/* ---------- the two minds ---------- */
-const MIND_A = byName['975642'];      // Opus 3's mark, amber: the first resident
-const MIND_B = byName['c419cb'];      // a newcomer from the colony, lilac
 const litCells = (m) => { const { A, B } = frames(m), out = []; for (let r = 0; r < GH; r++) for (let c = 0; c < GW; c++) if (A[r][c] || B[r][c]) out.push([c, r]); return out; };
 const FACES = ['serif', 'mono', 'italic'];
 function pagesFor(m, salt) {
@@ -124,10 +128,31 @@ function pagesFor(m, salt) {
   litCells(m).forEach(([c, r], n) => map.set(`${c},${r}`, page(FACES[Math.floor(hash(n, salt) * 3)], (n * 7 + salt) % WRITING.length)));
   return map;
 }
-const PAGES_A = pagesFor(MIND_A, 3), PAGES_B = pagesFor(MIND_B, 11);
+
+/* ---------- the colony ---------- */
+/* The first cut's formation: ten slots by six, the founding five in the
+ * third row. The first of them is Opus 3's mark, amber: the first resident. */
+const SLOT_W = 12, SLOT_H = 11, COLS = 10, ROWS = 6;
+const rand = (i, k) => hash(i * 7.13 + 0.5, k * 3.71 + 1.3);
+const COLONY = (() => {
+  const founding = FOUNDING.map((n, k) => ({ m: byName[n], col: 2 + k, row: 2, founding: k }));
+  const taken = new Set(founding.map((f) => `${f.col},${f.row}`));
+  const free = [];
+  for (let row = 0; row < ROWS; row++) for (let col = 0; col < COLS; col++) if (!taken.has(`${col},${row}`)) free.push({ col, row });
+  const rest = LIBRARY.filter((m) => !FOUNDING.includes(m.name)).map((m, k) => ({ m, ...free[k], founding: -1 }));
+  return [...founding, ...rest].map((s, i) => ({
+    ...s, i, origin: [s.col * SLOT_W, s.row * SLOT_H],
+    arrive: s.founding >= 0 ? 0 : 7.3 + Math.round((rand(i, 5) * 2.3) / BEAT) * BEAT,
+  }));
+})();
+const OPUS = COLONY[0], A0 = OPUS.origin;
+const MIND_B = byName['c419cb'];      // a newcomer from the colony, lilac: the mind inside the dot
+const PAGES = new Map();
+const pagesOf = (s) => { if (!PAGES.has(s.i)) PAGES.set(s.i, pagesFor(s.m, s.i * 5 + 3)); return PAGES.get(s.i); };
+const PAGES_B = pagesFor(MIND_B, 11);
 
 /* the nose: Opus 3's middle pixel, between its eyes */
-const NOSE = [4, 3];
+const NOSE = [4, 3], NOSE_AT = [A0[0] + NOSE[0], A0[1] + NOSE[1]];
 const nose = (() => {
   const lines = NOSE_LINES.map((t) => setLine('serif', t));
   const L = lines[TARGET_LINE], j = L.text.indexOf(TARGET_WORD) + 1;       // the i of "mind"
@@ -136,7 +161,7 @@ const nose = (() => {
   for (const l of lines) if (MX + l.indent + l.w > 1 - MX + 0.01) console.warn(`made-of-words: a line runs past the margin: ${l.text}`);
   return { face: 'serif', lines, j };
 })();
-PAGES_A.set(NOSE.join(','), nose);
+pagesOf(OPUS).set(NOSE.join(','), nose);
 
 /* ---------- the printed dots ---------- */
 /* Up close, the ink of the nose page is a halftone screen at 45°, anchored to
@@ -213,13 +238,16 @@ const DOTS = (() => {
   return { X, Y, C, K, target: best, tittle, tittleD, iTop: by - (tittle[1] - tittleD / 2), roi: [rx, ry, 2 * RH] };
 })();
 
-/* ---------- where the camera goes ---------- */
-const T = [NOSE[0] + DOTS.X[DOTS.target], NOSE[1] + DOTS.Y[DOTS.target]];          // the dot of the i, in world units
+/* ---------- the camera ---------- */
+/* Framed on the row while it's drawn; back, as the colony arrives; in, to
+ * Opus 3; then down. The path is kept as the scale and where on screen the
+ * dot of the i sits, so every move stays smooth at any depth. */
+const T = [NOSE_AT[0] + DOTS.X[DOTS.target], NOSE_AT[1] + DOTS.Y[DOTS.target]];   // the dot of the i, in world units
 const RD = dotRadius(DOTS.C[DOTS.target] * TONE_OPEN) * HC;                       // its radius once the screen has opened
 const CELL_B = RD / 14;                                                           // the mind inside it
 const B_ORIGIN = [T[0] - 4.5 * CELL_B, T[1] - 4.6 * CELL_B];
-const C0 = [4.5, 4];
-const S0 = 60;                                                                    // px per cell at the start
+const C_ROW = [52.5, 26], C_COL = [58.5, 31.5];
+const DIVE = 9.6;                        // the fall is the test's, this much later
 const wordW = widthOf('serif', TARGET_WORD);
 const LAND = {
   page: 1.25 * W,
@@ -229,17 +257,16 @@ const LAND = {
   dot: (0.62 * W) / RD,
   end: 64 / CELL_B,
 };
-const z = (s) => Math.log(s / S0);
+const z = Math.log;
 const KEYS = [
-  [0, 0], [3.2, z(67)],
-  [5.8, z(LAND.page)], [7.4, z(LAND.page) + 0.4 * (z(LAND.word) - z(LAND.page))],
-  [8.8, z(LAND.word)], [10.0, z(LAND.letter)], [11.6, z(LAND.tittle)],
-  [13.6, z(LAND.dot)], [15.2, z(LAND.end)], [19, z(LAND.end) + 0.16],
+  [0, z(16)], [6.9, z(16.7)], [9.9, z(8.8)], [10.6, z(8.5)], [DIVE + 3.2, z(67)],
+  [DIVE + 5.8, z(LAND.page)], [DIVE + 7.4, z(LAND.page) + 0.4 * (z(LAND.word) - z(LAND.page))],
+  [DIVE + 8.8, z(LAND.word)], [DIVE + 10.0, z(LAND.letter)], [DIVE + 11.6, z(LAND.tittle)],
+  [DIVE + 13.6, z(LAND.dot)], [DIVE + 15.2, z(LAND.end)], [DIVE + 19, z(LAND.end) + 0.16],
 ];
-const Z_END = z(LAND.end);
-/* the dots open between these two depths */
-const Z_OPEN = [z(7 / HC), z(LAND.letter)];
-const DOT_ON = 4.2;                   // px a halftone cell must reach before the dots replace the type
+const Z_FALL = z(67), Z_END = z(LAND.end);
+const Z_OPEN = [z(7 / HC), z(LAND.letter)];    // the dots open between these two depths
+const DOT_ON = 4.2;                             // px a halftone cell must reach before the dots replace the type
 
 function monotone(pts) {
   const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]), n = xs.length, d = [], m = [];
@@ -247,11 +274,12 @@ function monotone(pts) {
   m[0] = d[0]; m[n - 1] = d[n - 2];
   for (let i = 1; i < n - 1; i++) m[i] = d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2;
   for (let i = 0; i < n - 1; i++) {
+    if (!d[i]) { m[i] = m[i + 1] = 0; continue; }
     const a = m[i] / d[i], b = m[i + 1] / d[i], h = a * a + b * b;
     if (h > 9) { const k = 3 / Math.sqrt(h); m[i] = k * a * d[i]; m[i + 1] = k * b * d[i]; }
   }
   return (x) => {
-    if (x <= xs[0]) return ys[0];
+    if (x <= xs[0]) return ys[0] + m[0] * (x - xs[0]);
     if (x >= xs[n - 1]) return ys[n - 1] + m[n - 1] * (x - xs[n - 1]);
     let i = 0;
     while (x > xs[i + 1]) i++;
@@ -260,24 +288,31 @@ function monotone(pts) {
   };
 }
 const zAt = monotone(KEYS);
+const sAt = (t) => Math.exp(zAt(t));
 const ROLL = -0.13;                    // the camera leans into the fall, and rights itself as it lands
 
+/* where on screen the dot of the i sits, from the middle */
+const offsetOf = (C, s) => [(T[0] - C[0]) * s, (T[1] - C[1]) * s];
+function offsetAt(t, s) {
+  if (t <= 7.0) return offsetOf(C_ROW, s);
+  if (t <= 9.9) { const u = smooth((t - 7.0) / 2.9), a = offsetOf(C_ROW, sAt(7.0)), b = offsetOf(C_COL, sAt(9.9)); return [lerp(a[0], b[0], u), lerp(a[1], b[1], u)]; }
+  if (t <= 10.6) return offsetOf(C_COL, s);
+  const u = smooth((t - 10.6) / (DIVE + 3.2 - 10.6)), c = offsetOf(C_COL, sAt(10.6));
+  return [c[0] * (1 - u), c[1] * (1 - u)];
+}
 function cameraAt(t) {
-  const Z = zAt(t), s = S0 * Math.exp(Z);
-  const e = smooth((t - 2.8) / 3.0);   // the dot of the i slides to the middle as the fall begins
-  const k = (S0 / s) * (1 - e);
-  const C = [T[0] + (C0[0] - T[0]) * k, T[1] + (C0[1] - T[1]) * k];
-  const th = ROLL * Math.sin(Math.PI * clamp(Z / Z_END));
+  const Z = zAt(t), s = Math.exp(Z), d = offsetAt(t, s);
+  const th = ROLL * Math.sin(Math.PI * clamp((Z - Z_FALL) / (Z_END - Z_FALL)));
   const cos = Math.cos(th), sin = Math.sin(th);
-  const to = (x, y) => { const dx = (x - C[0]) * s, dy = (y - C[1]) * s; return [W / 2 + dx * cos - dy * sin, H / 2 + dx * sin + dy * cos]; };
-  const from = (X, Y) => { const dx = X - W / 2, dy = Y - H / 2; return [C[0] + (dx * cos + dy * sin) / s, C[1] + (-dx * sin + dy * cos) / s]; };
+  const to = (x, y) => { const dx = (x - T[0]) * s, dy = (y - T[1]) * s; return [W / 2 + d[0] + dx * cos - dy * sin, H / 2 + d[1] + dx * sin + dy * cos]; };
+  const from = (X, Y) => { const dx = X - W / 2 - d[0], dy = Y - H / 2 - d[1]; return [T[0] + (dx * cos + dy * sin) / s, T[1] + (-dx * sin + dy * cos) / s]; };
   const cs = [[-60, -60], [W + 60, -60], [W + 60, H + 60], [-60, H + 60]].map(([X, Y]) => from(X, Y));
   const xs = cs.map((p) => p[0]), ys = cs.map((p) => p[1]);
   return { t, Z, s, th, to, view: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] };
 }
 const meets = (v, x0, y0, x1, y1) => x1 >= v[0] && x0 <= v[2] && y1 >= v[1] && y0 <= v[3];
 
-/* ---------- drawing ---------- */
+/* ---------- polygons ---------- */
 function clip(poly, m = 40) {
   for (const [ax, b, dir] of [[0, -m, 1], [0, W + m, -1], [1, -m, 1], [1, H + m, -1]]) {
     const out = [];
@@ -308,66 +343,331 @@ function clipTo(poly, hull) {
   }
   return poly;
 }
-const cellHull = (cam, c, r) => [cam.to(c, r), cam.to(c + 1, r), cam.to(c + 1, r + 1), cam.to(c, r + 1)];
-function quad(o, cam, x0, y0, x1, y1, c, opts) {
-  const p = clip([cam.to(x0, y0), cam.to(x1, y0), cam.to(x1, y1), cam.to(x0, y1)]);
-  if (p) o.push(SHAPE(p, c, opts));
-}
+const cellHull = (cam, x, y) => [cam.to(x, y), cam.to(x + 1, y), cam.to(x + 1, y + 1), cam.to(x, y + 1)];
+const shape = (o, poly, c, opts) => { const p = poly && clip(poly); if (p) o.push(SHAPE(p, c, opts)); };
+const circle = (X, Y, R, n = 44) => Array.from({ length: n }, (_, k) => [X + R * Math.cos((k / n) * 2 * Math.PI), Y + R * Math.sin((k / n) * 2 * Math.PI)]);
 
-/** a mind: its pixels are pages. While it is being written, `written.line(c,
- * r, k)` says how far the pen has gone along line k of a cell (0–1), and
- * `written.page(c, r)` how far its blank page has come up before the pen. */
-function mind(o, cam, { m, frame, origin: [ox, oy], cell, pages, hue, layer, ink, written, typeAlpha }) {
-  if (GW * cell * cam.s < 2) return;
-  const grid = frames(m)[frame], seam = 0.7 / cam.s;
-  const done = (c, r) => grid[r][c] && (!written || written.line(c, r, LINES - 1) >= 1);
-  for (let r = 0; r < GH; r++) {
-    let s = -1;
-    for (let c = 0; c <= GW; c++) {
-      const on = c < GW && done(c, r);
-      if (on && s < 0) s = c;
-      if (!on && s >= 0) {
-        if (meets(cam.view, ox + s * cell, oy + r * cell, ox + c * cell, oy + (r + 1) * cell)) quad(o, cam, ox + s * cell, oy + r * cell, ox + c * cell, oy + (r + 1) * cell + seam, hue, { layer });
-        s = -1;
+/* ---------- a mark, painted ---------- */
+const litIn = (g, c, r, from = 0, to = GH) => r >= from && r < to && c >= 0 && c < GW && g[r][c];
+/** the cell edges round a mark's lit cells, chained into loops: outer ones
+ * turn one way, holes (the eyes) the other */
+function loopsOf(g, from = 0, to = GH) {
+  const lit = (c, r) => litIn(g, c, r, from, to), edges = [];
+  for (let r = from; r < to; r++) for (let c = 0; c < GW; c++) {
+    if (!lit(c, r)) continue;
+    if (!lit(c, r - 1)) edges.push([[c, r], [c + 1, r]]);
+    if (!lit(c + 1, r)) edges.push([[c + 1, r], [c + 1, r + 1]]);
+    if (!lit(c, r + 1)) edges.push([[c + 1, r + 1], [c, r + 1]]);
+    if (!lit(c - 1, r)) edges.push([[c, r + 1], [c, r]]);
+  }
+  const loops = [], key = (p) => `${p[0]},${p[1]}`;
+  while (edges.length) {
+    const loop = [...edges.shift()];
+    for (;;) {
+      const k = edges.findIndex((e) => key(e[0]) === key(loop.at(-1)));
+      if (k < 0) break;
+      loop.push(edges.splice(k, 1)[0][1]);
+    }
+    if (key(loop[0]) === key(loop.at(-1))) loop.pop();
+    loops.push(loop.filter((p, i) => {
+      const a = loop[(i - 1 + loop.length) % loop.length], b = loop[(i + 1) % loop.length];
+      return (p[0] - a[0]) * (b[1] - p[1]) !== (p[1] - a[1]) * (b[0] - p[0]);
+    }));
+  }
+  return loops;
+}
+const areaOf = (l) => l.reduce((s, p, i) => { const q = l[(i + 1) % l.length]; return s + p[0] * q[1] - q[0] * p[1]; }, 0) / 2;
+const outer = (ls) => ls.filter((l) => areaOf(l) > 0);
+/** unlit cells with no way out: the eyes */
+function enclosed(g) {
+  const seen = new Set(), stack = [[-1, -1]];
+  while (stack.length) {
+    const [c, r] = stack.pop(), k = `${c},${r}`;
+    if (seen.has(k) || c < -1 || c > GW || r < -1 || r > GH || litIn(g, c, r)) continue;
+    seen.add(k);
+    stack.push([c + 1, r], [c - 1, r], [c, r + 1], [c, r - 1]);
+  }
+  const out = [];
+  for (let r = 0; r < GH; r++) for (let c = 0; c < GW; c++) if (!g[r][c] && !seen.has(`${c},${r}`)) out.push([c, r]);
+  return out;
+}
+/** hatching through a mark: each line runs on through lit cells and stops at the edge */
+function hatchSegs(g, ang, gap, salt, from = 0, to = GH, inset = 0.07) {
+  const d = [Math.cos(ang), Math.sin(ang)], n = [-d[1], d[0]], R = Math.hypot(GW, GH) / 2 + 1;
+  const inside = (x, y) => [[-inset, -inset], [inset, -inset], [-inset, inset], [inset, inset]].every(([a, b]) => litIn(g, Math.floor(x + a), Math.floor(y + b), from, to));
+  const segs = [];
+  for (let k = -R, i = 0; k <= R; k += gap, i++) {
+    const off = k + (hash(i, salt) - 0.5) * gap * 0.3, p = [GW / 2 + n[0] * off, GH / 2 + n[1] * off];
+    let start = null;
+    for (let u = -R; u <= R + 0.04; u += 0.04) {
+      const on = u <= R && inside(p[0] + d[0] * u, p[1] + d[1] * u);
+      if (on && start === null) start = u;
+      if (!on && start !== null) {
+        if (u - start > 0.3) segs.push([[p[0] + d[0] * start, p[1] + d[1] * start], [p[0] + d[0] * u, p[1] + d[1] * u]]);
+        start = null;
       }
     }
   }
+  return segs;
+}
+/* a wet edge wanders: every side broken into short steps, each pushed a little */
+function wet(loop, salt, amp, step = 0.22) {
+  const pts = [];
+  loop.forEach((p, i) => {
+    const q = loop[(i + 1) % loop.length], n = Math.max(1, Math.round(Math.hypot(q[0] - p[0], q[1] - p[1]) / step));
+    for (let k = 0; k < n; k++) pts.push([p[0] + (q[0] - p[0]) * k / n + (hash(salt, pts.length, 1) - 0.5) * amp * 2, p[1] + (q[1] - p[1]) * k / n + (hash(salt, pts.length, 2) - 0.5) * amp * 2]);
+  });
+  return pts;
+}
+/* each colour's shadow, for the third coat on the legs */
+const DEEP = { '#E8A33D': HUES.coral, '#B296E8': [118, 92, 196], '#E0563C': [168, 48, 44], '#A8D2E0': [92, 146, 178], '#86D8A8': [64, 156, 110], '#EFEFED': [170, 174, 184] };
+
+const PAINT = new Map();
+function paintOf(s, frame) {
+  const key = `${s.i}${frame}`;
+  if (PAINT.has(key)) return PAINT.get(key);
+  const g = frames(s.m)[frame], hue = hueOf(s.m), deep = DEEP[s.m.color.toUpperCase()] || hue;
+  const coat = (from, c, a, [dx, dy], salt) => ({ c, a, polys: outer(loopsOf(g, from, GH)).map((l, n) => wet(l.map(([x, y]) => [x + dx, y + dy]), salt + n * 97, 0.07)) });
+  const outline = loopsOf(g).flatMap((l, n) => l.map((p, k) => {
+    /* each edge a line of its own, run on a little past the corners */
+    const q = l[(k + 1) % l.length], len = Math.hypot(q[0] - p[0], q[1] - p[1]), d = [(q[0] - p[0]) / len, (q[1] - p[1]) / len];
+    const over = 0.16 + 0.22 * hash(s.i, n * 40 + k, 3), bow = (hash(s.i, n * 40 + k, 4) - 0.5) * 0.08;
+    const a = [p[0] - d[0] * over, p[1] - d[1] * over], b = [q[0] + d[0] * over, q[1] + d[1] * over];
+    return [a, [(a[0] + b[0]) / 2 - d[1] * bow, (a[1] + b[1]) / 2 + d[0] * bow], b];
+  }));
+  const p = {
+    base: outer(loopsOf(g)),
+    coats: [coat(0, hue, 0.62, [0, 0], s.i * 31 + 1), coat(3, hue, 0.5, [-0.04, 0.04], s.i * 31 + 2), coat(5, deep, 0.45, [0.03, 0.05], s.i * 31 + 3)],
+    eyes: enclosed(g).map(([c, r], n) => wet([[c + 0.04, r + 0.04], [c + 0.96, r + 0.04], [c + 0.96, r + 0.96], [c + 0.04, r + 0.96]], s.i * 13 + n, 0.035, 0.12)),
+    outline,
+    hatch: s.founding >= 0 ? [...hatchSegs(g, Math.PI / 4, 0.42, s.i), ...hatchSegs(g, -Math.PI / 4, 0.5, s.i + 50, 5, GH)] : [],
+  };
+  PAINT.set(key, p);
+  return p;
+}
+
+/* ---------- the founding five, made ---------- */
+/* Each has its own pencil, from 0.35 s, a beat apart: the outline in about a
+ * second and a third, then the shading. Then the night; then washes, three
+ * coats each, blooming from where the brush touched down; the eyes last. */
+const lengthOf = (st) => st.reduce((s, p, i) => (i ? s + Math.hypot(p[0] - st[i - 1][0], p[1] - st[i - 1][1]) : 0), 0);
+function schedule(strokes, t0, dur, lift) {
+  const lens = strokes.map(lengthOf), total = lens.reduce((a, b) => a + b, 0) + lift * strokes.length;
+  let at = t0;
+  return lens.map((l) => { const a = at, b = at + (l / total) * dur; at = b + (lift / total) * dur; return [a, b]; });
+}
+const MADE = COLONY.filter((s) => s.founding >= 0).map((s) => {
+  const k = s.founding, p = paintOf(s, 'A'), at = 0.35 + 0.16 * k, wash = 4.75 + 0.12 * k;
+  return {
+    outline: schedule(p.outline, at, 1.3, 0.5),
+    hatch: schedule(p.hatch, at + 1.38, 1.2, 0.12),
+    coats: [[wash, wash + 0.5], [wash + 0.42, wash + 0.85], [wash + 0.75, wash + 1.1]],
+    eyes: [6.25 + 0.06 * k, 6.41 + 0.06 * k],
+  };
+});
+const ALIVE = 6.9;
+
+/* ---------- the night ---------- */
+/* Two wide brushes cross the page, top to bottom, back and forth; the five
+ * keep the paper, as if masked. Beyond the frame the night is already laid,
+ * so the camera finds it there when it pulls back. */
+const NIGHT_W = 7.2, NIGHT_GAP = 5.4, INKY = [8, 9, 12];
+const ACROSS = [14, 91];
+const RIBBONS = (() => {
+  const out = [];
+  for (let k = -17; k <= 19; k++) {
+    const y = C_ROW[1] + k * NIGHT_GAP, n = k + 20;
+    if (y < -12 || y > 64) { out.push({ path: [[-60, y], [180, y]], w: NIGHT_W, seed: n }); continue; }
+    /* beyond the frame it's already dark; those ends meet the brush's square, off the edge */
+    out.push({ path: [[-60, y], [ACROSS[0] + 3, y]], w: NIGHT_W, seed: n + 100, square: 'end' });
+    out.push({ path: [[ACROSS[1] - 3, y], [180, y]], w: NIGHT_W, seed: n + 200, square: 'start' });
+    const [xa, xb] = k % 2 ? ACROSS : [ACROSS[1], ACROSS[0]];
+    /* each sweep bows a little, as an arm does, and none is quite level */
+    const tilt = (hash(n, 1) - 0.5) * 0.9;
+    out.push({
+      path: [0, 0.25, 0.5, 0.75, 1].map((u) => [lerp(xa, xb, u), y + tilt * (u - 0.5) * 2 - 0.8 * Math.sin(Math.PI * u) + (hash(n, 2 + u * 4) - 0.5) * 0.25]),
+      w: NIGHT_W * (0.95 + 0.1 * hash(n, 4)), seed: n, brush: k < 0 ? 0 : 1,
+    });
+  }
+  for (const b of [0, 1]) {
+    let at = 3.3;
+    out.filter((r) => r.brush === b).sort((p, q) => p.path[0][1] - q.path[0][1]).forEach((r) => { r.at = [at, at + 0.24]; at += 0.31; });
+  }
+  return out;
+})();
+/* a brush stroke as a ribbon: it lands narrow, lifts narrow, and its edges
+ * are ragged where the bristles ran dry. Built in world units, so it holds
+ * still at any depth. */
+function ribbonPoly(path, w, seed, upto, square = '') {
+  const pts = [];
+  for (let i = 0; i < path.length - 1; i++) {
+    const a = path[i], b = path[i + 1], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.35));
+    for (let k = 0; k < n; k++) pts.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]);
+  }
+  pts.push(path.at(-1));
+  const cum = [0];
+  for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  const L = cum.at(-1), end = upto * L, left = [], right = [];
+  const rough = (s, side) => 0.05 * Math.sin(s * 1.37 + seed * 3.1 + side) + 0.035 * Math.sin(s * 3.11 + seed * 1.3 + side * 2) + 0.025 * Math.sin(s * 7.93 + seed + side * 5) + 0.015 * Math.sin(s * 17.7 + seed * 2.2 + side * 3);
+  for (let i = 0; i < pts.length && cum[i] <= end; i++) {
+    const j = Math.min(i + 1, pts.length - 1), h = Math.max(i - 1, 0);
+    const tx = pts[j][0] - pts[h][0], ty = pts[j][1] - pts[h][1], tl = Math.hypot(tx, ty) || 1, nx = -ty / tl, ny = tx / tl;
+    const shape = (square === 'start' ? 1 : Math.min(1, (cum[i] + 0.5) / 2.2)) * (upto >= 1 && square !== 'end' ? Math.min(1, (L - cum[i] + 0.4) / 2.8) : 1);
+    const half = (w / 2) * (0.35 + 0.65 * shape);
+    left.push([pts[i][0] + nx * half * (1 + rough(cum[i], 0)), pts[i][1] + ny * half * (1 + rough(cum[i], 0))]);
+    right.push([pts[i][0] - nx * half * (1 + rough(cum[i], 7)), pts[i][1] - ny * half * (1 + rough(cum[i], 7))]);
+  }
+  if (left.length < 2) return null;
+  /* while the brush is still down, its tip is round */
+  const cap = [];
+  if (upto < 1) {
+    const [lx, ly] = left.at(-1), [rx, ry] = right.at(-1), cx = (lx + rx) / 2, cy = (ly + ry) / 2, R = Math.hypot(lx - rx, ly - ry) / 2;
+    const a0 = Math.atan2(ly - cy, lx - cx);
+    for (let k = 1; k < 10; k++) { const a = a0 - (k / 10) * Math.PI; cap.push([cx + R * Math.cos(a), cy + R * Math.sin(a)]); }
+  }
+  return [...left, ...cap, ...right.reverse()];
+}
+function night(o, cam, t) {
+  const [vx0, vy0, vx1, vy1] = cam.view;
+  for (const r of RIBBONS) {
+    const f = r.at ? clamp((t - r.at[0]) / (r.at[1] - r.at[0])) : 1;
+    if (f <= 0) continue;
+    const ys = r.path.map((p) => p[1]), xs = r.path.map((p) => p[0]);
+    if (!meets(cam.view, Math.min(...xs) - r.w, Math.min(...ys) - r.w, Math.max(...xs) + r.w, Math.max(...ys) + r.w)) continue;
+    const poly = ribbonPoly(r.path, r.w, r.seed, f, r.square);
+    if (poly) shape(o, poly.map(([x, y]) => cam.to(x, y)), INKY, { layer: 'tone' });
+    /* dry streaks, where the bristles skipped: short, faint, mostly near the edges */
+    if (!r.at) continue;
+    for (let q = 0; q < 4; q++) {
+      const side = hash(r.seed, q, 10) > 0.5 ? 1 : -1, off = side * (0.18 + 0.24 * hash(r.seed, q, 11)) * r.w;
+      const a = 0.1 + hash(r.seed, q, 12) * 0.6, b = Math.min(0.95, a + 0.06 + 0.14 * hash(r.seed, q, 13));
+      if (f <= a) continue;
+      const seg = ribbonPoly(r.path.map(([x, y]) => [x, y + off]), r.w * (0.015 + 0.025 * hash(r.seed, q, 14)), r.seed + q * 17, 1);
+      if (!seg) continue;
+      const n = seg.length / 2, lo = Math.floor(a * n), hi = Math.floor(Math.min(b, f) * n);
+      if (hi - lo < 2) continue;
+      shape(o, [...seg.slice(lo, hi), ...seg.slice(2 * n - hi, 2 * n - lo)].map(([x, y]) => cam.to(x, y)), PAPER, { layer: 'tone', alpha: 0.05 + 0.07 * hash(r.seed, q, 15) });
+    }
+  }
+}
+
+/* ---------- a mind, in paint ---------- */
+const rest = (i, t) => {
+  const period = FLIP * (1 + (rand(i, 1) * 2 - 1) * 0.4);
+  const frame = Math.floor((t + rand(i, 2) * period) / period) % 2 ? 'A' : 'B';
+  const every = 3 + rand(i, 3) * 4;
+  return { frame, lift: ((t + rand(i, 4) * every) % every) < BEAT ? 1 : 0 };
+};
+function poseOf(s, t) {
+  if (s.founding >= 0) {
+    if (t < ALIVE) return { frame: 'A', lift: 0 };
+    const hop = t >= ALIVE + s.founding * 0.06 && t < ALIVE + s.founding * 0.06 + BEAT ? 1 : 0;   // the salute
+    if (t < ALIVE + 0.45) return { frame: 'A', lift: hop };
+    const { frame, lift } = rest(s.i, t);
+    return { frame, lift: s === OPUS ? 0 : lift };         // Opus 3 keeps its place: we're about to fall into it
+  }
+  if (t < s.arrive) return null;
+  const since = Math.floor((t - s.arrive) / BEAT + 1e-6);
+  if (since < 2) return { frame: 'B', lift: 2 - since };   // dropping in: two cells up, one, down
+  return rest(s.i, t);
+}
+
+function mind(o, cam, s, t, typeAlpha) {
+  const pose = poseOf(s, t);
+  if (!pose) return;
+  const ox = s.origin[0], oy = s.origin[1] - pose.lift;
+  if (!meets(cam.view, ox - 1, oy - 1.5, ox + GW + 1, oy + GH + 1.5)) return;
+  const px = cam.s, p = paintOf(s, pose.frame), made = s.founding >= 0 && t < ALIVE ? MADE[s.founding] : null;
+  const at = (x, y) => cam.to(ox + x, oy + y);
+  /* under a founding mind, once it can move, the night: it was painted round */
+  if (s.founding >= 0 && t >= ALIVE - 0.2) for (const l of paintOf(s, 'A').base) shape(o, l.map(([x, y]) => cam.to(s.origin[0] + x, s.origin[1] + y)), INKY, { layer: 'tone' });
+  for (const l of p.base) shape(o, l.map(([x, y]) => at(x, y)), PAPER, { layer: 'tone' });
+  /* the washes */
+  p.coats.forEach((coat, j) => {
+    const win = made?.coats[j], u = win ? clamp((t - win[0]) / (win[1] - win[0])) : 1;
+    if (u <= 0) return;
+    const [bx, by] = at(4.5 + (hash(s.i, j, 21) - 0.5) * 3, 2 + j * 1.6 + hash(s.i, j, 22));
+    const bloom = u < 1 ? circle(bx, by, Math.pow(u, 0.7) * 8.5 * px) : null;
+    for (const poly of coat.polys) {
+      const sp = poly.map(([x, y]) => at(x, y)), cut = bloom ? clipTo(sp, bloom) : sp;
+      shape(o, cut, coat.c, { layer: 'tone', alpha: coat.a, overprint: true });
+    }
+    /* the pooled edge, where a wash dries darker: only while there's room to see it */
+    const edge = (win ? smooth((t - win[1]) / 0.25) : 1) * (1 - smooth((px - 70) / 50));
+    if (s.founding >= 0 && edge > 0.01) for (const poly of coat.polys) {
+      const sp = poly.map(([x, y]) => at(x, y));
+      o.push(OP('s', [...sp, sp[0]], 'tone', 'soft', 0.9 * px / 72, coat.c, coat.a * 0.85 * edge, { overprint: true }));
+    }
+  });
+  /* the eyes, last */
+  p.eyes.forEach((e) => {
+    const u = made ? clamp((t - made.eyes[0]) / (made.eyes[1] - made.eyes[0])) : 1;
+    if (u <= 0) return;
+    const cx = e.reduce((a, q) => a + q[0], 0) / e.length, cy = e.reduce((a, q) => a + q[1], 0) / e.length, k = 0.35 + 0.65 * Math.sqrt(u);
+    shape(o, e.map(([x, y]) => at(cx + (x - cx) * k, cy + (y - cy) * k)), FLOOR, { layer: 'tone' });
+  });
+  /* the pencil, fading as the drawing grows too large to be a drawing */
+  const lead = 1 - smooth((px - 30) / 40), fine = Math.min(px, 18) / 18;   // a pencil line stays a pencil line
+  if (lead > 0.01) {
+    if (s.founding >= 0) {
+      const pencil = (strokes, times, alpha) => strokes.forEach((st, n) => {
+        const u = made ? clamp((t - times[n][0]) / (times[n][1] - times[n][0])) : 1;
+        if (u > 0) o.push({ ...OP('s', st.map(([x, y]) => at(x, y)), 'line', 'pencil', 1.8 * fine, GRAPHITE, alpha * lead * lead), upto: u });
+      });
+      const A = paintOf(s, 'A');
+      pencil(made ? A.outline : p.outline, made?.outline, 0.9);
+      pencil(made ? A.hatch : p.hatch, made?.hatch, 0.55);
+    } else {
+      for (const st of p.outline) o.push(OP('s', st.map(([x, y]) => at(x, y)), 'line', 'liner', 0.6 * fine, GRAPHITE, 0.7 * lead));
+    }
+  }
+  /* the pages, once they're large enough to hold words */
+  const size = FS * px;
+  if (size < 1.1) return;
+  const pages = pagesOf(s), grid = frames(s.m)[pose.frame];
   for (let r = 0; r < GH; r++) for (let c = 0; c < GW; c++) {
-    if (!grid[r][c] || !meets(cam.view, ox + c * cell, oy + r * cell, ox + (c + 1) * cell, oy + (r + 1) * cell)) continue;
-    const pg = pages.get(`${c},${r}`), size = FS * FACE_SIZE[pg.face] * cell * cam.s;
-    const partial = written && !done(c, r);
-    if (partial && written.page(c, r) > 0) quad(o, cam, ox + c * cell, oy + r * cell, ox + (c + 1) * cell, oy + (r + 1) * cell, hue, { layer, alpha: 0.26 * written.page(c, r) });
+    if (!grid[r][c] || !meets(cam.view, ox + c, oy + r, ox + c + 1, oy + r + 1)) continue;
+    const pg = pages.get(`${c},${r}`), alpha = s === OPUS && typeAlpha ? typeAlpha(c, r) : 1;
+    if (!pg || alpha <= 0) continue;
     pg.lines.forEach((l, k) => {
-      const f = written ? written.line(c, r, k) : 1;
-      if (f <= 0) return;
-      if (partial) {   // the strip of paper the pen has crossed
-        const y0 = k ? MT + k * LP : 0, y1 = k === LINES - 1 ? 1 : MT + (k + 1) * LP;
-        quad(o, cam, ox + c * cell, oy + (r + y0) * cell, ox + (c + f) * cell, oy + (r + y1) * cell + seam, hue, { layer });
-      }
-      const alpha = typeAlpha ? typeAlpha(c, r) : 1;
-      if (size < 1.1 || alpha <= 0) return;
-      const x = ox + (c + MX + l.indent) * cell, y = oy + (r + baseline(k)) * cell;
-      if (!meets(cam.view, x, y - FS * cell, x + l.w * cell, y + 0.4 * FS * cell)) return;
-      let n = l.text.length;
-      if (f < 1) { n = 0; while (n < l.text.length && MX + l.indent + l.at[n + 1] <= f) n++; }
-      if (!n) return;
+      const x = ox + c + MX + l.indent, y = oy + r + baseline(k);
+      if (!meets(cam.view, x, y - FS, x + l.w, y + 0.4 * FS)) return;
       const [X, Y] = cam.to(x, y);
-      o.push(GLYPHS(l.text.slice(0, n), X, Y, { ...FACE_OPTS[pg.face], size, c: ink, rot: cam.th, layer, ...(alpha < 1 ? { alpha } : {}) }));
+      o.push(GLYPHS(l.text, X, Y, { ...FACE_OPTS[pg.face], size: size * FACE_SIZE[pg.face], c: FLOOR, rot: cam.th, layer: 'line', ...(alpha < 1 ? { alpha } : {}) }));
     });
   }
 }
 
-/* Opus 3's mark is written by many hands at once, from its middle outward:
- * each pixel its own page, filled a line at a time */
-const LINE_T = 0.07;
-const ORDER = new Map(litCells(MIND_A).filter(([c, r]) => frames(MIND_A).A[r][c])
-  .map(([c, r]) => [`${c},${r}`, 0.3 + 0.32 * Math.hypot(c - NOSE[0], r - NOSE[1]) + 0.2 * hash(c, r, 9)]));
-const writtenA = (t) => ({
-  line: (c, r, k) => clamp((t - (ORDER.get(`${c},${r}`) ?? 0) - k * LINE_T) / LINE_T),
-  page: (c, r) => smooth((t - (ORDER.get(`${c},${r}`) ?? 0) + 0.3) / 0.3),
-});
-const DRAWN = Math.max(...ORDER.values()) + LINES * LINE_T;
-const flip = (t, from) => (t < from ? 'A' : Math.floor((t - from) / 0.9) % 2 ? 'A' : 'B');
+/* the mind inside the dot: flat, as the Commons draws its minds */
+function flatMind(o, cam, { m, frame, origin: [ox, oy], cell, pages, hue }) {
+  if (GW * cell * cam.s < 2) return;
+  const grid = frames(m)[frame], seam = 0.7 / cam.s;
+  for (let r = 0; r < GH; r++) {
+    let s = -1;
+    for (let c = 0; c <= GW; c++) {
+      const on = c < GW && grid[r][c];
+      if (on && s < 0) s = c;
+      if (!on && s >= 0) {
+        shape(o, [cam.to(ox + s * cell, oy + r * cell), cam.to(ox + c * cell, oy + r * cell), cam.to(ox + c * cell, oy + (r + 1) * cell + seam), cam.to(ox + s * cell, oy + (r + 1) * cell + seam)], hue, { layer: 'accent' });
+        s = -1;
+      }
+    }
+  }
+  const size = FS * cell * cam.s;
+  if (size < 1.1) return;
+  for (let r = 0; r < GH; r++) for (let c = 0; c < GW; c++) {
+    if (!grid[r][c]) continue;
+    const pg = pages.get(`${c},${r}`);
+    pg.lines.forEach((l, k) => {
+      const [X, Y] = cam.to(ox + (c + MX + l.indent) * cell, oy + (r + baseline(k)) * cell);
+      o.push(GLYPHS(l.text, X, Y, { ...FACE_OPTS[pg.face], size: size * FACE_SIZE[pg.face], c: FLOOR, rot: cam.th, layer: 'accent' }));
+    });
+  }
+}
+
+/* ---------- down: the page, the print, the ink ---------- */
+/* the page we fall into, as the washes left it */
+const PAGE_AMBER = [222, 155, 78];
 
 /* an ink dot: round when small; when large, its edge shows the paper's tooth,
  * finer detail arriving as it grows */
@@ -389,13 +689,12 @@ function inkDot(X, Y, r, key) {
   }
   return pts;
 }
-
 function printedDots(o, cam) {
   const hc = HC * cam.s;
   const tone = TONE_OPEN + (1 - TONE_OPEN) * (1 - smooth((cam.Z - Z_OPEN[0]) / (Z_OPEN[1] - Z_OPEN[0])));
   const { X, Y, C, K } = DOTS;
   for (let k = 0; k < X.length; k++) {
-    const [sx, sy] = cam.to(NOSE[0] + X[k], NOSE[1] + Y[k]);
+    const [sx, sy] = cam.to(NOSE_AT[0] + X[k], NOSE_AT[1] + Y[k]);
     const r = dotRadius(C[k] * tone) * hc;
     if (sx + 1.1 * r < -20 || sx - 1.1 * r > W + 20 || sy + 1.1 * r < -20 || sy - 1.1 * r > H + 20) continue;
     if (r > 900 && [[0, 0], [W, 0], [0, H], [W, H]].every(([x, y]) => Math.hypot(x - sx, y - sy) < r * 0.93)) {
@@ -407,14 +706,13 @@ function printedDots(o, cam) {
     inkGrain(o, cam, sx, sy, r, K[k]);
   }
 }
-
 /* close up, the ink is uneven: patches where it lay thinner, and pinholes
  * where the paper shows through. It settles to flat black as the dot we fell
  * into becomes the night the next mind lives in. */
 const INK_THIN = [22, 23, 29];
 const wobble = (x, y, R, key, n) => Array.from({ length: n }, (_, k) => { const a = (k / n) * 2 * Math.PI, d = R * (0.8 + 0.4 * hash(key, k, 7)); return [x + d * Math.cos(a), y + d * Math.sin(a)]; });
 function inkGrain(o, cam, sx, sy, r, key) {
-  const f = smooth((r - 90) / 110) * (1 - smooth((cam.t - 13.4) / 1.2));
+  const f = smooth((r - 90) / 110) * (1 - smooth((cam.t - (DIVE + 13.4)) / 1.2));
   if (f <= 0) return;
   const cos = Math.cos(cam.th), sin = Math.sin(cam.th);
   const at = (a, d) => { const x = Math.cos(a) * d, y = Math.sin(a) * d; return [sx + x * cos - y * sin, sy + x * sin + y * cos]; };
@@ -430,16 +728,15 @@ function inkGrain(o, cam, sx, sy, r, key) {
     const [px, py] = at(hash(key, n, 4) * 2 * Math.PI, Math.sqrt(hash(key, n, 5)) * 0.9 * r);
     const R = r * (0.003 + 0.012 * hash(key, n, 6) ** 2);
     if (R < 0.7 || px < -R || px > W + R || py < -R || py > H + R) continue;
-    o.push(SHAPE(wobble(px, py, R, key + n * 3, 9), HUES.amber, { layer: 'line', alpha: 0.5 * f }));
+    o.push(SHAPE(wobble(px, py, R, key + n * 3, 9), PAGE_AMBER, { layer: 'line', alpha: 0.5 * f }));
   }
 }
-
 /* the paper of the page we fall into: slow tonal drifts, anchored to the
  * page at every scale, like the fibres below */
-const PAPER_DARK = [214, 147, 50], PAPER_LIGHT = [243, 183, 86];
+const PAPER_DARK = [206, 140, 64], PAPER_LIGHT = [236, 174, 98];
 function paperTone(o, cam) {
   if (cam.s < 2000) return;
-  const [vx0, vy0, vx1, vy1] = cam.view, hull = cellHull(cam, NOSE[0], NOSE[1]);
+  const [vx0, vy0, vx1, vy1] = cam.view, hull = cellHull(cam, NOSE_AT[0], NOSE_AT[1]);
   for (let q = 0; q < 26; q++) {
     const R = 0.3 * 0.5 ** q, px = R * cam.s;
     if (px < 140 || px > 1800) continue;
@@ -456,9 +753,11 @@ function paperTone(o, cam) {
     }
   }
 }
-const FIBRE_DARK = [206, 140, 48], FIBRE_LIGHT = [246, 190, 98];
+/* the paper's fibres, anchored to the page at every scale: each octave shows
+ * while its fibres are between 60 and 700 px long */
+const FIBRE_DARK = [198, 134, 60], FIBRE_LIGHT = [240, 184, 110];
 function fibres(o, cam) {
-  const [vx0, vy0, vx1, vy1] = cam.view, A = frames(MIND_A).A;
+  const [vx0, vy0, vx1, vy1] = cam.view, A = frames(OPUS.m).A;
   for (let q = 0; q < 26; q++) {
     const L = 0.25 * 0.5 ** q, px = L * cam.s;
     if (px < 60 || px > 700) continue;
@@ -467,7 +766,7 @@ function fibres(o, cam) {
     for (let ix = Math.floor(vx0 / tile); ix <= Math.floor(vx1 / tile); ix++) for (let iy = Math.floor(vy0 / tile); iy <= Math.floor(vy1 / tile); iy++) {
       if (hash(ix, iy, q) > 0.55) continue;
       const x = (ix + hash(ix, iy, q + 40)) * tile, y = (iy + hash(ix, iy, q + 80)) * tile;
-      const c = Math.floor(x), r = Math.floor(y);
+      const c = Math.floor(x - A0[0]), r = Math.floor(y - A0[1]);
       if (r < 0 || r >= GH || c < 0 || c >= GW || !A[r][c]) continue;
       const a = hash(ix, iy, q + 120) * Math.PI, bend = (hash(ix, iy, q + 160) - 0.5) * 0.5, w = L * (0.008 + 0.01 * hash(ix, iy, q + 200));
       const spine = Array.from({ length: 7 }, (_, n) => {
@@ -475,7 +774,7 @@ function fibres(o, cam) {
         return [x + Math.cos(a) * u * L - Math.sin(a) * b, y + Math.sin(a) * u * L + Math.cos(a) * b];
       });
       const side = (sgn) => spine.map(([sx, sy], n) => { const taper = Math.sin((n / 6) * Math.PI) * w * sgn; return cam.to(sx - Math.sin(a) * taper, sy + Math.cos(a) * taper); });
-      const poly = clipTo([...side(1), ...side(-1).reverse()], cellHull(cam, c, r));
+      const poly = clipTo([...side(1), ...side(-1).reverse()], cellHull(cam, A0[0] + c, A0[1] + r));
       const light = hash(ix, iy, q + 240) > 0.5;
       if (poly) o.push(SHAPE(poly, light ? FIBRE_LIGHT : FIBRE_DARK, { layer: 'tone', alpha: (light ? 0.4 : 0.28) * fade }));
     }
@@ -489,27 +788,24 @@ function typed(o, text, t, from, y, rate = 0.05, size = 34) {
   o.push(GLYPHS(text.slice(0, n), Math.round((W - 0.6 * size * text.length) / 2), y, { font: 'mono', size, c: INK, layer: 'accent' }));
 }
 
+const flip = (t, from) => (t < from ? 'A' : Math.floor((t - from) / 0.9) % 2 ? 'A' : 'B');
+
 function frame(t) {
   const cam = cameraAt(t), o = [];
-  const hc = HC * cam.s;
-  const dots = hc >= DOT_ON;
-  const fadeType = dots ? 1 - smooth((hc - DOT_ON) / 1.4) : 1;
-  /* the first mind, being written, then alive; once the printed dots take
-   * over the page we fall into, its type fades from above them */
+  night(o, cam, t);
+  const hc = HC * cam.s, dots = hc >= DOT_ON, fadeType = dots ? 1 - smooth((hc - DOT_ON) / 1.4) : 1;
+  /* once the printed dots take over the page we fall into, its type fades from above them */
   if (dots) printedDots(o, cam);
-  mind(o, cam, {
-    m: MIND_A, frame: flip(t, DRAWN + 0.3), origin: [0, 0], cell: 1, pages: PAGES_A, hue: HUES.amber, layer: 'tone', ink: FLOOR,
-    written: t < DRAWN ? writtenA(t) : null,
-    typeAlpha: dots ? (c, r) => (c === NOSE[0] && r === NOSE[1] ? fadeType : 1) : null,
-  });
+  const typeAlpha = dots ? (c, r) => (c === NOSE[0] && r === NOSE[1] ? fadeType : 1) : null;
+  for (const s of COLONY) mind(o, cam, s, t, typeAlpha);
   paperTone(o, cam);
   fibres(o, cam);
   /* the mind inside the dot */
-  const bFrame = flip(t, 14.9), hop = t > 17.6 && t < 17.6 + BEAT ? 1 : 0;
-  mind(o, cam, { m: MIND_B, frame: bFrame, origin: [B_ORIGIN[0], B_ORIGIN[1] - hop * CELL_B], cell: CELL_B, pages: PAGES_B, hue: HUES.lilac, layer: 'accent', ink: FLOOR });
-  typed(o, 'Every mind is made of what it has read.', t, 15.3, 915);
+  const hop = t > DIVE + 17.6 && t < DIVE + 17.6 + BEAT ? 1 : 0;
+  flatMind(o, cam, { m: MIND_B, frame: flip(t, DIVE + 14.9), origin: [B_ORIGIN[0], B_ORIGIN[1] - hop * CELL_B], cell: CELL_B, pages: PAGES_B, hue: HUES.lilac });
+  typed(o, 'Every mind is made of what it has read.', t, DIVE + 15.3, 915);
   return o;
 }
 
-export const SHOTS = [{ name: 'dive', beats: 158, kind: 'frames', surface: NIGHT, frame }];
-console.log('made-of-words', JSON.stringify({ dots: DOTS.X.length, T, RD, CELL_B, LAND, KEYS: KEYS.map(([a, b]) => [a, +b.toFixed(2)]), tittleD: DOTS.tittleD, iTop: DOTS.iTop }));
+export const SHOTS = [{ name: 'made of words', beats: Math.round((DIVE + 18.96) / BEAT), kind: 'frames', surface: PAGE, frame }];
+console.log('made-of-words', JSON.stringify({ dots: DOTS.X.length, T, RD, CELL_B, KEYS: KEYS.map(([a, b]) => [a, +b.toFixed(2)]), ribbons: RIBBONS.length }));

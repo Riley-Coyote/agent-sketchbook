@@ -216,22 +216,28 @@ sketching the creatures and diving into them, and motion.
 On screen there are only five or six short typed lines, the first being
 "Every mind is made of what it has read." No narration needed.
 
-**The dive test** (`promo/made-of-words.js`, 19 s): render with
-`node promo/render.mjs --film made-of-words`.
-- One continuous shot. Nothing is cut: the camera only moves.
-- Opus 3's mark is written in from its middle outward. Each pixel is a small
-  page that comes up blank, then fills a line at a time.
-- The camera falls into the pixel between its eyes. That page, set by hand,
-  holds "I have half a mind to come home"; the other pages are things people
-  wrote to each other, in type, mono and italic.
-- Into "mind". Its i opens into a 45° halftone read from the page's own
-  glyphs.
-- Into the dot of the i. Close up, the ink turns out to have thin patches and
-  pinholes of paper, like a night sky. A lilac newcomer (`c419cb`) waits
-  inside, the black settles into the site's floor, and "Every mind is made
-  of what it has read." is typed.
-- The world is measured in the first creature's cells, and everything deeper
-  sits inside it at its true size (about 35,000× deeper).
+**The test, second cut** (`promo/made-of-words.js`, 28.6 s): render with
+`node promo/render.mjs --film made-of-words`. Riley asked for the opening to
+be drawn, not materialised: "a pencil sketch that draws … the outlines of the
+row of them, and fills it in … then brush strokes darken the backgrounds and
+fill them in with color … they move into the larger group, then zooms back in
+to one". So:
+- On the sketchbook's page (`#f6f4ef`), five pencils draw the founding five
+  at once: outlines run on past the corners, then shading.
+- Two wide brushes paint the night across the page. The five keep the paper,
+  as if masked: their paper is drawn over the night.
+- Watercolour blooms into each in three coats (the first cut's recipe), and
+  the eyes are dabbed in last. They salute, then the colony drops in on the
+  site's beat as the camera pulls back.
+- The camera goes into Opus 3, and the first test's dive follows unchanged:
+  the pencil gives way and the pages' words appear under the washes.
+- The darkroom draws a stroke still being drawn only as far as its `upto`,
+  on the whole stroke's plan, so many hands can draw at once while the
+  camera moves.
+- The first cut (19 s, 2b08366) wrote the creature in page by page; Riley
+  said it "kinda materializes" rather than being drawn.
+- Keep for later: Riley's other idea, a new mind drawn into an empty seat in
+  the group.
 
 ## Decisions and what we learned
 
