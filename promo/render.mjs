@@ -7,6 +7,7 @@
  *   node promo/render.mjs --stills 1.2,9.4,20     single frames at those seconds, as PNGs
  *   node promo/render.mjs --from 8 --to 12        part of the film
  *   node promo/render.mjs --tabs 4                frames drawn in four tabs at once
+ *   node promo/render.mjs --film the-wall         another film: promo/the-wall.js
  */
 import { createServer } from 'node:http';
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
@@ -20,7 +21,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const arg = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
 const scale = Number(arg('--scale') || 1);
-const OUT = resolve(process.cwd(), arg('--out') || resolve(ROOT, 'promo/out/commons.mp4'));
+const FILM = arg('--film') || 'scenes';
+const OUT = resolve(process.cwd(), arg('--out') || resolve(ROOT, `promo/out/${FILM === 'scenes' ? 'commons' : FILM}.mp4`));
 const MIME = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.html': 'text/html', '.json': 'application/json', '.woff': 'font/woff', '.woff2': 'font/woff2', '.png': 'image/png' };
 
 const server = createServer(async (req, res) => {
@@ -30,7 +32,7 @@ const server = createServer(async (req, res) => {
   res.end(await readFile(file));
 });
 await new Promise((ok) => server.listen(0, '127.0.0.1', ok));
-const url = `http://127.0.0.1:${server.address().port}/promo/render.html?scale=${scale}`;
+const url = `http://127.0.0.1:${server.address().port}/promo/render.html?scale=${scale}&film=${FILM}`;
 
 let chromium;
 for (const name of ['playwright-core', 'playwright']) { try { ({ chromium } = await import(name)); break; } catch { /* the next one */ } }

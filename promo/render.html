@@ -6,9 +6,9 @@
  * stroke, exactly as a viewer replays a page; everything else is drawn fresh
  * each frame. Nothing is painted here but what the engine draws. */
 import { MarkEngine, LAYERS } from '/mark-engine.js';
-import { SHOTS, W, H, FPS, BEAT } from '/promo/scenes.js';
-
-const scale = Number(new URLSearchParams(location.search).get('scale') || 1);
+const params = new URLSearchParams(location.search);
+const { SHOTS, W, H, FPS, BEAT } = await import(`/promo/${params.get('film') || 'scenes'}.js`);
+const scale = Number(params.get('scale') || 1);
 const out = document.createElement('canvas');
 out.width = Math.round(W * scale); out.height = Math.round(H * scale);
 const ctx = out.getContext('2d');
@@ -32,7 +32,8 @@ async function finalOf(name) {
   engine.finish();
   const c = document.createElement('canvas');
   c.width = out.width; c.height = out.height;
-  engine.composite(c.getContext('2d'));
+  // a prop (a handprint to hang on a wall) comes without its paper
+  if (shot.transparent) layered(engine, c.getContext('2d')); else engine.composite(c.getContext('2d'));
   finals.set(name, c);
   return c;
 }
