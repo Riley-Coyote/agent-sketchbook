@@ -18,7 +18,7 @@
  * Size it with CSS width; the height follows the page's dimensions (4:3 by default).
  */
 
-import { MarkEngine, surfaceIsLight } from './mark-engine.js';
+import { MarkEngine, Loop, surfaceIsLight } from './mark-engine.js';
 import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, sanitizeSurface, sanitizeMotion, countFrames, limitsForPage } from './validate.js';
 
 const W = 880, H = 660;
@@ -98,14 +98,15 @@ export class SketchPage extends HTMLElement {
 
   /* for a motion page, replay plays the loop from its start and finish pauses it */
   replay() {
-    if (this._motion) { this._motion.playing = true; this._motion.started = performance.now(); return; }
+    if (this._motion) { this._motion.play(); return; }
     if (this._ops.length) { this._doneFired = false; this._engine.replay(); }
   }
   finish() {
-    if (this._motion) { this._motion.playing = false; return; }
+    if (this._motion) { this._motion.pause(); return; }
     if (this._ops.length) { this._engine.finish(); this._fireDone(); }
   }
-  toDataURL(type) { return this._engine.toDataURL(type); }
+  /* a moving page's picture is its poster, whatever frame is being prepared */
+  toDataURL(type) { return this._motion ? this._motion.still.toDataURL(type) : this._engine.toDataURL(type); }
 
   async _load(src) {
     try {
@@ -141,11 +142,13 @@ export class SketchPage extends HTMLElement {
     const engine = this._engine;
     engine.load(ops);
     this._doneFired = false;
+    this._motion?.stop();
     this._motion = null;
     const start = () => {
       if (engine !== this._engine || (engine.allOps ?? engine.ops) !== ops) return; // a newer page arrived meanwhile
-      if (motion && engine.motionFrames) {
-        this._motion = { pictures: engine.motionFrames(), fps: motion.fps, poster: motion.poster ?? 0, started: performance.now(), playing: !matchMedia('(prefers-reduced-motion: reduce)').matches };
+      if (motion) {
+        // the poster at once; the frames are prepared without freezing the page
+        this._motion = new Loop(engine, { fps: motion.fps, poster: motion.poster ?? 0, playing: !matchMedia('(prefers-reduced-motion: reduce)').matches });
         this._doneFired = true;
       } else if (this.hasAttribute('autoplay')) engine.replay(); else { engine.finish(); this._doneFired = true; }
       this.dispatchEvent(new CustomEvent('sketch-load', { detail: { ops, meta: this._meta } }));
@@ -180,14 +183,13 @@ export class SketchPage extends HTMLElement {
       this._last = now;
       const m = this._motion;
       if (m) {
-        const n = m.pictures.length;
-        const k = m.playing ? Math.floor((now - m.started) / 1000 * m.fps) % n : m.poster;
+        const { k, picture, preparing } = m.at(now);
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, this._cv.width, this._cv.height);
-        ctx.drawImage(m.pictures[k], 0, 0, this._cv.width, this._cv.height);
-        phase.textContent = m.playing ? 'Motion' : 'Paused · click to play';
-        pct.textContent = `${k + 1} / ${n}`;
-        dot.classList.toggle('live', m.playing);
+        ctx.drawImage(picture, 0, 0, this._cv.width, this._cv.height);
+        phase.textContent = preparing ? 'Preparing the loop' : m.playing ? 'Motion' : 'Paused · click to play';
+        pct.textContent = preparing ? `${m.prepared} / ${m.frames}` : `${k + 1} / ${m.frames}`;
+        dot.classList.toggle('live', m.playing && !preparing);
         return;
       }
       const e = this._engine;

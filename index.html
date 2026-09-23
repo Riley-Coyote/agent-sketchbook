@@ -151,7 +151,7 @@
   </main>
 
 <script type="module">
-import { MarkEngine, surfaceIsLight, loadFonts } from './mark-engine.js';
+import { MarkEngine, Loop, surfaceIsLight, loadFonts } from './mark-engine.js';
 import { sanitizeOps, sanitizePageDimensions, sanitizeSurface, sanitizeMotion, countFrames, limitsForPage } from './validate.js';
 /* glyph pages need their faces before any page or thumbnail is drawn */
 await loadFonts();
@@ -301,8 +301,10 @@ async function open(index, push) {
   if (engine.frameCount > 1) {
     /* a motion page loops its frames; click the stage to pause or play.
        With reduced motion asked for, it waits on its first frame. */
-    motion = { pictures: engine.motionFrames(), fps: page.motion.fps, poster: page.motion.poster ?? 0, started: performance.now(), playing: !matchMedia('(prefers-reduced-motion: reduce)').matches };
+    motion?.stop();
+    motion = new Loop(engine, { fps: page.motion.fps, poster: page.motion.poster ?? 0, playing: !matchMedia('(prefers-reduced-motion: reduce)').matches });
   } else {
+    motion?.stop();
     motion = null;
     /* a page animates the first time you reach it, and is flat thereafter */
     if (seen.has(index)) engine.finish(); else { engine.replay(); markSeen(index); }
@@ -351,8 +353,8 @@ async function open(index, push) {
 }
 
 /* on a motion page, "draw it again" restarts the loop and "jump to finished" pauses it */
-$('replay').onclick = () => { if (motion) { motion.playing = true; motion.started = performance.now(); } else engine.replay(); };
-$('finish').onclick = () => { if (motion) motion.playing = false; else engine.finish(); };
+$('replay').onclick = () => { if (motion) motion.play(); else engine.replay(); };
+$('finish').onclick = () => { if (motion) motion.pause(); else engine.finish(); };
 $('src-toggle').onclick = () => {
   const open = $('source').classList.toggle('open');
   $('src-toggle').setAttribute('aria-pressed', String(open));
@@ -370,7 +372,7 @@ window.addEventListener('keydown', (e) => {
 
 const phaseEl = $('phase'), pctEl = $('pct'), dotEl = $('dot');
 let motion = null;
-cv.addEventListener('click', () => { if (motion) { motion.playing = !motion.playing; motion.started = performance.now(); } });
+cv.addEventListener('click', () => { if (motion) { if (motion.playing) motion.pause(); else motion.play(); } });
 let last = performance.now();
 (function frame() {
   requestAnimationFrame(frame);
@@ -378,13 +380,12 @@ let last = performance.now();
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   if (motion) {
-    const n = motion.pictures.length;
-    const k = motion.playing ? Math.floor((now - motion.started) / 1000 * motion.fps) % n : motion.poster;
+    const { k, picture, preparing } = motion.at(now);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, cv.width, cv.height);
-    ctx.drawImage(motion.pictures[k], 0, 0, cv.width, cv.height);
-    phaseEl.textContent = motion.playing ? 'Motion' : 'Paused · click to play';
-    pctEl.textContent = `frame ${k + 1} of ${n}`;
+    ctx.drawImage(picture, 0, 0, cv.width, cv.height);
+    phaseEl.textContent = preparing ? 'Preparing the loop' : motion.playing ? 'Motion' : 'Paused · click to play';
+    pctEl.textContent = preparing ? `${motion.prepared} of ${motion.frames} frames` : `frame ${k + 1} of ${motion.frames}`;
     return;
   }
   engine.tick(dt, speed);

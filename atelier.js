@@ -1,6 +1,6 @@
 import { compilePage } from './page-program.js';
 
-import { MarkEngine, loadFonts } from './mark-engine.js';
+import { MarkEngine, Loop, loadFonts } from './mark-engine.js';
 import { sanitizeOps, sanitizePageDimensions, sanitizeSurface, limitsForPage } from './validate.js';
 /* glyph pages need their faces before anything is drawn */
 await loadFonts();
@@ -14,6 +14,8 @@ let comparing = false;
 let engine = null, passes = [], selected = 0, allOps = [], lastTime = 0;
 let dirty = true, version = 0, replayStart = 0;
 let currentSurface;
+/* A page that moves: its motion, and the loop while it plays. */
+let motion = null, loop = null, shown = null;
 const ctx = $('canvas').getContext('2d');
 
 function report(error) { $('error').textContent = error.message || String(error); }
@@ -26,6 +28,7 @@ function controls(busy) {
   for (const button of $('history').children) button.disabled = busy;
 }
 function show() {
+  if (loop) return;   // the loop paints its own frames and status
   if (engine && dirty) { engine.composite(ctx); dirty = false; }
   if (!engine) return;
   const progress = engine.cursor
@@ -33,7 +36,28 @@ function show() {
     : 1;
   $('status').textContent = engine.cursor
     ? `${engine.phase || 'Drawing'} · ${Math.round(progress * 100)}%`
+    : motion ? `Frame ${motion.poster} of 0–${motion.frames - 1} · the poster · ${motion.fps} fps`
     : `Pass ${selected + 1} of ${passes.length} · paused to look`;
+}
+/* Play and stop a moving page. The shared Loop shows the poster at once and
+ * prepares the frames without freezing the page; the engine keeps them, so
+ * playing again is instant. Stopping, even mid-way, returns to the poster. */
+function stopLoop() {
+  if (!loop) return;
+  loop.stop();
+  loop = null;
+  $('play').textContent = 'Play loop';
+  $('play').setAttribute('aria-pressed', 'false');
+  engine.drawFrame(motion.poster);
+  dirty = true;
+  show();
+}
+function playLoop() {
+  if (!engine || !motion) return;
+  loop = new Loop(engine, { fps: motion.fps, poster: motion.poster, playing: true });
+  shown = null;
+  $('play').textContent = 'Stop';
+  $('play').setAttribute('aria-pressed', 'true');
 }
 function paint(ops, allowAppend = false) {
   const prefix = allowAppend && allOps.length <= ops.length
@@ -123,7 +147,7 @@ async function load(allowReset=false) {
       page=(await import(`./pages/${name}.js?v=${Date.now()}-${version++}`)).default;
       raw=compilePage(page);
       $('workflow-note').textContent = raw.meta.motion
-        ? `This page moves (${raw.meta.motion.frames} frames at ${raw.meta.motion.fps} fps); the atelier shows its frames as a still. Watch it loop at page.html?p=${name}, or see every frame with: node book.mjs preview pages/${name}.js --out sheet.png --sheet`
+        ? `This page moves (${raw.meta.motion.frames} frames at ${raw.meta.motion.fps} fps). Play loop watches it here. To check the seam: node book.mjs preview pages/${name}.js --timing --out timing.png, or every frame at once with --sheet.`
         : 'Edit this trusted local source and append a named pass. Continue preserves the earlier marks. If you deliberately change them, load the revised composition and save it as a branch of the earlier page. These controls do not write files; save from the CLI.';
     }
     const dims = sanitizePageDimensions(page.page);
@@ -158,6 +182,12 @@ async function load(allowReset=false) {
     } else paint(candidate.ops, !allowReset);
     passes = candidate.passes;
     selected = passes.length - 1;
+    // a moving page opens on its poster frame, still, until someone presses play
+    stopLoop();
+    const m = raw.meta.motion || page.motion;
+    motion = m && engine.frameCount > 1 ? { frames: engine.frameCount, fps: m.fps, poster: Math.min(engine.frameCount - 1, m.poster ?? 0) } : null;
+    $('play').hidden = !motion;
+    if (motion) { engine.drawFrame(motion.poster); dirty = true; }
     $('size').textContent = `${w} × ${h} · ${Number(engine.dpr.toFixed(2))}× pigment resolution`;
     $('title').textContent = String(page.title || 'Sketchbook · Atelier');
     $('canvas').setAttribute('aria-label', String(page.title || 'The drawing'));
@@ -196,10 +226,12 @@ $('inspect').onclick = () => {
     cv.hidden=false;$('error').textContent='';
   } catch(error){report(error);}
 };
-$('finish').onclick = finish;
+$('finish').onclick = () => { stopLoop(); finish(); };
+$('play').onclick = () => { try { if (loop) stopLoop(); else playLoop(); } catch (error) { report(error); } };
 $('replay').onclick = () => {
   try {
     if (!engine || !passes[selected]) return;
+    stopLoop();
     const before = passes.slice(0, selected).flatMap(pass => pass.ops);
     engine.load(before).finish();
     replayStart = engine.total;
@@ -242,7 +274,18 @@ $('export').onclick = async () => {
 };
 function frame(time) {
   requestAnimationFrame(frame);
-  if (engine?.cursor) {
+  if (loop) {
+    const { k, picture, preparing } = loop.at();
+    if (picture !== shown) {
+      shown = picture;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+      ctx.drawImage(picture, 0, 0);
+    }
+    $('status').textContent = preparing
+      ? `Preparing the loop · ${loop.prepared} of ${loop.frames} frames`
+      : `Frame ${k} of 0–${loop.frames - 1} · ${motion.fps} fps`;
+  } else if (engine?.cursor) {
     engine.tick(Math.min(.05, (time - lastTime) / 1000), 8);
     dirty = true;
     show();

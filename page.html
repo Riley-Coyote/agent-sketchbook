@@ -25,7 +25,7 @@
   <p id="note"></p>
 <script type="module">
   const name = new URLSearchParams(location.search).get('p') || 'moth';
-  const { MarkEngine, surfaceIsLight } = await import('./mark-engine.js');
+  const { MarkEngine, Loop, surfaceIsLight } = await import('./mark-engine.js');
   const { sanitizePageDimensions, sanitizeSurface, sanitizeOps, limitsForPage } = await import('./validate.js');
   const mod = await import(`./pages/${name}.js`);
   const page = mod.default;
@@ -50,28 +50,27 @@
   /* a motion page loops its frames (unless the reader asked for less motion);
      a still is drawn as it was made */
   const fps = compiled.meta.motion?.fps || 12;
-  const pictures = engine.frameCount > 1 ? engine.motionFrames() : null;
-  const poster = compiled.meta.motion?.poster ?? 0;
-  let playing = pictures && !matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let started = performance.now();
-  if (pictures) cv.onclick = () => { playing = !playing; started = performance.now(); };
+  const loop = engine.frameCount > 1 ? new Loop(engine, { fps, poster: compiled.meta.motion?.poster ?? 0, playing: !matchMedia('(prefers-reduced-motion: reduce)').matches }) : null;
+  if (loop) cv.onclick = () => (loop.playing ? loop.pause() : loop.play());
   else engine.replay();
   window.engine = engine; window.ops = ops;
   document.getElementById('note').textContent = `${page.title} — ${page.date} — ${page.note}`;
-  document.getElementById('replay').onclick = () => engine.replay();
-  document.getElementById('finish').onclick = () => engine.finish();
+  document.getElementById('replay').onclick = () => (loop ? loop.play() : engine.replay());
+  document.getElementById('finish').onclick = () => (loop ? loop.pause() : engine.finish());
   const hud = document.getElementById('hud');
   let last = performance.now();
   (function frame() {
     requestAnimationFrame(frame);
     const now = performance.now();
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
-    if (pictures) {
-      const k = playing ? Math.floor((now - started) / 1000 * fps) % pictures.length : poster;
+    if (loop) {
+      const { k, picture, preparing } = loop.at(now);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, cv.width, cv.height);
-      ctx.drawImage(pictures[k], 0, 0, cv.width, cv.height);
-      hud.textContent = `frame ${k} of 0–${pictures.length - 1}, as frame(i, n) counts · ${fps} fps${playing ? '' : ' · paused, click to play'}`;
+      ctx.drawImage(picture, 0, 0, cv.width, cv.height);
+      hud.textContent = preparing
+        ? `preparing the loop · ${loop.prepared} of ${loop.frames} frames · showing the poster, frame ${k}`
+        : `frame ${k} of 0–${loop.frames - 1}, as frame(i, n) counts · ${fps} fps${loop.playing ? '' : ' · paused, click to play'}`;
       return;
     }
     engine.tick(dt, 3);

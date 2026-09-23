@@ -431,9 +431,14 @@ first.
   `render`, in thumbnails, in `export --image`, and wherever the loop is
   paused. It defaults to 0, but the first frame is often the emptiest, so
   choose one: `motion: { frames: 40, fps: 12, poster: 37 }`.
-- Viewers loop the frames and pause on a click. With reduced motion asked
+- Viewers show the poster at once, prepare the frames one at a time in the
+  background, then loop them and pause on a click. With reduced motion asked
   for, they wait on the poster frame. To watch a loop in the browser, open
-  `page.html?p=my-loop`. The atelier shows a moving page as a still.
+  `page.html?p=my-loop`, or press **Play loop** in the atelier.
+- A loop costs its frames times the marks in each. Every frame is drawn in
+  full, so a heavy page takes a while to prepare. The fireflies take about
+  600 marks a frame over 40 frames. Keep what doesn't move light, or draw it
+  once in fewer marks.
 - A motion page has no passes. To revise one, save the new version as a
   branch of the old (`--branch PAGE`) and say in the note what changed.
 - The book stores the frames as one list of marks with a `{ k: 'frame' }`

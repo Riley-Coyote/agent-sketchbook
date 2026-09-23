@@ -612,8 +612,35 @@ export class MarkEngine {
     return this;
   }
 
+  /** motionFrames(), one frame at a time, yielding to the page between frames
+   * so a heavy loop never freezes it. `onFrame(k, n)` reports progress;
+   * when `isCurrent()` turns false it stops and resolves null. Leaves the
+   * engine showing frame `rest`. The frames are kept, as motionFrames keeps
+   * them, until the next load(). */
+  async prepareFrames({ onFrame, isCurrent = () => true, rest = 0 } = {}) {
+    if (!this._motionFrames) {
+      const pictures = [];
+      for (let i = 0; i < this.frameCount; i++) {
+        await new Promise((next) => setTimeout(next, 0));
+        if (!isCurrent()) return null;
+        this.drawFrame(i);
+        const c = document.createElement('canvas');
+        c.width = this.w * this.dpr;
+        c.height = this.h * this.dpr;
+        this.composite(c.getContext('2d'));
+        pictures.push(c);
+        onFrame?.(i + 1, this.frameCount);
+      }
+      this._motionFrames = pictures;
+    } else await null;
+    if (!isCurrent()) return null;
+    this.drawFrame(rest);
+    return this._motionFrames;
+  }
+
   /** Every frame flattened to its own canvas, once, so a viewer can loop
-   * them smoothly. Leaves the engine showing the first frame. */
+   * them smoothly. Leaves the engine showing the first frame. Blocks until
+   * done: viewers use Loop (below), which prepares frames without freezing. */
   motionFrames() {
     if (this._motionFrames) return this._motionFrames;
     const pictures = [];
@@ -1275,4 +1302,37 @@ export class MarkEngine {
       this.pen = { x: P0[i][0], y: P0[i][1] };
     }
   }
+}
+
+/** A moving page as a viewer plays it: its poster at once, its frames
+ * prepared in the background, then looped at the page's own rate. `at(now)`
+ * says what to show; stop() abandons preparation when the viewer moves on. */
+export class Loop {
+  constructor(engine, { fps, poster = 0, playing = true }) {
+    this.engine = engine;
+    this.fps = fps;
+    this.poster = Math.max(0, Math.min(engine.frameCount - 1, poster));
+    this.playing = playing;
+    this.started = performance.now();
+    this.pictures = null;
+    this.prepared = 0;
+    this.alive = true;
+    engine.drawFrame(this.poster);
+    this.still = document.createElement('canvas');
+    this.still.width = engine.w * engine.dpr;
+    this.still.height = engine.h * engine.dpr;
+    engine.composite(this.still.getContext('2d'));
+    this.ready = engine.prepareFrames({ rest: this.poster, isCurrent: () => this.alive, onFrame: (k) => { this.prepared = k; } })
+      .then((pictures) => { if (pictures && this.alive) { this.pictures = pictures; this.started = performance.now(); } return this.pictures; });
+  }
+  get frames() { return this.engine.frameCount; }
+  /** The frame on show at `now`: the poster until the frames are ready. */
+  at(now = performance.now()) {
+    if (!this.pictures) return { k: this.poster, picture: this.still, preparing: true };
+    const k = this.playing ? Math.floor(((now - this.started) / 1000) * this.fps) % this.pictures.length : this.poster;
+    return { k, picture: this.pictures[k], preparing: false };
+  }
+  play() { this.playing = true; this.started = performance.now(); }
+  pause() { this.playing = false; }
+  stop() { this.alive = false; }
 }

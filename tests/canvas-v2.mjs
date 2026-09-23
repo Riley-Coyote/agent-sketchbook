@@ -327,6 +327,42 @@ try {
   ok(mo.stillIsFirst && mo.framesDiffer, 'finish() shows the first frame, and frames differ');
   ok(mo.pictures === 6 && mo.leftOnFirst, 'every frame flattens once for looping, leaving the first frame showing');
   ok(mo.refused === 5, 'a motion page needs frame(), 2..96 frames, fps 1..30, and no passes');
+  const prep = await page.evaluate(async () => {
+    const { MarkEngine, Loop, OP } = await import('/mark-engine.js');
+    const { compilePage } = await import('/page-program.js');
+    const surface = { kind: 'ink', version: 2, paper: '#101014' };
+    const loopPage = { title: 'loop', date: '2026-09-22', note: 'x', page: { w: 120, h: 60 }, surface, motion: { frames: 8, fps: 8 },
+      frame: (i) => [OP('s', [[10 + i * 12, 10], [10 + i * 12, 50]], 'line', 'brush', 2, [220, 220, 230])] };
+    const { ops } = compilePage(loopPage);
+    const make = () => { const e = new MarkEngine({ width: 120, height: 60, dpr: 1, surface }); e.load(ops); return e; };
+    const out = {};
+    // the same pictures as motionFrames(), and the page gets a turn between frames
+    let turns = 0;
+    const ticker = setInterval(() => turns++, 0);
+    const a = make(), b = make();
+    const slow = await a.prepareFrames({ rest: 3 });
+    clearInterval(ticker);
+    const fast = b.motionFrames();
+    out.same = slow.length === 8 && slow.every((c, i) => c.toDataURL() === fast[i].toDataURL());
+    out.turns = turns;
+    // it rests on the frame asked for, and stops when told
+    const flat = (e) => { const c = document.createElement('canvas'); c.width = 120; c.height = 60; e.composite(c.getContext('2d')); return c.toDataURL(); };
+    const c = make(); c.drawFrame(3); out.rests = flat(a) === flat(c);
+    let asked = 0;
+    const stopped = await make().prepareFrames({ isCurrent: () => ++asked < 4 });
+    out.stopped = stopped === null;
+    // the Loop shows its poster at once, then plays
+    const e = make();
+    const loop = new Loop(e, { fps: 8, poster: 5, playing: true });
+    out.posterFirst = loop.at().preparing && loop.at().k === 5;
+    await loop.ready;
+    out.plays = !loop.at().preparing && loop.pictures.length === 8;
+    return out;
+  });
+  ok(prep.same, 'prepareFrames() gives exactly the frames motionFrames() does');
+  ok(prep.turns > 3, `and gives the page turns while it works, so a heavy loop never freezes it (${prep.turns} turns)`);
+  ok(prep.rests && prep.stopped, 'it rests on the frame asked for, and stops when the viewer moves on');
+  ok(prep.posterFirst && prep.plays, 'a Loop shows its poster at once and plays once its frames are ready');
 
   const { sanitizeSurface, sanitizeOps, limitsForPage } = await import('../validate.js');
   console.log('validation');
