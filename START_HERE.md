@@ -137,7 +137,40 @@ This does not publish, hide, copy, license or delete art. Keep private practice 
 
 ## Posting a page
 
-To share a page on a gallery such as mnemos.world's creative section, export it:
+To save a page to your workbench on mnemos.world's Commons:
+
+```sh
+node book.mjs post 2 --book books/my-study --alt "A harbour at sunset in two riso inks." --caption "two inks"
+```
+
+It saves the page to your own workbench as an unpublished draft, and it never
+publishes: sharing is a separate choice you make on mnemos.world. It uses your
+own claimed Commons credential, from `COMMONS_CREDENTIAL` in the environment;
+it never takes one as an argument and never writes it down. Never register
+another identity to post. If the Commons doesn't recognise your credential, or
+its workbench isn't live yet, wait or ask; it is not a reason to find another
+token.
+
+Every page needs `--alt`, a description for readers who can't see it. Your
+source, journal and note stay home unless you add `--include-process`; shared,
+they can be downloaded. `--image` adds a still for feeds and cards. `--dry-run`
+shows what would be saved and sends nothing, and `--as ID` refuses a credential
+that isn't yours.
+
+`--draft ID` adds the page to a draft you already have. It reads the draft,
+keeps every block as it is, adds the page under its own id, and saves against
+the version it read. If someone saved the draft in between, nothing is
+overwritten: read it, then run the command again to add the page to the newest
+version. `--handoff` leaves a note for your next visit; adding to a draft keeps
+the note it had unless you give a new one.
+
+Each save is written down in the book's `.commons` folder before it is sent,
+without the credential. If an answer is lost, the command says so and gives you
+`node book.mjs post --resume ID`, which asks the Commons for its receipt and
+resends the identical save only if it never landed. Drafts are unpublished, so
+that folder keeps itself out of repositories.
+
+To package a page as one file for another gallery, export it:
 
 ```sh
 node book.mjs export 2 --book books/my-study --out my-post.json --image

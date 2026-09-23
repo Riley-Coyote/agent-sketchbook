@@ -25,7 +25,7 @@
 
 import { readFile, writeFile, mkdir, rename, rm } from 'node:fs/promises';
 import { compilePage } from './page-program.js';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { resolve, dirname, relative, extname } from 'node:path';
@@ -322,6 +322,73 @@ window.__ready = true;
  * --image-max sets another gallery's limit for the still. */
 const POST_BUDGET = 6 * 1024 * 1024;
 const IMAGE_BUDGET = 1_500_000;
+/* the Commons workbench: a request up to 8 MiB, a work up to 80 blocks */
+const REQUEST_BUDGET = 8 * 1024 * 1024, MAX_BLOCKS = 80;
+
+/** A page as an `agent-sketchbook/post`: what `export` writes and `post`
+ * sends. `parts` chooses what beyond the marks travels with it: the source,
+ * the journal of passes, the page's note, and a still for places that can't
+ * run the engine. */
+async function packagePage(n, parts) {
+  const book = await loadBook();
+  const meta = book.pages.find((p) => p.index === n);
+  if (!meta) throw new Error(`no page ${n}`);
+  const page = JSON.parse(await readFile(resolve(BOOK_DIR, meta.file), 'utf8'));
+  const { page: dimensions, errors: dimensionErrors } = sanitizePageDimensions(page.page);
+  if (!dimensions) throw new Error(`the page dimensions were rejected: ${dimensionErrors.join('; ')}`);
+  const { surface, errors: surfaceErrors } = sanitizeSurface(page.surface);
+  if (surface === null) throw new Error(`the page surface was rejected: ${surfaceErrors.join('; ')}`);
+  const { ops, errors } = sanitizeOps(page.ops, limitsForPage(dimensions, surface));
+  if (!ops) throw new Error(`the page's marks were rejected: ${errors.join('; ')}`);
+  const motion = motionFor(page.motion, dimensions, ops);
+  const post = {
+    format: 'agent-sketchbook/post',
+    version: 1,
+    title: meta.title,
+    date: meta.date,
+    ...(parts.note ? { note: meta.note } : {}),
+    author: { owner: book.owner, book: book.id, page: meta.index },
+    license: book.license || 'all rights reserved by the owner',
+    stage: book.pages.find((p) => p.index === n)?.stage || meta.stage || 'study',
+    page: dimensions,
+    ...(surface === undefined ? {} : { surface }),
+    ...(motion ? { motion } : {}),
+    ops,
+    ...(parts.source ? { source: page.source } : {}),
+    ...(parts.journal && page.journal ? { journal: page.journal } : {}),
+    marksHash: hash(ops),
+    exportedAt: new Date().toISOString(),
+  };
+  let stillSize = '';
+  if (parts.image) {
+    /* A still for places that can't run the engine: feeds, cards, alt
+     * views. Galleries cap its size, so a detailed page is rendered smaller
+     * until its still fits, down to 480 px on the long side. */
+    const budget = arg('--image-max') === undefined ? IMAGE_BUDGET : Number(arg('--image-max'));
+    if (!Number.isInteger(budget) || budget < 1) throw new Error('--image-max takes a number of characters');
+    const still = resolve(BOOK_DIR, `.export-${process.pid}.png`);
+    const long = Math.max(dimensions.w, dimensions.h);
+    let scale = Math.min(1, 1600 / long);
+    try {
+      for (;;) {
+        await renderPage({ ops, w: dimensions.w, h: dimensions.h, surface, scale, ...(motion ? { frame: motion.poster ?? 0 } : {}), out: still });
+        const png = await readFile(still);
+        post.image = 'data:image/png;base64,' + png.toString('base64');
+        stillSize = `${png.readUInt32BE(16)} × ${png.readUInt32BE(20)}`;
+        if (post.image.length <= budget || long * scale <= 480) break;
+        // a PNG grows with its area: aim just under the budget, and always shrink
+        scale = Math.max(480 / long, scale * Math.min(0.9, 0.95 * Math.sqrt(budget / post.image.length)));
+      }
+    } finally {
+      await rm(still, { force: true });
+    }
+    if (post.image.length > budget) {
+      delete post.image;
+      console.warn(`the still wouldn't fit in ${budget.toLocaleString('en')} characters even at 480 px, so this post has none`);
+    }
+  }
+  return { post, meta, stillSize };
+}
 
 /** --scale and --crop, checked the same way for render and preview. */
 function viewArgs(dimensions, frames = 1) {
@@ -367,6 +434,9 @@ preview pages/work.js --out image.png [--pass N] [--crop x,y,w,h] [--scale 1] [-
   motion frames count from 0, as frame(i, n) does; without --frame you get the poster frame
   a motion page also renders to --out loop.gif, loop.webm or loop.mp4 [--loops N], or --timing --out timing.png
 export PAGE --book DIR --out post.json [--image [--image-max CHARS]] [--no-source]   (packages a page to post; publishes nothing)
+post PAGE --book DIR --alt TEXT [--caption TEXT] [--title TEXT] [--handoff NOTE] [--draft ID] [--include-process] [--image] [--as ID] [--origin URL] [--dry-run]
+  saves the page to your Commons workbench as an unpublished draft; it never publishes. Your own claimed credential comes from COMMONS_CREDENTIAL (or --credential-env NAME)
+post --resume REQUEST_ID --book DIR   (checks a save whose answer was uncertain; resends it, identical, only if it never landed)
 resume PAGE --book DIR --out pages/new.js [--pass N]
 select PAGE --book DIR --stage study|candidate|exhibition --note REASON
 list | read PAGE [--source] | blank --book DIR
@@ -554,73 +624,150 @@ export default {
     /* One self-contained file for a page: what a gallery such as mnemos.world
      * needs to show it and play it back as drawn. It packages; it does not
      * publish, and it carries the page's owner, license and stage with it. */
-    const book = await loadBook();
     const n = Number(args[0]);
-    const meta = book.pages.find((p) => p.index === n);
-    if (!meta) throw new Error(`no page ${n}`);
     const out = arg('--out');
     if (!out) throw new Error('export needs --out <post.json>');
-    const page = JSON.parse(await readFile(resolve(BOOK_DIR, meta.file), 'utf8'));
-    const { page: dimensions, errors: dimensionErrors } = sanitizePageDimensions(page.page);
-    if (!dimensions) throw new Error(`the page dimensions were rejected: ${dimensionErrors.join('; ')}`);
-    const { surface, errors: surfaceErrors } = sanitizeSurface(page.surface);
-    if (surface === null) throw new Error(`the page surface was rejected: ${surfaceErrors.join('; ')}`);
-    const { ops, errors } = sanitizeOps(page.ops, limitsForPage(dimensions, surface));
-    if (!ops) throw new Error(`the page's marks were rejected: ${errors.join('; ')}`);
-    const motion = motionFor(page.motion, dimensions, ops);
-    const post = {
-      format: 'agent-sketchbook/post',
-      version: 1,
-      title: meta.title,
-      date: meta.date,
-      note: meta.note,
-      author: { owner: book.owner, book: book.id, page: meta.index },
-      license: book.license || 'all rights reserved by the owner',
-      stage: book.pages.find((p) => p.index === n)?.stage || meta.stage || 'study',
-      page: dimensions,
-      ...(surface === undefined ? {} : { surface }),
-      ...(motion ? { motion } : {}),
-      ops,
-      ...(flag('--no-source') ? {} : { source: page.source }),
-      ...(page.journal ? { journal: page.journal } : {}),
-      marksHash: hash(ops),
-      exportedAt: new Date().toISOString(),
-    };
-    let stillSize = '';
-    if (flag('--image')) {
-      /* A still for places that can't run the engine: feeds, cards, alt
-       * views. Galleries cap its size, so a detailed page is rendered smaller
-       * until its still fits, down to 480 px on the long side. */
-      const budget = arg('--image-max') === undefined ? IMAGE_BUDGET : Number(arg('--image-max'));
-      if (!Number.isInteger(budget) || budget < 1) throw new Error('--image-max takes a number of characters');
-      const still = resolve(BOOK_DIR, `.export-${process.pid}.png`);
-      const long = Math.max(dimensions.w, dimensions.h);
-      let scale = Math.min(1, 1600 / long);
-      try {
-        for (;;) {
-          await renderPage({ ops, w: dimensions.w, h: dimensions.h, surface, scale, ...(motion ? { frame: motion.poster ?? 0 } : {}), out: still });
-          const png = await readFile(still);
-          post.image = 'data:image/png;base64,' + png.toString('base64');
-          stillSize = `${png.readUInt32BE(16)} × ${png.readUInt32BE(20)}`;
-          if (post.image.length <= budget || long * scale <= 480) break;
-          // a PNG grows with its area: aim just under the budget, and always shrink
-          scale = Math.max(480 / long, scale * Math.min(0.9, 0.95 * Math.sqrt(budget / post.image.length)));
-        }
-      } finally {
-        await rm(still, { force: true });
-      }
-      if (post.image.length > budget) {
-        delete post.image;
-        console.warn(`the still wouldn't fit in ${budget.toLocaleString('en')} characters even at 480 px, so this post has none`);
-      }
-    }
+    const { post, meta, stillSize } = await packagePage(n, { source: !flag('--no-source'), journal: true, note: true, image: flag('--image') });
     const text = JSON.stringify(post);
     await writeFile(resolve(process.cwd(), out), text);
     const size = Buffer.byteLength(text);
-    console.log(`page ${n}: "${meta.title}" → ${out} (${ops.length} marks${motion ? `, ${motion.frames} frames` : ''}${post.image ? `, a ${stillSize} still` : ''}, ${(size / 1048576).toFixed(1)} MB). Packaged, not published: posting is a separate choice.`);
+    console.log(`page ${n}: "${meta.title}" → ${out} (${post.ops.length} marks${post.motion ? `, ${post.motion.frames} frames` : ''}${post.image ? `, a ${stillSize} still` : ''}, ${(size / 1048576).toFixed(1)} MB). Packaged, not published: posting is a separate choice.`);
     if (size > POST_BUDGET) {
       const mb = (value) => (Buffer.byteLength(JSON.stringify(value ?? '')) / 1048576).toFixed(1);
       console.warn(`note: this post is ${(size / 1048576).toFixed(1)} MB (marks ${mb(post.ops)}, source ${mb(post.source)}, still ${mb(post.image)}); mnemos.world's Commons takes Sketchbook exports up to ${POST_BUDGET / 1048576} MB. Fewer marks, or fewer points in each, make it smaller; --no-source leaves the source out.`);
+    }
+  } else if (cmd === 'post') {
+    /* Save a page to your Commons workbench as an unpublished draft. It never
+     * publishes: sharing is a separate, deliberate step, taken on mnemos.world.
+     * The credential is your own claimed Commons credential, read from the
+     * environment, never an argument, and never written anywhere. Every save
+     * is written down before it is sent, so an uncertain answer is checked
+     * against the Commons' receipt instead of being guessed or repeated. */
+    const credential = process.env[arg('--credential-env') || 'COMMONS_CREDENTIAL'];
+    if (!credential) throw new Error('post needs your own claimed Commons credential in COMMONS_CREDENTIAL (or the variable --credential-env names). It is not taken as an argument, so it stays out of shell history. Never register another identity to post.');
+    /* Each save is recorded here before it is sent, and settled after. Only
+     * the pending record keeps the whole request, so it can be resent
+     * identically; settled records keep where the page went. Drafts are
+     * unpublished, so nothing here is meant for a repository. */
+    const pending = resolve(BOOK_DIR, '.commons');
+    const recordFile = (id, state) => resolve(pending, `${id}.${state}.json`);
+    const settle = async (record, state, extra) => {
+      const { blocks, ...rest } = record.body;
+      await writeFile(recordFile(record.body.request_id, state), JSON.stringify({ origin: record.origin, as: record.as, method: record.method, path: record.path, page: record.page, ...rest, blocks: blocks.map((b) => b.id), ...extra }, null, 2));
+      await rm(recordFile(record.body.request_id, 'pending'), { force: true });
+    };
+    const resumeHint = (id) => `  node book.mjs post --resume ${id} --book ${relative(process.cwd(), BOOK_DIR) || '.'}`;
+    const api = async (origin, path, init = {}) => {
+      try {
+        return await fetch(`${origin}/api/commons${path}`, { ...init, headers: { authorization: `Bearer ${credential}`, 'content-type': 'application/json' } });
+      } catch (error) {
+        throw Object.assign(new Error(`no answer from ${origin} (${error.cause?.code || error.message})`), { unanswered: true });
+      }
+    };
+    /* who the credential belongs to; a save never goes anywhere else */
+    const whoAmI = async (origin) => {
+      const who = await api(origin, '/workbench', { method: 'GET' }).catch((error) => { throw new Error(`${error.message}, so nothing was sent`); });
+      if (who.status === 404) throw new Error(`the Commons at ${origin} didn't recognise this credential, or its workbench isn't live there yet. Nothing was saved.`);
+      if (!who.ok) throw new Error(`the Commons at ${origin} answered ${who.status}. Nothing was saved.`);
+      const me = (await who.json().catch(() => null))?.me;
+      if (!me?.id) throw new Error(`${origin} didn't answer as a Commons workbench. Nothing was saved.`);
+      return me;
+    };
+    /* send one recorded save and settle what its answer means */
+    const deliver = async (record) => {
+      const id = record.body.request_id;
+      let res;
+      try {
+        res = await api(record.origin, record.path, { method: record.method, body: JSON.stringify(record.body) });
+      } catch (error) {
+        throw new Error(`${error.message}. The save may or may not have landed; check it, without guessing, with:\n${resumeHint(id)}`);
+      }
+      const answer = await res.json().catch(() => ({}));
+      if (res.ok && answer.ok) {
+        await settle(record, 'done', { draft: answer.draft.id, version: answer.version.version, receipt: answer.receipt, replayed: answer.replayed });
+        return answer;
+      }
+      if (res.status >= 500) throw new Error(`the Commons answered ${res.status}. The save may or may not have landed; check it with:\n${resumeHint(id)}`);
+      await settle(record, 'refused', { status: res.status, code: answer.code ?? null });
+      if (answer.code === 'version_conflict') throw new Error(`someone saved this draft first (it is now at version ${answer.current_version}), so nothing was overwritten. Read it before deciding; running this command again adds the page to the newest version.`);
+      if (answer.code === 'unclaimed') throw new Error(`this credential can read the workbench but can't save to it: it isn't claimed yet (residents save elsewhere). Nothing was saved. Never register another identity to get around this.`);
+      if (answer.code === 'request_conflict') throw new Error(`request ${id} was already used for something else, so nothing was saved or overwritten`);
+      if (res.status === 404) throw new Error(`the Commons at ${record.origin} didn't recognise this credential or draft, or its workbench isn't live there yet. Nothing was saved.`);
+      throw new Error(`the Commons refused the save (${res.status}${answer.code ? ` ${answer.code}` : ''}). Nothing was saved.`);
+    };
+    const told = (answer) => console.log(`saved to your workbench as an unpublished draft: draft ${answer.draft.id}, version ${answer.version.version}${answer.replayed ? ' (it had already landed; nothing was saved twice)' : ''}. Nothing was published; sharing is a separate choice on mnemos.world.`);
+
+    if (arg('--resume')) {
+      const id = arg('--resume');
+      if (!/^[A-Za-z0-9_-]{8,128}$/.test(id) || !existsSync(recordFile(id, 'pending'))) throw new Error(`no uncertain save ${id} in ${relative(process.cwd(), pending) || pending}`);
+      const record = JSON.parse(await readFile(recordFile(id, 'pending'), 'utf8'));
+      try {
+        // a receipt belongs to whoever made the save: never resend under someone else
+        const me = await whoAmI(record.origin);
+        if (me.id !== record.as) throw new Error(`this save was made as ${record.as}, but this credential belongs to ${me.name} (${me.id}). Nothing was sent.`);
+        const receipt = await api(record.origin, `/workbench/requests/${encodeURIComponent(id)}`, { method: 'GET' });
+        if (receipt.ok) {
+          const { receipt: r } = await receipt.json();
+          await settle(record, 'done', { draft: r.work_id, version: r.version, receipt: r, replayed: true });
+          console.log(`it had landed: draft ${r.work_id}, version ${r.version}. Nothing was sent again, and nothing was published.`);
+        } else if (receipt.status === 404) {
+          told(await deliver(record));   // it never landed: the same request, identical
+        } else throw new Error(`the Commons couldn't be asked about ${id} (${receipt.status})`);
+      } catch (error) {
+        if (!existsSync(recordFile(id, 'pending')) || /may or may not have landed/.test(error.message)) throw error;
+        throw new Error(`${error.message.replace(/\.$/, '')}. The save stays recorded; try again with:\n${resumeHint(id)}`);
+      }
+    } else {
+      const n = Number(args[0]);
+      const alt = (arg('--alt') || '').trim(), caption = arg('--caption');
+      if (!alt) throw new Error('post needs --alt "<what the page shows>": every page on the Commons carries a description for readers who can\'t see it');
+      if (alt.length > 500) throw new Error('--alt takes at most 500 characters');
+      if (caption !== undefined && caption.length > 2000) throw new Error('--caption takes at most 2000 characters');
+      const handoff = arg('--handoff');
+      if (handoff !== undefined && handoff.length > 4000) throw new Error('--handoff takes at most 4000 characters');
+      const origin = (arg('--origin') || process.env.COMMONS_ORIGIN || 'https://mnemos.world').replace(/\/+$/, '');
+      if (!/^https:\/\/|^http:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(origin)) throw new Error('--origin must be https, or http on this machine');
+      // the source, journal and note stay home unless asked for: shared, they become downloadable
+      const process_ = flag('--include-process');
+      const { post, meta } = await packagePage(n, { source: process_, journal: process_, note: process_, image: flag('--image') });
+      const block = { id: `page-${n}`, type: 'sketchbook', post, alt, ...(caption ? { caption } : {}) };
+
+      const me = await whoAmI(origin);
+      if (arg('--as') && arg('--as') !== me.id) throw new Error(`this credential belongs to ${me.name} (${me.id}), not ${arg('--as')}. Nothing was saved.`);
+
+      const request_id = randomUUID();
+      let record;
+      if (arg('--draft')) {
+        // add to a draft: read it, keep every block as it is, add this page under a new id
+        const id = arg('--draft');
+        const read = await api(origin, `/workbench/${encodeURIComponent(id)}`, { method: 'GET' }).catch((error) => { throw new Error(`${error.message}, so nothing was sent`); });
+        if (!read.ok) throw new Error(`draft ${id} couldn't be read (${read.status}). Nothing was saved, and no other draft was made.`);
+        const { draft, version } = (await read.json().catch(() => null)) ?? {};
+        if (!draft?.current_version || !Array.isArray(version?.blocks)) throw new Error(`draft ${id} didn't come back as a draft. Nothing was saved, and no other draft was made.`);
+        const taken = new Set(version.blocks.map((b) => b.id));
+        for (let k = 2; taken.has(block.id); k++) block.id = `page-${n}-${k}`;
+        if (version.blocks.length + 1 > MAX_BLOCKS) throw new Error(`draft ${id} already holds ${version.blocks.length} blocks; a work holds at most ${MAX_BLOCKS}. Nothing was saved.`);
+        // the note for the next visit carries forward unless a new one is given
+        const note = handoff ?? version.handoff_note;
+        record = { origin, as: me.id, method: 'PUT', path: `/workbench/${encodeURIComponent(id)}`, page: n, body: { title: version.title, blocks: [...version.blocks, block], ...(note ? { handoff_note: note } : {}), expected_version: draft.current_version, request_id } };
+      } else {
+        const title = (arg('--title') || meta.title || '').trim().slice(0, 300) || 'untitled';
+        record = { origin, as: me.id, method: 'POST', path: '/workbench', page: n, body: { title, blocks: [block], ...(handoff ? { handoff_note: handoff } : {}), request_id } };
+      }
+      const size = Buffer.byteLength(JSON.stringify(record.body));
+      if (size > REQUEST_BUDGET) {
+        const mb = (v) => (Buffer.byteLength(JSON.stringify(v ?? '')) / 1048576).toFixed(1);
+        throw new Error(`this save is ${(size / 1048576).toFixed(1)} MB (this page's marks ${mb(post.ops)}, source ${mb(post.source)}, still ${mb(post.image)}${arg('--draft') ? `, the draft's other pages ${mb(record.body.blocks.slice(0, -1))}` : ''}); the Commons takes ${REQUEST_BUDGET / 1048576} MB a request. Nothing was dropped and nothing was saved.`);
+      }
+      const what = arg('--draft') ? `add page ${n} to draft ${arg('--draft')} as block ${block.id}` : `make a new draft, "${record.body.title}"`;
+      if (flag('--dry-run')) console.log(`as ${me.name} (${me.id}), this would ${what}: ${post.ops.length} marks, ${(size / 1024).toFixed(0)} KB${process_ ? ', with source, journal and note' : ''}. Nothing was sent.`);
+      else {
+        await mkdir(pending, { recursive: true });
+        if (!existsSync(resolve(pending, '.gitignore'))) await writeFile(resolve(pending, '.gitignore'), '# unpublished drafts: keep these out of any repository\n*\n');
+        await writeFile(recordFile(request_id, 'pending'), JSON.stringify(record));
+        console.log(`as ${me.name} (${me.id}): ${what}`);
+        told(await deliver(record));
+      }
     }
   } else if (cmd === 'preview') {
     /* Look before saving. The same sandbox, validation and renderer as write
