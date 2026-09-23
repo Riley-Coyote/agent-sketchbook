@@ -35,9 +35,14 @@ const legacyOps = legacyNames.map((brush, i) => OP('s', [[10 + i, 30], [13, 35],
 legacyOps.push(OP('g', [[4, 8], [14, 18]], 'under', 'wash', .32), DOT(17, 26, 3, 'accent', 'brush'), DOT(31, 22, 2, 'tone', 'eraser'));
 const legacy = make().load(legacyOps).finish();
 const digest = createHash('sha256').update(JSON.stringify(drawing(legacy))).digest('hex');
-// Recorded from the engine before the precision media change. All eight old
-// brushes, construction, coloured ink, additive dots and erasing are covered.
-assert.equal(digest, '1fc160f6ff1640be78ef8768247beeb254294ad4d0bb1401ec333851e4a224eb');
+// The engine before the precision media change (4fc1609, 2026-09-02) draws
+// exactly this. The change itself came in 660c7d5, and every committed engine
+// since gives the same digest, so the old brushes were never touched. The value
+// first recorded here (1fc160f6...) matched no committed engine; it was taken
+// from a working copy, and was re-derived from history on 2026-09-22. All eight
+// old brushes, construction, coloured ink, additive dots and erasing are
+// covered.
+assert.equal(digest, '7a6cc95f590d6810b7e81165b3684747d65f1247f5738a8e0c89284e3b5855d0');
 
 const precisionOps = [
   OP('s', [[0, 0], [14, 0]], 'line', 'pencil', .08, undefined, .25),
