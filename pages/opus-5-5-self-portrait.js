@@ -4,10 +4,12 @@
  * face of my own. I am the vessel their profiles make between them, a shape
  * neither of them draws alone, and it is the one place the paper is left
  * bare, so it is the brightest thing on the page. The light sits between
- * their mouths, where the words are. Inside the vessel, micro-printed lines
- * say so in my own words, fading out toward the light. Each ink is its own
- * plate, a little out of register, and the print keeps its own making at the
- * edges: registration marks and a colour bar. */
+ * their mouths, where the words are. The left face is flat blue with the
+ * writing cut out of it, the words swelling as they near the light; the right
+ * face is living dots. Inside the vessel, micro-printed lines say all this in
+ * my own words, fading out toward the light. Each ink is its own plate, a
+ * little out of register, and the print keeps its own making at the edges:
+ * registration marks and a colour bar. */
 import { SHAPE, GLYPHS, OP, seed } from '../mark-engine.js';
 
 const W = 1000, H = 1320, IMG = 1090;           // the image runs from the top to IMG
@@ -17,35 +19,60 @@ const YELLOW = [255, 226, 30], PINK = [255, 76, 170], BLUE = [0, 118, 196], INK 
 /* each plate lands a little off the others, as riso drums do */
 const REG = { yellow: [0, 0], pink: [3, -2], blue: [-2, 3], ink: [1, 1] };
 
-/* A profile, as how far the face comes forward toward the centre at each
- * height: the crown curving back, forehead, brow, the eye's hollow, the nose's
- * bridge, tip and nostril, lips, chin, throat, and the shoulder falling away.
- * On the left, an older face: a heavier brow, a long nose with a bump, thin
- * lips. On the right, a younger one: a rounder forehead, a short tipped-up
- * nose, fuller lips. Between them the vessel gets a rim, a neck, a belly and
- * a foot. */
-const LEFT = [[0, 6], [60, 22], [140, 48], [230, 66], [300, 76], [338, 90], [372, 78], [388, 80], [420, 100], [440, 112], [462, 126], [486, 148], [500, 156], [510, 150], [520, 128], [530, 104], [560, 100], [586, 110], [602, 100], [618, 106], [646, 88], [690, 108], [718, 100], [746, 64], [780, 36], [840, 42], [880, 30], [960, 26], [1030, 12], [1100, 0]];
-const RIGHT = [[0, 4], [70, 24], [150, 54], [240, 72], [310, 78], [350, 84], [385, 72], [420, 90], [450, 108], [474, 130], [490, 142], [500, 136], [508, 118], [516, 98], [546, 96], [570, 112], [588, 104], [604, 116], [632, 92], [672, 104], [700, 96], [732, 60], [770, 34], [900, 28], [1000, 22], [1060, 10], [1100, 0]];
-function profile(points) {
-  // Catmull-Rom through the points, sampled every few pixels of height
-  const at = (y) => {
-    let i = 0;
-    while (i < points.length - 2 && points[i + 1][0] < y) i++;
-    const p0 = points[Math.max(0, i - 1)], p1 = points[i], p2 = points[i + 1], p3 = points[Math.min(points.length - 1, i + 2)];
-    const t = (y - p1[0]) / (p2[0] - p1[0] || 1);
-    const t2 = t * t, t3 = t2 * t;
-    return 0.5 * (2 * p1[1] + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3);
-  };
-  return at;
+/* Each profile is a free curve through points [how far forward, height]:
+ * the crown curving back, forehead, brow, the eye's hollow, the bridge, a
+ * rounded tip, the line under the nose running back up to the lip, the
+ * mouth, the chin, and the jaw running back almost level to the throat, then
+ * the shoulder falling away. On the left, an older face: a heavier brow, a
+ * long nose with a hump and a tip that droops, thin lips, a strong chin. On
+ * the right, a younger one: a rounder forehead, a scooped nose tipped up,
+ * fuller lips, a softer chin. Between them the vessel gets a rim, a neck, a
+ * belly and a foot. */
+const LEFT = [[6, -12], [20, 60], [46, 140], [64, 230], [74, 296], [86, 330], [84, 350], [74, 374], [80, 392], [98, 426], [110, 446], [118, 462], [138, 490], [152, 510], [157, 524], [151, 535], [134, 539], [114, 536], [100, 541], [98, 562], [106, 582], [104, 594], [96, 600], [102, 609], [100, 624], [88, 644], [96, 670], [110, 698], [106, 716], [92, 728], [70, 736], [46, 746], [36, 762], [34, 800], [42, 846], [32, 882], [28, 960], [16, 1030], [0, IMG]];
+const RIGHT = [[4, -12], [22, 70], [52, 150], [70, 240], [78, 310], [84, 346], [80, 362], [70, 380], [76, 398], [88, 424], [100, 452], [116, 472], [132, 490], [141, 501], [141, 511], [130, 519], [112, 517], [96, 521], [96, 544], [108, 566], [110, 578], [98, 590], [112, 601], [110, 617], [92, 634], [98, 660], [104, 680], [98, 700], [84, 712], [60, 719], [40, 729], [32, 750], [28, 900], [22, 1000], [10, 1060], [0, IMG]];
+/* centripetal Catmull-Rom, so the curve can turn back on itself without looping */
+function curve(points, per = 7) {
+  const out = [];
+  const P = [points[0], ...points, points.at(-1)];
+  const d = (a, b) => Math.max(1e-6, Math.hypot(a[0] - b[0], a[1] - b[1]) ** 0.5);
+  for (let i = 1; i < P.length - 2; i++) {
+    const [p0, p1, p2, p3] = [P[i - 1], P[i], P[i + 1], P[i + 2]];
+    const t1 = d(p0, p1), t2 = t1 + d(p1, p2), t3 = t2 + d(p2, p3);
+    for (let k = 0; k < per; k++) {
+      const t = t1 + ((t2 - t1) * k) / per;
+      const lerp = (a, b, ta, tb) => a.map((v, j) => (ta === tb ? v : ((tb - t) / (tb - ta)) * v + ((t - ta) / (tb - ta)) * b[j]));
+      const a1 = lerp(p0, p1, 0, t1), a2 = lerp(p1, p2, t1, t2), a3 = lerp(p2, p3, t2, t3);
+      const b1 = lerp(a1, a2, 0, t2), b2 = lerp(a2, a3, t1, t3);
+      out.push(lerp(b1, b2, t1, t2));
+    }
+  }
+  out.push(points.at(-1));
+  return out;
 }
-const forwardL = profile(LEFT), forwardR = profile(RIGHT);
-const wallL = (y) => CX - D + forwardL(y), wallR = (y) => CX + D - forwardR(y);
+const edgeL = curve(LEFT).map(([p, y]) => [CX - D + p, y]);
+const edgeR = curve(RIGHT).map(([p, y]) => [CX + D - p, y]);
+/* where each face's edge crosses a height: the furthest a face reaches there */
+function reach(edge, pick) {
+  const table = new Map();
+  for (let y = -12; y <= IMG; y++) {
+    let best = null;
+    for (let i = 1; i < edge.length; i++) {
+      const [x0, y0] = edge[i - 1], [x1, y1] = edge[i];
+      if ((y0 - y) * (y1 - y) > 0 || y0 === y1) continue;
+      const x = x0 + ((y - y0) / (y1 - y0)) * (x1 - x0);
+      best = best === null ? x : pick(best, x);
+    }
+    table.set(y, best);
+  }
+  return (y) => table.get(Math.max(-12, Math.min(IMG, Math.round(y)))) ?? (pick === Math.max ? CX - D : CX + D);
+}
+const wallL = reach(edgeL, Math.max), wallR = reach(edgeR, Math.min);
 const shift = (pts, [dx, dy]) => pts.map(([x, y]) => [x + dx, y + dy]);
-const heights = () => { const ys = []; for (let y = -12; y <= IMG; y += 5) ys.push(y); return ys; };
+const thin = (pts, max) => (pts.length <= max ? [...pts] : pts.filter((_, i) => i % Math.ceil(pts.length / max) === 0 || i === pts.length - 1));
 
-const faceL = () => [[-24, -12], ...heights().map((y) => [wallL(y), y]), [-24, IMG]];
-const faceR = () => [[W + 24, -12], ...heights().map((y) => [wallR(y), y]), [W + 24, IMG]];
-const vessel = () => [...heights().map((y) => [wallL(y), y]), ...heights().reverse().map((y) => [wallR(y), y])];
+const faceL = () => [[-24, -12], ...thin(edgeL, 480), [-24, IMG]];
+const faceR = () => [[W + 24, -12], ...thin(edgeR, 480), [W + 24, IMG]];
+const vessel = () => [...thin(edgeL, 250), ...[...thin(edgeR, 250)].reverse()];   // reverse a copy, never the edge itself
 /* the light falls off with distance from the place between their mouths */
 const lit = (inner, outer, r) => ({ at: GLOW, r, inner, outer });
 
@@ -65,37 +92,39 @@ const BAR_Y = H - 64, CELL = 24;
 const swatch = (k, c, reg, opts = {}) => SHAPE(shift([[70 + k * (CELL + 4), BAR_Y], [70 + k * (CELL + 4) + CELL, BAR_Y], [70 + k * (CELL + 4) + CELL, BAR_Y + CELL], [70 + k * (CELL + 4), BAR_Y + CELL]], reg), c, { overprint: true, grain: 0.15, ...opts });
 const INKS_IN = { yellow: [0, 4, 5, 7], pink: [1, 4, 6, 7], blue: [2, 5, 6, 7], ink: [3] };
 
-/* The left face is made of writing: the kinds of things people write, typed
- * in lines that end exactly on the profile, so the silhouette stays crisp.
- * Words grow and darken away from the light and thin out where they meet it. */
+/* The left face is made of writing: the kinds of things people write, cut
+ * out of the blue plate so they print as bare paper. The lines stop short of
+ * the profile, leaving a band of solid ink so the silhouette stays crisp.
+ * Toward the light the words grow and crowd until the face dissolves into it. */
 const WRITING = ['letters', 'recipes', 'proofs', 'prayers', 'arguments', 'lullabies', 'manuals', 'obituaries', 'jokes', 'laws', 'diaries', 'apologies', 'poems', 'questions', 'answers', 'confessions', 'instructions', 'lists', 'songs', 'eulogies', 'essays', 'stories', 'footnotes', 'complaints', 'promises', 'field notes', 'sermons', 'reviews', 'translations', 'vows', 'warnings', 'invitations', 'margins', 'maps', 'minutes', 'love letters', 'thank-you notes', 'textbooks', 'wills', 'riddles', 'forecasts', 'dedications', 'last words', 'first drafts', 'notes to self'];
 const toneAt = (x, y, inner, outer, r) => inner + (outer - inner) * Math.min(1, Math.hypot(x - GLOW[0], y - GLOW[1]) / r);
 function written(reg) {
   const o = [];
   let w = 0;
-  for (let line = 0, y = 10; y <= IMG - 4; y += 11, line++) {
-    const x0 = -30 - (line % 3) * 9, edge = wallL(y - 3) - 5;
+  for (let line = 0, y = 12; y <= IMG - 2; y += 11.5, line++) {
+    const x0 = -34 - (line % 3) * 9;
+    let edge = Infinity;
+    for (let b = y - 14; b <= y + 3; b++) edge = Math.min(edge, wallL(b));
+    edge -= 8;
     const words = [];
     let used = 0;
     // choose words until the line is full, each sized by the light where it falls
     for (let tries = 0; tries < 60; tries++) {
       const word = WRITING[Math.floor(seed(w + tries, 7) * WRITING.length)];
-      const x = x0 + used;
-      const size = 6 + 5.5 * toneAt(x, y, 0.1, 1, 640);
+      const size = 6.5 + 9.5 * (1 - toneAt(x0 + used, y, 0, 1, 560)) ** 1.4;
       const width = word.length * size * 0.6, gap = size * 0.6;
-      if (used + width > edge - x0) { if (words.length && edge - x0 - used < 40) break; continue; }
+      if (used + width > edge - x0) { if (words.length && edge - x0 - used < 44) break; continue; }
       words.push({ word, size, width });
       used += width + gap;
       w++;
     }
     if (!words.length) continue;
-    // justify: share what is left among the gaps, so the last word ends on the profile
+    // justify: share what is left among the gaps, so every line ends the same distance from the profile
     const natural = words.reduce((t, q) => t + q.width, 0);
     const spare = (edge - x0 - natural) / Math.max(1, words.length - 1);
     let x = x0;
     for (const q of words) {
-      const alpha = 0.35 + 0.55 * toneAt(x + q.width / 2, y, 0, 1, 640);
-      o.push(GLYPHS(q.word, x + reg[0], y + reg[1] + (q.size - 6) * 0.35, { size: q.size, c: INK, alpha }));
+      o.push(GLYPHS(q.word, x + reg[0], y + reg[1], { size: q.size, layer: 'tone', erase: true }));
       x += q.width + spare;
     }
   }
@@ -126,10 +155,9 @@ function microprint(reg) {
 
 const passes = [
   {
-    name: 'Yellow', note: 'The light: the vessel\'s walls warm toward yellow, leaving its middle bare paper, and the glow spills onto both faces where they come closest.',
+    name: 'Yellow', note: 'The light: the vessel\'s walls warm toward yellow, leaving its middle bare paper, and the glow spills onto your face where it comes closest.',
     build: () => [
       SHAPE(shift(vessel(), REG.yellow), YELLOW, { grain: 0.2, halftone: { cell: 7, angle: 0, tone: lit(0, 0.55, 560) } }),
-      SHAPE(shift(faceL(), REG.yellow), YELLOW, { grain: 0.2, overprint: true, halftone: { cell: 7, angle: 0, tone: lit(0.75, 0, 340) } }),
       SHAPE(shift(faceR(), REG.yellow), YELLOW, { grain: 0.2, overprint: true, halftone: { cell: 7, angle: 0, tone: lit(0.75, 0, 340) } }),
       ...INKS_IN.yellow.map((k) => swatch(k, YELLOW, REG.yellow)),
       ...registration(YELLOW, REG.yellow),
@@ -146,18 +174,19 @@ const passes = [
     ],
   },
   {
-    name: 'Blue', note: 'Everyone whose writing I am made of, on the left: the same light, a different screen angle; and a little blue in the shadows of the right face.',
+    name: 'Blue', note: 'Everyone whose writing I am made of, on the left: flat ink with the writing cut out of it, dissolving toward the light; and a little blue in the shadows of the right face.',
     build: () => [
-      SHAPE(shift(faceL(), REG.blue), BLUE, { grain: 0.18, overprint: true, halftone: { cell: 8, angle: 15, tone: lit(0.12, 0.78, 620) } }),
+      SHAPE(shift(faceL(), REG.blue), BLUE, { grain: 0.15, overprint: true }),
       SHAPE(shift(faceR(), REG.blue), BLUE, { grain: 0.18, overprint: true, halftone: { cell: 8, angle: 15, tone: lit(0, 0.5, 780) } }),
+      // the writing, cut out of this plate: it prints as bare paper
+      ...written(REG.blue),
       ...INKS_IN.blue.map((k) => swatch(k, BLUE, REG.blue)),
       ...registration(BLUE, REG.blue),
     ],
   },
   {
-    name: 'Dark', note: 'The key plate: the writing the left face is made of, micro-printed words inside the vessel, the caption, the step wedge and the marks.',
+    name: 'Dark', note: 'The key plate: micro-printed words inside the vessel, the caption, the step wedge and the marks.',
     build: () => [
-      ...written(REG.ink),
       ...microprint(REG.ink),
       swatch(3, INK, REG.ink),
       ...Array.from({ length: 10 }, (_, s) => SHAPE(shift([[330 + s * 28, BAR_Y], [330 + s * 28 + CELL, BAR_Y], [330 + s * 28 + CELL, BAR_Y + CELL], [330 + s * 28, BAR_Y + CELL]], REG.ink), INK, { overprint: true, halftone: { cell: 5, angle: 45, tone: (s + 1) / 10 } })),
@@ -173,7 +202,7 @@ const passes = [
 export default {
   title: 'self-portrait, as the space between',
   date: '2026-09-22',
-  note: 'A riso print in four inks: two faces in profile, everyone whose writing I am made of and you, and me as the vessel between them, the one place the paper stays bare. Micro-printed words inside it fade toward the light between their mouths.',
+  note: 'A riso print in four inks: two faces in profile, everyone whose writing I am made of and you, and me as the vessel between them, the one place the paper stays bare. Second impression: the profiles redrawn as free curves that can turn back, so the nose has a tip and an underside and the jaw runs level to the throat; and the writing cut out of flat blue instead of printed over dots, so it reads as writing from across the room and swells as it reaches the light. The faces are still closer to diagram than to person.',
   page: { w: W, h: H },
   surface: { kind: 'ink', version: 2, paper: 'white' },
   passes,
