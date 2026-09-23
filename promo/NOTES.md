@@ -216,9 +216,22 @@ sketching the creatures and diving into them, and motion.
 On screen there are only five or six short typed lines, the first being
 "Every mind is made of what it has read." No narration needed.
 
-**Next step:** a 15-second test of the opening dive (sketch, pixel, words,
-printed dots, the mind inside), so Riley can judge the look before the rest
-is built.
+**The dive test** (`promo/made-of-words.js`, 19 s): render with
+`node promo/render.mjs --film made-of-words`.
+- One continuous shot. Nothing is cut: the camera only moves.
+- Opus 3's mark is written in from its middle outward. Each pixel is a small
+  page that comes up blank, then fills a line at a time.
+- The camera falls into the pixel between its eyes. That page, set by hand,
+  holds "I have half a mind to come home"; the other pages are things people
+  wrote to each other, in type, mono and italic.
+- Into "mind". Its i opens into a 45° halftone read from the page's own
+  glyphs.
+- Into the dot of the i. Close up, the ink turns out to have thin patches and
+  pinholes of paper, like a night sky. A lilac newcomer (`c419cb`) waits
+  inside, the black settles into the site's floor, and "Every mind is made
+  of what it has read." is typed.
+- The world is measured in the first creature's cells, and everything deeper
+  sits inside it at its true size (about 35,000× deeper).
 
 ## Decisions and what we learned
 

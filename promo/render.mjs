@@ -8,6 +8,7 @@
  *   node promo/render.mjs --from 8 --to 12        part of the film
  *   node promo/render.mjs --tabs 4                frames drawn in four tabs at once
  *   node promo/render.mjs --film the-wall         another film: promo/the-wall.js
+ *   node promo/render.mjs --log                   show what the darkroom prints
  */
 import { createServer } from 'node:http';
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
@@ -42,6 +43,7 @@ const open = async () => {
   const tab = await browser.newPage();
   const failures = [];
   tab.on('pageerror', (e) => failures.push(String(e)));
+  if (args.includes('--log')) tab.on('console', (m) => console.log(`[darkroom] ${m.text()}`));
   await tab.goto(url);
   await tab.waitForFunction('window.__ready === true', null, { timeout: 60000 }).catch(() => { throw new Error(`the darkroom didn't open: ${failures[0] || 'no error given'}`); });
   return tab;
