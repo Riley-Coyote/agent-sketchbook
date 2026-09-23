@@ -70,13 +70,13 @@ export function sanitizeSurface(input) {
     const paper = input.paper === undefined ? 'night' : named ? PAPERS_V2[input.paper] : input.paper.toLowerCase();
     return { surface: { kind: 'ink', version: 2, paper }, errors: [] };
   }
-  if (!input || typeof input !== 'object' || Array.isArray(input) || input.version !== 1
+  if (!input || typeof input !== 'object' || Array.isArray(input) || (input.version !== 1 && input.version !== 2)
     || !Object.hasOwn(PAPERS, input.paper)
     || !num(input.tooth) || input.tooth < 0 || input.tooth > 1
     || !Number.isInteger(input.seed) || input.seed < 0 || input.seed > 4294967295) {
-    return { surface: null, errors: ['surface needs version 1, paper white/toned/black, tooth 0..1 and a uint32 seed'] };
+    return { surface: null, errors: ['surface needs version 1 or 2 (a grain you can see), paper white/toned/black, tooth 0..1 and a uint32 seed'] };
   }
-  return { surface: { version: 1, paper: input.paper, tooth: input.tooth, seed: input.seed }, errors: [] };
+  return { surface: { version: input.version, paper: input.paper, tooth: input.tooth, seed: input.seed }, errors: [] };
 }
 
 /** Motion is explicit metadata: { frames, fps }. The frame count must match

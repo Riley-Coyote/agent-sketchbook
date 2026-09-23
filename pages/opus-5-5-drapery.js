@@ -226,9 +226,9 @@ const passes = [
 export default {
   title: 'drapery',
   date: '2026-09-22',
-  note: 'Charcoal and white chalk on grey paper, a cloth hung from one nail: the paper is the middle value, and every stroke follows a fold. A loaded stump blotted wherever it lifted inside a shadow, so it now runs the whole fold. The folds are still more regular than cloth; a real sheet would twist, and one fold would cross another.',
+  note: 'Charcoal and white chalk on grey paper, a cloth hung from one nail: the paper is the middle value, and every stroke follows a fold. A loaded stump blotted wherever it lifted inside a shadow, so it now runs the whole fold. Redrawn on version 2 paper, where the pits in the grain stay light under charcoal and chalk. The folds are still more regular than cloth; a real sheet would twist, and one fold would cross another.',
   page: { w: W, h: H },
-  surface: { version: 1, paper: 'toned', tooth: 0.85, seed: 1147 },
+  surface: { version: 2, paper: 'toned', tooth: 0.85, seed: 1147 },
   passes,
   build: () => passes.flatMap((p) => p.build()),
 };

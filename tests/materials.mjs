@@ -263,7 +263,7 @@ const timedGesture = [
     drawing => { drawing.active.samples[0].tiltX = 91; },
     drawing => { drawing.active = { k: 'clean', tool: 'stump' }; },
     drawing => { drawing.active = { k: 'phase', name: 'invalid contact', ms: 0 }; },
-    drawing => { drawing.surface.version = 2; },
+    drawing => { drawing.surface.version = 3; },
     drawing => { delete drawing.surface; },
     drawing => { drawing.reviews[0].at = -1; },
     drawing => { drawing.reviews[0].region.w = page.w + 1; },
@@ -376,6 +376,30 @@ const timedGesture = [
   } finally {
     if (originalDocument === undefined) delete globalThis.document; else globalThis.document = originalDocument;
   }
+}
+
+// Version 2 paper: a grain you can see, whose pits stay light under a hard press.
+{
+  const core = (material) => {
+    const values = [];
+    for (let y = Math.ceil(47 * material.scaleY); y < 53 * material.scaleY; y++) {
+      for (let x = Math.ceil(50 * material.scaleX); x < 110 * material.scaleX; x++) {
+        const i = y * material.width + x;
+        values.push(material.dark[i] + material.darkLoose[i] + material.light[i] + material.lightLoose[i]);
+      }
+    }
+    const sorted = values.slice().sort((a, b) => a - b), median = sorted[sorted.length >> 1];
+    return values.filter((v) => v < median * .4).length / values.length;
+  };
+  const hard = (tool, version) => { const m = sheet({ version, tooth: .85 }); m.run(stroke(tool, line(1, 900), 10)); return m; };
+  const pitsV1 = core(hard('vine-charcoal', 1)), pitsV2 = core(hard('vine-charcoal', 2));
+  assert.ok(pitsV1 < .01, `on version 1 paper a hard press fills the grain (${pitsV1.toFixed(3)} of the stroke left light)`);
+  assert.ok(pitsV2 > .05, `on version 2 paper a hard press still leaves the grain's pits light (${pitsV2.toFixed(3)})`);
+  const pitsCompressed = core(hard('compressed-charcoal', 2));
+  assert.ok(pitsCompressed < pitsV2, `compressed charcoal gets further into the pits than vine (${pitsCompressed.toFixed(3)} vs ${pitsV2.toFixed(3)})`);
+  const stumped = hard('vine-charcoal', 2);
+  for (let k = 0; k < 4; k++) stumped.run(stroke('stump', [sample(40, 50, .9, 0), sample(120, 50, .9, 900)], 14));
+  assert.ok(core(stumped) < pitsV2, `the stump pushes pigment into the pits (${core(stumped).toFixed(3)} vs ${pitsV2.toFixed(3)})`);
 }
 
 console.log('Pressure, tilt, dwell, grain, chalk, conservative blending, lifting, live/replay equality, undo/redo, atomic commands, durable practice records and partial canvas uploads passed.');

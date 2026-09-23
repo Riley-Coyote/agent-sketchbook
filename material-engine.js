@@ -28,6 +28,13 @@ function noise(x, y, seed) {
   n = Math.imul(n ^ (n >>> 13), 1274126177);
   return ((n ^ (n >>> 16)) >>> 0) / 4294967295;
 }
+/* Lattice noise, smoothly interpolated: soft bumps one unit across. */
+function smoothNoise(x, y, seed) {
+  const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const a = noise(xi, yi, seed), b = noise(xi + 1, yi, seed), c = noise(xi, yi + 1, seed), d = noise(xi + 1, yi + 1, seed);
+  return mix(mix(a, b, sx), mix(c, d, sx), sy);
+}
 
 /** Samples are timed contact measurements, not an imposed stroke envelope.
  * Segment boundaries are visited once. Streaming and replay share this exact
@@ -75,10 +82,19 @@ export class MaterialSurface {
     this.light = new Float32Array(n); this.lightLoose = new Float32Array(n);
     this.tooth = new Float32Array(n);
     const s = surface.seed;
+    /* Version 2 paper has its grain at the scale an eye sees it: soft bumps a
+     * couple of page pixels across over a slower, felted cockle. Version 1's
+     * grain is finer than a pixel, so it averages away and reads as smooth. */
+    this.deep = surface.version >= 2;
     for (let y = 0; y < this.height; y++) for (let x = 0; x < this.width; x++) {
       const fine = noise(x, y, s);
-      const fiber = noise(Math.floor(x / 3), Math.floor(y / 2), s ^ 0x5bd1e995);
-      this.tooth[y * this.width + x] = fine * .72 + fiber * .28;
+      if (this.deep) {
+        const px = x / this.scaleX, py = y / this.scaleY;
+        this.tooth[y * this.width + x] = smoothNoise(px / 1.7, py / 1.7, s) * .55 + smoothNoise(px / 4.6, py / 3.4, s ^ 0x9e3779b9) * .3 + fine * .15;
+      } else {
+        const fiber = noise(Math.floor(x / 3), Math.floor(y / 2), s ^ 0x5bd1e995);
+        this.tooth[y * this.width + x] = fine * .72 + fiber * .28;
+      }
     }
     this.carrier = { dark: 0, light: 0 };
     this.dirty = true;
@@ -150,7 +166,15 @@ export class MaterialSurface {
         const relief = (this.tooth[i] - .5) * this.surface.tooth;
         // Low pressure meets high fibers first. Deposits fill the valleys;
         // later passes meet the same relief with a shallower remaining tooth.
-        const contact = clamp((p * .9 + tool.reach - relief - .12) * 2.4 + filled * .16);
+        // On version 2 paper the grain keeps its say as pressure rises, and its
+        // pits stay light however hard the stick is pressed: friable vine
+        // charcoal bridges them, soft graphite gets further in (its `reach`).
+        // Only pigment pushed by the stump fills them.
+        let contact = clamp((p * .9 + tool.reach - relief * (this.deep ? 1 + .6 * p : 1) - .12) * 2.4 + filled * .16);
+        if (this.deep) {
+          const pit = clamp((relief - .07) / .12);
+          contact *= 1 - pit * pit * (3 - 2 * pit) * clamp(1 - tool.reach * 1.6);
+        }
         const amount = dose * strength * tool.deposit * Math.pow(p, .8) * edge * contact / (1 + filled * .18);
         const fixed = tool.light ? this.light : this.dark;
         const loose = tool.light ? this.lightLoose : this.darkLoose;
@@ -195,7 +219,7 @@ export class MaterialSurface {
       const dark = this.dark[i] + this.darkLoose[i], light = this.light[i] + this.lightLoose[i];
       const total = dark + light, cover = 1 - Math.exp(-total * 1.7);
       const pigment = total > 0 ? (dark * 22 + light * 251) / total : 0;
-      const grain = (this.tooth[i] - .5) * this.surface.tooth * 4;
+      const grain = (this.tooth[i] - .5) * this.surface.tooth * (this.deep ? 10 : 4);
       for (let c = 0; c < 3; c++) data[out + c] = mix(paper[c] + grain, pigment, cover);
       data[out + 3] = 255;
     }
@@ -218,7 +242,7 @@ export class MaterialSurface {
         const dark = this.dark[i] + this.darkLoose[i], light = this.light[i] + this.lightLoose[i];
         const total = dark + light, cover = 1 - Math.exp(-total * 1.7);
         const pigment = total > 0 ? (dark * 22 + light * 251) / total : 0;
-        const grain = (this.tooth[i] - .5) * this.surface.tooth * 4;
+        const grain = (this.tooth[i] - .5) * this.surface.tooth * (this.deep ? 10 : 4);
         for (let c = 0; c < 3; c++) image.data[out + c] = mix(paper[c] + grain, pigment, cover);
         image.data[out + 3] = 255;
       }

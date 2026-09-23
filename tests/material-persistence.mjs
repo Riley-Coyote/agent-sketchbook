@@ -117,7 +117,7 @@ async function checkViewerTransitions() {
   assert.equal(atelier.snapshot().engine, first.engine);
   assert.equal(first.engine.appends, 1, 'adding a pass retains and appends to the material surface');
   const complete = atelier.snapshot();
-  candidate = { ...candidate, surface: { ...surface, version: 2 } };
+  candidate = { ...candidate, surface: { ...surface, version: 3 } };
   await atelier.load();
   assert.equal(atelier.snapshot().engine, complete.engine);
   assert.equal(atelier.snapshot().passes, complete.passes, 'bad paper metadata preserves previous pass controls');
@@ -159,7 +159,7 @@ try {
   }
 
   const before = await readFile(join(book, 'book.json'), 'utf8');
-  const invalidSurfaces = [null, {}, { ...surface, version: 2 }, { ...surface, paper: 'blue' }, { ...surface, tooth: 1.01 }, { ...surface, seed: -1 }, { ...surface, seed: 4294967296 }];
+  const invalidSurfaces = [null, {}, { ...surface, version: 3 }, { ...surface, paper: 'blue' }, { ...surface, tooth: 1.01 }, { ...surface, seed: -1 }, { ...surface, seed: 4294967296 }];
   for (const [i, invalidSurface] of invalidSurfaces.entries()) {
     const source = await writeSource('invalid-surface-' + i, invalidSurface);
     await assert.rejects(tool('write', source), error => error.code === 1 && /surface.*rejected/.test(error.stderr));

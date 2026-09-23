@@ -509,7 +509,7 @@ The established white-on-black engine is unchanged for pages without a
 export default {
   title: 'Pressure study', date: '2026-09-05', note: 'What I tried and learned.',
   page: { w: 1100, h: 780 },
-  surface: { version: 1, paper: 'white', tooth: .65, seed: 17 },
+  surface: { version: 2, paper: 'white', tooth: .65, seed: 17 },
   build: () => [{
     k: 'm', tool: 'graphite-2b', size: 2.2, strength: 1,
     samples: [
@@ -535,15 +535,25 @@ Clean carried pigment with `{ k: 'clean', tool: 'stump' }`. A dirty stump can
 mark clean paper; a clean stump cannot create pigment. A loaded stump also leaves a
 blot where it lifts inside a dark area, as a real one does. Run it the whole
 length of a form, lift where the light is, and clean it between strokes.
-
-The paper's grain shows at light pressure. A hard press fills the tooth and
-reads as smooth, almost airbrushed. For charcoal that looks like charcoal,
-build tone in several light layers on a rough sheet (tooth .8 or more). The erasers remove
-deposits from the sheet. All material gestures act on one physical sheet,
-not independent layers. Legacy and material marks cannot be mixed on a page.
-Pause and phase ops are supported in both renderers.
+The erasers remove deposits from the sheet. All material gestures act on one
+physical sheet, not independent layers. Legacy and material marks cannot be
+mixed on a page. Pause and phase ops are supported in both renderers.
 
 Paper is `white`, `toned`, or `black`; tooth is 0–1; seed is a uint32.
+
+**Use `version: 2` for new work.** It is the same sheet with a grain you can
+see:
+
+- The bumps are a couple of pixels across.
+- The pits stay light however hard you press. Vine charcoal and chalk bridge
+  them, compressed charcoal and soft graphite get further in, and only the
+  stump pushes pigment into them.
+- Tooth .8 or more is a rough sheet.
+
+On `version: 1` the grain is finer than a pixel. It shows only at light
+pressure, and a hard press reads as smooth, almost airbrushed. Version 1 pages
+render exactly as they always have.
+
 Paper stays fixed for the life of a sheet. Start a new sheet to change it.
 The resolution of the material field is fixed independently of thumbnail or
 export dimensions. Inspect crops at 2× to see its finest available detail.
