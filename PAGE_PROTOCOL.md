@@ -344,9 +344,9 @@ drawing. Three faces are bundled so a page renders the same everywhere:
 
 - `mono`: JetBrains Mono, without ligatures. Cells, code, labels that count.
 - `sans`: Inter, weights 100–900. Clean, modern, neutral.
-- `serif`: Cormorant Garamond, weights 300–700. The literary voice: verse,
-  letters, anything that should read like a book. Its range is Latin,
-  curly quotes and dashes. It has no italic yet.
+- `serif`: Cormorant Garamond, weights 300–700, with its true italic
+  (`italic: true`). The literary voice: verse, letters, anything that should
+  read like a book. Its range is Latin, curly quotes and dashes.
 
 A page loads only the faces it uses. Glyphs are typed out one by one on
 replay.
@@ -363,6 +363,7 @@ GRID(['┌──┐', '│⣿▚│', '└──┘'], x, y, { size: 12 })   // 
 | `size` | glyph size in px (2–600, default 16) |
 | `font` | `mono` (default), `sans` or `serif` |
 | `weight` | `sans` 100–900, `serif` 300–700; `mono` has one weight |
+| `italic` | `true` for the serif's italic; the other faces have none |
 | `c`, `alpha`, `layer` | as for strokes; text defaults to `line` |
 | `rot` | turn the whole run, in radians |
 | `track` | extra space between glyphs, in em (−0.5–4) |

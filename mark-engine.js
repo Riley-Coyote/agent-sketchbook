@@ -145,6 +145,7 @@ export const FONTS = {
   mono: { family: 'SketchMono', file: './fonts/jetbrains-mono-nl.woff', advance: 0.6, fallback: 'monospace' },
   sans: { family: 'SketchSans', file: './fonts/inter.woff', weight: '100 900', fallback: 'sans-serif' },
   serif: { family: 'SketchSerif', file: './fonts/cormorant-garamond.woff', weight: '300 700', fallback: 'serif' },
+  'serif-italic': { family: 'SketchSerif', file: './fonts/cormorant-garamond-italic.woff', weight: '300 700', style: 'italic', fallback: 'serif' },
 };
 const fontsLoading = {};
 /** Register and load bundled faces once per document: the ones named, or all
@@ -154,17 +155,17 @@ export function loadFonts(names = Object.keys(FONTS)) {
   if (typeof document === 'undefined' || !document.fonts || typeof FontFace === 'undefined') return Promise.resolve();
   return Promise.all(names.filter((n) => FONTS[n]).map((n) => (fontsLoading[n] ||= (async () => {
     const f = FONTS[n];
-    const face = new FontFace(f.family, `url(${new URL(f.file, import.meta.url)}) format('woff')`, f.weight ? { weight: f.weight } : {});
+    const face = new FontFace(f.family, `url(${new URL(f.file, import.meta.url)}) format('woff')`, { ...(f.weight ? { weight: f.weight } : {}), ...(f.style ? { style: f.style } : {}) });
     document.fonts.add(face);
     await face.load();
   })().catch(() => {})))).then(() => {});
 }
 
-const GLYPH_KEYS = ['size', 'font', 'layer', 'c', 'alpha', 'rot', 'track', 'align', 'line', 'weight', 'wob', 'erase'];
+const GLYPH_KEYS = ['size', 'font', 'italic', 'layer', 'c', 'alpha', 'rot', 'track', 'align', 'line', 'weight', 'wob', 'erase'];
 const glyphOpts = (o) => Object.fromEntries(GLYPH_KEYS.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
 
 /** A run of glyphs from (x, y) on its baseline. `\n` starts a new line.
- * opts: size px (16) · font 'mono' | 'sans' | 'serif' · layer ('line') · c [r,g,b] ·
+ * opts: size px (16) · font 'mono' | 'sans' | 'serif' · italic (serif only) · layer ('line') · c [r,g,b] ·
  * alpha · rot radians · track (extra em between glyphs) · align
  * 'left' | 'center' | 'right' · line (line height px) · weight 100–900 (sans), 300–700 (serif)
  * · wob 0–1 (the hand's unevenness) · erase (cut the text out of the layer). */
@@ -587,7 +588,7 @@ export class MarkEngine {
   /** Load what the page's marks need before drawing: the glyph faces. Call
    * after load() and before finish() or replay(). Harmless for other pages. */
   async ready() {
-    const faces = new Set((this.allOps || this.ops).filter((o) => o.k === 't').map((o) => o.font ?? 'mono'));
+    const faces = new Set((this.allOps || this.ops).filter((o) => o.k === 't').map((o) => (o.font ?? 'mono') + (o.italic ? '-italic' : '')));
     if (faces.size) {
       await loadFonts([...faces]);   // only the faces this page sets type in
       this.plans = new WeakMap(); // measurements taken before the faces arrived are stale
@@ -863,7 +864,7 @@ export class MarkEngine {
     const face = FONTS[op.font ?? 'mono'] || FONTS.mono;
     const mono = face === FONTS.mono;
     const lh = op.line ?? size * 1.25;
-    const css = mono ? `${size}px ${face.family}, ${face.fallback}` : `${op.weight ?? 400} ${size}px ${face.family}, ${face.fallback}`;
+    const css = mono ? `${size}px ${face.family}, ${face.fallback}` : `${op.italic ? 'italic ' : ''}${op.weight ?? 400} ${size}px ${face.family}, ${face.fallback}`;
     /* Measure on a context of our own, set once: the layer contexts change
      * font and state as they draw, so they can't be trusted to hold this one. */
     this._measure ||= document.createElement('canvas').getContext('2d');

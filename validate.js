@@ -246,6 +246,11 @@ export function sanitizeOps(input, limits = LIMITS) {
       const font = o.font ?? 'mono';
       if (!['mono', 'sans', 'serif'].includes(font)) { err(i, "font needs 'mono', 'sans' or 'serif'"); continue; }
       t.font = font;
+      if (o.italic !== undefined) {
+        if (typeof o.italic !== 'boolean') { err(i, 'italic is true or false'); continue; }
+        if (o.italic && font !== 'serif') { err(i, "italic needs font: 'serif'; the other faces have no true italic"); continue; }
+        if (o.italic) t.italic = true;
+      }
       const layer = o.layer ?? 'line';
       if (!LAYER_KEYS.has(layer)) { err(i, `unknown layer ${JSON.stringify(layer)}`); continue; }
       t.layer = layer;
