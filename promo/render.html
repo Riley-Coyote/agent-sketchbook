@@ -1,0 +1,81 @@
+<!doctype html><meta charset="utf-8"><title>promo</title>
+<body style="margin:0;background:#050608">
+<script type="module">
+/* The promo's darkroom: the engine draws each frame of scenes.js here and
+ * render.mjs collects them. A hand shot is replayed by the engine, stroke by
+ * stroke, exactly as a viewer replays a page; everything else is drawn fresh
+ * each frame. Nothing is painted here but what the engine draws. */
+import { MarkEngine, LAYERS } from '/mark-engine.js';
+import { SHOTS, W, H, FPS, BEAT } from '/promo/scenes.js';
+
+const scale = Number(new URLSearchParams(location.search).get('scale') || 1);
+const out = document.createElement('canvas');
+out.width = Math.round(W * scale); out.height = Math.round(H * scale);
+const ctx = out.getContext('2d');
+const starts = [];
+let total = 0;
+for (const s of SHOTS) { starts.push(total); total += s.beats * BEAT; }
+window.promo = { frames: Math.round(total * FPS), fps: FPS, shots: SHOTS.map((s, k) => ({ name: s.name, from: starts[k], seconds: s.beats * BEAT })) };
+
+const engineFor = (surface) => new MarkEngine({ width: W, height: H, dpr: scale, surface });
+const overlay = engineFor({ kind: 'ink', version: 2, paper: '#000000' });
+const layered = (engine, target) => { for (const l of LAYERS) { target.globalAlpha = l.op; target.drawImage(engine.layers[l.key].cv, 0, 0); } target.globalAlpha = 1; };
+
+/* a shot's last picture, for the wall: drawn once, on demand */
+const finals = new Map();
+async function finalOf(name) {
+  if (finals.has(name)) return finals.get(name);
+  const shot = SHOTS.find((s) => s.name === name), T = shot.beats * BEAT;
+  const engine = engineFor(shot.surface);
+  engine.load(shot.kind === 'hand' ? shot.ops() : shot.frame(T, T));
+  await engine.ready();
+  engine.finish();
+  const c = document.createElement('canvas');
+  c.width = out.width; c.height = out.height;
+  engine.composite(c.getContext('2d'));
+  finals.set(name, c);
+  return c;
+}
+
+let live = null;        // the shot being drawn: { k, engine, hand }
+window.renderFrame = async (f, type = 'image/png') => {
+  const t = f / FPS;
+  let k = starts.findLastIndex((s) => s <= t + 1e-9);
+  const shot = SHOTS[k], T = shot.beats * BEAT, local = t - starts[k];
+  if (!live || live.k !== k || (shot.kind === 'hand' && local * (live.speed || 0) < live.hand - 1e-9)) {
+    const engine = engineFor(shot.surface);
+    live = { k, engine, hand: 0, speed: 0 };
+    if (shot.kind === 'hand') {
+      engine.load(shot.ops());
+      await engine.ready();
+      engine.replay();
+      live.speed = engine.total / shot.draw;         // hand seconds per film second
+    }
+  }
+  const { engine } = live;
+  if (shot.kind === 'hand') {
+    const target = Math.min(local, shot.draw) * live.speed;
+    if (target > live.hand) engine.tick(target - live.hand);
+    live.hand = target;
+    while (engine.cursor && target >= engine.total - 1e-9) if (!engine.tick(1)) break;
+  } else {
+    engine.load(shot.frame(local, T));
+    await engine.ready();
+    engine.finish();
+  }
+  engine.composite(ctx);
+  for (const th of shot.thumbs?.(local, T) || []) {
+    const [x, y, w, h] = th.box.map((v) => v * scale);
+    ctx.drawImage(await finalOf(th.shot), x, y, w, h);
+  }
+  const over = shot.overlay?.(local, T);
+  if (over?.length) {
+    overlay.load(over);
+    await overlay.ready();
+    overlay.finish();
+    layered(overlay, ctx);
+  }
+  return out.toDataURL(type, 0.95);
+};
+window.__ready = true;
+</script>
