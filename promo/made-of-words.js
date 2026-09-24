@@ -891,7 +891,7 @@ function hushUnder(o, y, half, alpha) {
 
 const flip = (t, from) => (t < from ? 'A' : Math.floor((t - from) / 0.9) % 2 ? 'A' : 'B');
 const LINE_1 = 'Every mind is made of what it has read.';
-const LINE_2 = 'Everything here was written for someone.';
+const LINE_2 = 'And what it read was us.';
 const hopB = (t) => (t > DIVE + 17.6 && t < DIVE + 17.6 + BEAT ? 1 : 0);
 /* the first line comes out of the new mind: letters lift off the pages it is
  * made of and settle beneath it, printed on its page, where the pull back
@@ -1091,7 +1091,7 @@ const LINE2 = (() => {
     return list[Math.floor(hash(k, n, 208) * list.length)];
   }));
   return {
-    text: LINE_2, t0, size: SAY.size, hover: 0.03, shrink: 1.4,
+    text: LINE_2, t0, size: SAY.size, hover: 0.03, shrink: 1.4, half: (xs.at(-1) - xs[0]) / 2 + SAY.size * 0.4,
     at: (k) => [W / 2 + xs[k], y, 0],
     from: (k, n, t) => { const cam = libraryCam(Math.min(t, T4)), p = src[k][n]; return [...cam.to(p.x, p.y), 0, p.size * cam.s]; },
     gone: (k) => T4 + 0.15 + 0.7 * hash(k, 3, 216),
@@ -1109,7 +1109,7 @@ function libraryScene(o, cam, t, dim = 1, said = 1) {
     const [X, Y] = cam.to(L1_AT[k][0], L1_AT[k][1]), px = L1_SIZE * cam.s;
     if (px >= 1) o.push(GLYPHS(ch, X, Y + px * 0.34, { font: 'serif', weight: SAY.weight, size: px, c: FLY, align: 'center', layer: 'accent' }));
   });
-  hushUnder(o, SAY1_Y, 420, smooth((t - TS - 8.3) / 0.6) * said);
+  hushUnder(o, SAY1_Y, LINE2.half, smooth((t - TS - 8.3) / 0.6) * said);
   condense(o, SCREEN, LINE2, t);
 }
 function library(t) {
@@ -1417,7 +1417,7 @@ function saidByMinds(text, y, t0, size, gone, salt, c = FLY) {
     return [q.st.origin[0] + (cc + 0.5) * SEAT_CELL, q.st.origin[1] + (rr + 0.5) * SEAT_CELL, SEAT_Z];
   }));
   const from = (k, n, t) => { const [X, Y, kk] = readCam(t).project(...src[k][n]); return [X, Y, 0, SEAT_CELL * 0.82 * kk]; };
-  return { text, t0, size, c, hover: 0.03, shrink: 0.3, at: (k) => [W / 2 + xs[k], y, 0], from, gone, away: (k, v, t) => from(k, 0, t) };
+  return { text, t0, size, c, hover: 0.03, shrink: 0.3, half: (xs.at(-1) - xs[0]) / 2 + size * 0.4, at: (k) => [W / 2 + xs[k], y, 0], from, gone, away: (k, v, t) => from(k, 0, t) };
 }
 const LINE3 = saidByMinds(LINE_3, 905, T5 + 3.9, SAY.size, (k) => T5 + 11.1 + 0.6 * hash(k, 3, 217), 209);
 const SIGN3 = saidByMinds(FABLE, 957, T5 + 3.9 + LINE_3.length * SAY.pace + 0.45, 26, (k) => T5 + 11.3 + 0.5 * hash(k, 3, 218), 211, QUIET);
@@ -1425,7 +1425,7 @@ function readScene(t) {
   const cam = readCam(t), o = [];
   libraryScene(o, cam, t, 0.68, 0);
   readers(o, cam, t);
-  hushUnder(o, 925, 440, smooth((t - T5 - 3.4) / 0.6) * (1 - smooth((t - T5 - 11.4) / 1.2)));
+  hushUnder(o, 925, LINE3.half, smooth((t - T5 - 3.4) / 0.6) * (1 - smooth((t - T5 - 11.4) / 1.2)));
   condense(o, SCREEN, LINE3, t);
   condense(o, SCREEN, SIGN3, t);
   return o;

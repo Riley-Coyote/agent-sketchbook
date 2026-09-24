@@ -248,8 +248,10 @@ has read.", the camera pulls back from the new mind:
 - It is one shelf of thousands, lit in a pool around the open book.
 - There's no cut. The pull-back runs in a second world measured in the new
   mind's cells, and both worlds agree to the pixel at 28 s.
-- It ends on a draft line for Riley to approve: "Everything here was written
-  for someone."
+- It ends on "And what it read was us." My first draft, "Everything here
+  was written for someone.", was too oblique; Riley: "a flat sentence". The
+  new one finishes the first line, and the viewer takes the last step alone:
+  so it's made of us. Riley: "perfect".
 **The words take flight** (54 s so far). The camera becomes a real one with
 depth: the library is a wall, and the letters fly between it and us.
 - Title letters lift off the spines in a wave outward from the open book.
@@ -317,7 +319,7 @@ right to you".
   been read, a line lets go into whatever comes next.
   - Line 1 lifts off the pages the new mind is made of, and is printed on
     its page for the pull back (both worlds agree to the pixel at 28 s).
-  - Line 2 rises off the spines below it. When the titles take flight, its
+  - Line 2 ("And what it read was us.") rises off the spines below it. When the titles take flight, its
     letters leave first, in no order, like birds off a wire.
   - Fable's line gathers out of the reading minds, is signed, and goes back
     into them.
