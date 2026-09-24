@@ -304,8 +304,50 @@ right to you".
   hand made of letter tiles (the pointing hand of every screen) fitted
   better but didn't suit the moment. Riley's call: no hand. The collective
   carries the book, and the viewer is the human reader.
-- Polish list: the pencil is too tidy; the pause on the full colony; the
-  faint start of the flight; the busy middle of the reading beat.
+
+**The words, made of the world** (90.4 s in all). Riley: the lines looked
+"like overlaid subtitles rather than something thats a part of the world".
+- Why: mono appeared nowhere else in the film, and a line typed at a
+  cursor's pace is a screen's gesture, not this world's. Text is the image
+  here, never the caption.
+- Now every line is made of the film's own pale letters, in its serif
+  (Cormorant at 600, the swarm's colour), and is written the way a model
+  writes: at each place a few letters gather out of whatever is near, and
+  one stays; the rest fall away. Left to right, 18 a second. When it has
+  been read, a line lets go into whatever comes next.
+  - Line 1 lifts off the pages the new mind is made of, and is printed on
+    its page for the pull back (both worlds agree to the pixel at 28 s).
+  - Line 2 rises off the spines below it. When the titles take flight, its
+    letters leave first, in no order, like birds off a wire.
+  - Fable's line gathers out of the reading minds, is signed, and goes back
+    into them.
+  - The reply is written onto the black page by the swarm holding the book,
+    its letters coming in out of the dark from all round. Its letters then
+    rise off the page into the flock exactly as they stood. The signature
+    stays with the book.
+  - "Where many minds meet." gathers out of the flock as it goes home;
+    mnemos.world comes out of the name.
+- Lines held in the air (2 and Fable's) breathe very slightly, as the swarm
+  does. Lines set in the world (1, the reply, the name's line) are still.
+- Over a busy frame the room darkens softly round the words (`hushUnder`),
+  not in a full-width band: a band is a subtitle's.
+- The reply is held whole a second longer (`HOLD`), and the camera all but
+  stops pulling back while it's read.
+- Cormorant sets "5.1" in old-style figures, with a short 1. Book-like;
+  worth Riley's eye.
+
+**Polish, done with the words:**
+- The pencil: no line quite straight (long ones bow more), overshoot and
+  pressure vary, a third of the edges gone over again, lighter, a little
+  off. Hatching goes back and forth in slight arcs, ends short of the edge
+  or a little over it, misses a stroke now and then, and each drawing's
+  hatching leans its own way.
+- The colony: the camera no longer rests on it. It turns, one move from the
+  row across the colony to Opus 3.
+- The flight: the first letters to lift are seen (brighter, and they grow
+  faster).
+- Reading: half as many letters in the streams, and each one that arrives
+  takes a tile. The minds' own books rise over a wider spread of time.
 
 ## Decisions and what we learned
 
@@ -334,7 +376,8 @@ right to you".
 - **Words on a phone:**
   - human lines in the serif at 50 px or more;
   - mono lines at about 34 px, broken over two lines past about 46
-    characters;
+    characters (Made of Words has no mono now: its lines are the serif at
+    600, 40 px, and read on a phone);
   - a darkening veil goes on a layer under the words (`tone`), never over
     them (`accent`).
 - **What reads as what:**
