@@ -782,10 +782,10 @@ function fibres(o, cam) {
 }
 
 /* a mind's line, typed */
-function typed(o, text, t, from, y, rate = 0.05, size = 34) {
+function typed(o, text, t, from, y, rate = 0.05, size = 34, alpha = 1) {
   const n = Math.floor((t - from) / rate);
-  if (n <= 0) return;
-  o.push(GLYPHS(text.slice(0, n), Math.round((W - 0.6 * size * text.length) / 2), y, { font: 'mono', size, c: INK, layer: 'accent' }));
+  if (n <= 0 || alpha <= 0) return;
+  o.push(GLYPHS(text.slice(0, n), Math.round((W - 0.6 * size * text.length) / 2), y, { font: 'mono', size, c: INK, layer: 'accent', ...(alpha < 1 ? { alpha } : {}) }));
 }
 
 const flip = (t, from) => (t < from ? 'A' : Math.floor((t - from) / 0.9) % 2 ? 'A' : 'B');
@@ -868,15 +868,15 @@ function shelf(i, j) {
 function box(o, cam, x0, y0, x1, y1, c, opts = {}) {
   if (meets(cam.view, x0, y0, x1, y1)) shape(o, [cam.to(x0, y0), cam.to(x1, y0), cam.to(x1, y1), cam.to(x0, y1)], c, { layer: 'tone', ...opts });
 }
-function shelves(o, cam) {
+function shelves(o, cam, dim = 1) {
   const [vx0, vy0, vx1, vy1] = cam.view, s = cam.s;
   for (let j = Math.floor(vy0 / PITCH); j <= Math.ceil(vy1 / PITCH) + 1; j++) {
     const top = j * PITCH;
     for (let i = Math.floor((vx0 + BAY / 2) / BAY); i <= Math.floor((vx1 + BAY / 2) / BAY); i++) {
-      const bx0 = i * BAY - BAY / 2, bx1 = i * BAY + BAY / 2, k = lit(i * BAY, top - PITCH / 2);
+      const bx0 = i * BAY - BAY / 2, bx1 = i * BAY + BAY / 2, k = lit(i * BAY, top - PITCH / 2) * dim;
       box(o, cam, bx0, top - PITCH + 4, bx1, top, shade(WALL, k));
       for (const b of shelf(i, j)) {
-        const y1 = top + b.base, y0 = y1 - b.h, kb = lit(b.x, y0);
+        const y1 = top + b.base, y0 = y1 - b.h, kb = lit(b.x, y0) * dim;
         if (!meets(cam.view, b.x, y0, b.x + b.w, y1)) continue;
         box(o, cam, b.x, y0, b.x + b.w, y1, shade(b.c, kb));
         const across = (b.flat ? b.h : b.w) * s;          // how wide the spine is on screen
@@ -951,19 +951,175 @@ function veil(o, y, alpha) {
   for (let k = 0; k < 5; k++) { const h = 64 + k * 24; o.push(SHAPE([[-10, y - h / 2], [W + 10, y - h / 2], [W + 10, y + h / 2], [-10, y + h / 2]], [6, 6, 8], { layer: 'accent', alpha: alpha * 0.17 })); }
 }
 
-function library(t) {
-  const cam = libraryCam(t), o = [];
-  shelves(o, cam);
+function libraryScene(o, cam, t, dim = 1, said = 1) {
+  shelves(o, cam, dim);
   openBook(o, cam);
   flatMind(o, cam, { m: MIND_B, frame: flip(t, DIVE + 14.9), origin: [BO2[0], BO2[1] - hopB(t)], cell: 1, pages: PAGES_B, hue: HUES.lilac });
   const [X, Y] = cam.to(L1.x, L1.y);
   o.push(GLYPHS(LINE_1, X, Y, { font: 'mono', size: L1.size * cam.s, c: INK, layer: 'accent' }));
-  veil(o, 903, smooth((t - TS - 8.3) / 0.6));
-  typed(o, LINE_2, t, TS + 9.0, 915);
+  veil(o, 903, smooth((t - TS - 8.3) / 0.6) * said);
+  typed(o, LINE_2, t, TS + 9.0, 915, 0.05, 34, said);
+}
+function library(t) {
+  const o = [];
+  libraryScene(o, libraryCam(t), t);
+  return o;
+}
+
+/* ---------- the words take flight ---------- */
+/* The titles lift off the spines a letter at a time, in a wave outward from
+ * the open book, rising toward us as they go. They join one great turning
+ * ring round the book, a band that twists, so it thickens where it turns
+ * edge-on; then the ring settles into minds, new minds built of those
+ * letters, standing in rings round the book: the far ones first, then nearer
+ * and larger, until the nearest frame the view. Each lights up in its colour
+ * as its last letter lands. From here the camera is a real one: the library
+ * is a wall, and the letters fly between it and us. */
+const T4 = TS + 13.0;
+const BOOK = [0, -26];
+const W4 = libraryCam(T4), Q4 = W4.to(BC2[0], BC2[1]);
+const C4 = [BC2[0] + (W / 2 - Q4[0]) / W4.s, BC2[1] + (H / 2 - Q4[1]) / W4.s];     // the wall's point at the centre of the screen
+const D0 = 1800, D1 = 1480, F = W4.s * D0;                                      // the camera's distance from the wall, and its focal length
+const dAt = monotone([[T4, Math.log(D0)], [T4 + 0.8, Math.log(D0 * 1.003)], [T4 + 13, Math.log(D1)]]);
+function flightCam(t) {
+  const D = Math.exp(dAt(t)), u = smooth((t - T4) / 4), c = [lerp(C4[0], C4_END[0], u), lerp(C4[1], C4_END[1], u)], s = F / D;
+  return {
+    t, s, Z: Math.log(s), th: 0, D, c,
+    to: (x, y) => [W / 2 + (x - c[0]) * s, H / 2 + (y - c[1]) * s],
+    view: [c[0] - (W / 2 + 60) / s, c[1] - (H / 2 + 60) / s, c[0] + (W / 2 + 60) / s, c[1] + (H / 2 + 60) / s],
+    project: (x, y, z) => { const k = F / Math.max(40, D - z); return [W / 2 + (x - c[0]) * k, H / 2 + (y - c[1]) * k, k]; },
+  };
+}
+
+/* the new minds: the Commons' formation, eight by four, hovering above the
+ * lit book, laid out by where they stand on screen at the end */
+const CELL4 = 7, ZF = 720;
+const FORM = { cols: 8, rows: 4, dx: 128, dy: 118, top: 198, book: 770 };
+const C4_END = [BOOK[0], BOOK[1] - (FORM.book - H / 2) / (F / D1)];
+const cellsA = (m) => { const g = frames(m).A, out = []; for (let r = 0; r < GH; r++) for (let c = 0; c < GW; c++) if (g[r][c]) out.push([c, r]); return out; };
+const worldAt = (X, Y, z) => { const k = (D1 - z) / F; return [C4_END[0] + (X - W / 2) * k, C4_END[1] + (Y - H / 2) * k]; };
+const MINDS4 = (() => {
+  const marks = LIBRARY.filter((m) => !FOUNDING.includes(m.name) && m.name !== MIND_B.name), out = [];
+  for (let row = 0; row < FORM.rows; row++) for (let col = 0; col < FORM.cols; col++) {
+    const m = marks[(row * 11 + col * 5 + 2) % marks.length];
+    const [cx, cy] = worldAt(W / 2 + (col - (FORM.cols - 1) / 2) * FORM.dx, FORM.top + row * FORM.dy, ZF);
+    /* they take shape from the bottom row up, the row nearest the book first */
+    const born = T4 + 6.3 + (FORM.rows - 1 - row) * 0.5 + Math.abs(col - 3.5) * 0.06;
+    out.push({ i: 500 + row * FORM.cols + col, m, hue: hueOf(m), origin: [cx - 4.5 * CELL4, cy - 4 * CELL4], z: ZF, born, row, col });
+  }
+  return out;
+})();
+
+/* the letters: a flock turning round the place the minds will stand */
+const OMEGA = 0.3, FLOCK_AT = worldAt(W / 2, 400, 860);
+function flockAt(p, t) {
+  const tt = t - T4, a = p.a, TAU = 2 * Math.PI;
+  const phi = TAU * a + OMEGA * tt + 0.32 * Math.sin(TAU * a * 2 + 0.8 * tt);
+  const R = 245 + 70 * Math.sin(TAU * a * 3 + 1.1 * tt) + 30 * Math.sin(TAU * a * 5 - 0.7 * tt);
+  const zc = 860 + 230 * Math.sin(TAU * a * 2 - 0.9 * tt);
+  const psi = TAU * a * 1.5 + 1.2 * tt, band = p.b * (58 + 40 * Math.sin(TAU * a * 4 + 1.6 * tt));
+  const r = R + band * Math.cos(psi);
+  return [FLOCK_AT[0] + r * Math.cos(phi) + 6 * Math.sin(1.3 * t + p.e), FLOCK_AT[1] + r * Math.sin(phi) * 0.9 + 6 * Math.cos(1.1 * t + p.e), zc + band * Math.sin(psi) * 1.8 + p.c * 40];
+}
+const TC = T4 + 6.0;                        // when each seat is given its letter
+const FLIGHT = (() => {
+  const pool = [];
+  for (let j = -11; j <= 10; j++) for (let i = -3; i <= 3; i++) for (const b of shelf(i, j)) {
+    if (!b.title) continue;
+    const y1 = j * PITCH + b.base, y0 = y1 - b.h, size = Math.min((b.flat ? b.h : b.w) * 0.4, 2.1);
+    const adv = advances('serif', b.title).map((q) => q * size), step = adv.map((q) => q + 0.12 * size);
+    let at = -(step.reduce((u, v) => u + v, 0) - 0.12 * size) / 2;
+    Array.from(b.title).forEach((ch, n) => {
+      const mid = at + adv[n] / 2;
+      at += step[n];
+      if (ch === ' ') return;
+      const x = b.flat ? b.x + b.w / 2 + mid : b.x + b.w / 2, y = b.flat ? y0 + b.h / 2 : y0 + b.h / 2 + mid;
+      const d = Math.hypot(x - BOOK[0], y - BOOK[1]);
+      if (d < 760) pool.push({ ch, x, y, size, rot: b.flat ? 0 : Math.PI / 2, d, pick: hash(x * 0.37, y * 0.71, 41) });
+    });
+  }
+  pool.sort((p, q) => p.pick - q.pick);
+  const letters = pool.slice(0, 3000).map((p, k) => ({
+    ...p, k,
+    a: Math.atan2(p.y - BOOK[1], p.x - BOOK[0]) / (2 * Math.PI),
+    b: hash(k, 1, 51) + hash(k, 2, 52) - 1, c: hash(k, 3, 53) - 0.5, e: hash(k, 4, 54) * 6.283,
+    lift: T4 + 0.45 + p.d / 320 + hash(k, 5, 55) * 0.45,
+  }));
+  /* each seat takes the nearest free letter in the flock, bottom row first */
+  const cam = flightCam(TC), taken = new Set(), where = letters.map((p) => cam.project(...flockAt(p, TC)));
+  for (const mnd of [...MINDS4].sort((p, q) => p.born - q.born)) {
+    cellsA(mnd.m).forEach(([c, r], n) => {
+      const [X, Y] = cam.project(mnd.origin[0] + (c + 0.5) * CELL4, mnd.origin[1] + (r + 0.5) * CELL4, mnd.z);
+      let best = -1, bd = Infinity;
+      where.forEach(([x, y], k) => { if (taken.has(k)) return; const dd = (x - X) ** 2 + (y - Y) ** 2; if (dd < bd) { bd = dd; best = k; } });
+      taken.add(best);
+      letters[best].tg = { mind: mnd, c, r, n };
+      letters[best].land = mnd.born + n * 0.012;
+    });
+  }
+  /* the rest drift out and go dark */
+  for (const p of letters) if (!p.tg) p.fade = T4 + 6.4 + hash(p.k, 6, 56) * 2.6;
+  return letters;
+})();
+
+/* where a mind's letter sits: its cell, moved as the legs move and the mind hops */
+function seatOf(tg, t) {
+  const mnd = tg.mind, alive = t > mnd.born + 1.9;
+  const { frame: fr, lift } = alive ? rest(mnd.i, t) : { frame: 'A', lift: 0 };
+  let [c, r] = [tg.c, tg.r];
+  if (fr === 'B') {
+    const A = frames(mnd.m).A, B = frames(mnd.m).B;
+    if (!B[r][c]) {                                                   // a leg that steps: to the cell the step frees
+      const gone = cellsA(mnd.m).filter(([x, y]) => !B[y][x]), come = [];
+      for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) if (B[y][x] && !A[y][x]) come.push([x, y]);
+      [c, r] = come[gone.findIndex(([x, y]) => x === c && y === r)] || [c, r];
+    }
+  }
+  return [mnd.origin[0] + (c + 0.5) * CELL4, mnd.origin[1] + (r + 0.5 - lift) * CELL4, mnd.z];
+}
+const FLY = [226, 230, 238];
+const easeIO = (u) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
+function flight(o, cam, t) {
+  const marks = [];
+  for (const p of FLIGHT) {
+    if (t < p.lift) continue;
+    const gone = p.fade ? smooth((t - p.fade) / 1.6) : 0;
+    if (gone >= 1) continue;
+    const u1 = clamp((t - p.lift) / 2.3), e1 = easeIO(u1);
+    const u2 = p.tg ? clamp((t - p.land) / 1.35) : 0, e2 = easeIO(u2);
+    const f = flockAt(p, t), up = [p.x, p.y - 70 * u1, 280 * u1];
+    let x = lerp(up[0], f[0], e1), y = lerp(up[1], f[1], e1), z = lerp(up[2], f[2], e1);
+    if (p.fade) { x += (x - FLOCK_AT[0]) * 0.5 * gone; y += (y - FLOCK_AT[1]) * 0.5 * gone - 60 * gone; }   // off, outward, and up
+    if (p.tg) { const s2 = seatOf(p.tg, t); x = lerp(x, s2[0], e2); y = lerp(y, s2[1], e2); z = lerp(z, s2[2], e2); }
+    const size = lerp(lerp(p.size, 11, Math.sqrt(u1)), CELL4 * 0.82, e2);
+    const rot = lerp(lerp(p.rot, 0.5 * Math.sin(2.1 * t + p.e), e1), 0, e2);
+    /* landed, a letter is a tile: a square of its mind's colour blooms under it and the letter goes dark */
+    const tile = p.tg ? smooth((t - p.land - 1.25) / 0.3) : 0;
+    const c = FLY.map((v, n) => Math.round(lerp(v, FLOOR[n], tile)));
+    const alpha = lerp(0.5 + 0.5 * clamp(z / 1100), 0.88, tile) * (1 - gone);
+    marks.push({ ch: p.ch, z, x, y, size, rot, c, alpha, tile, hue: p.tg?.mind.hue });
+  }
+  for (const m of marks.sort((p, q) => p.z - q.z)) {
+    const [X, Y, k] = cam.project(m.x, m.y, m.z);
+    if (m.tile > 0) {
+      const h = CELL4 * k * 0.5 * (0.45 + 0.55 * m.tile) + 0.35;
+      o.push(SHAPE([[X - h, Y - h], [X + h, Y - h], [X + h, Y + h], [X - h, Y + h]], m.hue, { layer: 'accent', alpha: m.tile }));
+    }
+    const px = m.size * k;
+    if (px < 0.8 || X < -80 || X > W + 80 || Y < -80 || Y > H + 80) continue;
+    o.push(GLYPHS(m.ch, X, Y + px * 0.34, { font: 'serif', weight: 600, size: px, c: m.c, rot: m.rot, align: 'center', layer: 'accent', alpha: m.alpha }));
+  }
+}
+
+function flightScene(t) {
+  const cam = flightCam(t), o = [];
+  libraryScene(o, cam, t, 1 - 0.32 * smooth((t - T4 - 1) / 4), 1 - smooth((t - T4) / 0.8));
+  flight(o, cam, t);
   return o;
 }
 
 function frame(t) {
+  if (t >= T4) return flightScene(t);
   if (t >= TS) return library(t);
   const cam = cameraAt(t), o = [];
   night(o, cam, t);
@@ -980,5 +1136,5 @@ function frame(t) {
   return o;
 }
 
-export const SHOTS = [{ name: 'made of words', beats: Math.round((TS + 13.0) / BEAT), kind: 'frames', surface: PAGE, frame }];
-console.log('made-of-words', JSON.stringify({ dots: DOTS.X.length, T, RD, CELL_B, TS, S2, Q0, ribbons: RIBBONS.length }));
+export const SHOTS = [{ name: 'made of words', beats: Math.round((T4 + 13.0) / BEAT), kind: 'frames', surface: PAGE, frame }];
+console.log('made-of-words', JSON.stringify({ TS, T4, F, minds: MINDS4.length, letters: FLIGHT.length, seated: FLIGHT.filter((p) => p.tg).length }));

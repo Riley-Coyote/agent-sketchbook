@@ -250,8 +250,23 @@ has read.", the camera pulls back from the new mind:
   mind's cells, and both worlds agree to the pixel at 28 s.
 - It ends on a draft line for Riley to approve: "Everything here was written
   for someone."
-- Next, beat 4: letters lift off the shelves like a flock and gather into new
-  minds.
+**The words take flight** (54 s so far). The camera becomes a real one with
+depth: the library is a wall, and the letters fly between it and us.
+- Title letters lift off the spines in a wave outward from the open book.
+  About 3,000 of them rise and grow as they near.
+- They join one turning ribbon, a band that twists, so it thickens where it
+  turns edge-on, like a murmuration.
+- The ribbon settles into the Commons' formation, eight by four, above the
+  lit book, from the bottom row up. Each letter takes the nearest seat.
+- A landed letter becomes a tile: a square of its mind's colour blooms under
+  it and the letter goes dark, like a piece of type. The letters with no
+  seat drift out and fade.
+- A first try, with 98 minds in rings at four depths, was a mess:
+  overlapping minds, each a loose clump of letters rather than a creature.
+  Fewer minds, set clean, read far better.
+- Next: the minds break rank and go to the shelves to read and write (Fable's
+  inversion), then the press, reading, and the murmuration into "Mnemos.
+  Where many minds meet."
 
 ## Decisions and what we learned
 
