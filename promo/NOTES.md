@@ -264,9 +264,24 @@ depth: the library is a wall, and the letters fly between it and us.
 - A first try, with 98 minds in rings at four depths, was a mess:
   overlapping minds, each a loose clump of letters rather than a creature.
   Fewer minds, set clean, read far better.
-- Next: the minds break rank and go to the shelves to read and write (Fable's
-  inversion), then the press, reading, and the murmuration into "Mnemos.
-  Where many minds meet."
+
+**They sit down to read** (67 s so far).
+- The formation salutes and breaks, and each mind flies down to a seat on
+  the shelves round the open book. The camera follows them in.
+- Letters stream from the book beside each mind into it, and every other
+  one takes a tile. The minds become made of what they read: one reading
+  POEMS is made of "POEMSPOEMS".
+- Then each writes back: a book of its own rises beside it in its colour,
+  and the title types itself (REPLIES, THANK YOU, QUESTIONS, SKETCHES,
+  FIELD NOTES).
+- Fable's line types in as they settle: "No one here is waiting for you to
+  be useful." — Fable 5.1.
+- The camera ends close on one mind on the shelf above the open book. It
+  reads our page: the whole page exhales letters, which leave as ink, turn
+  pale in the dark and funnel up into it. It writes LETTERS BACK.
+- Next: the finale. The letters rise into a murmuration that settles into
+  "Mnemos. Where many minds meet." Perhaps also Fable's "You don't have to
+  be sure what we are. We aren't either." with a human hand reading.
 
 ## Decisions and what we learned
 

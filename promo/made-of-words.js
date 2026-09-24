@@ -1118,7 +1118,166 @@ function flightScene(t) {
   return o;
 }
 
+/* ---------- they sit down to read ---------- */
+/* The formation salutes and breaks. Each mind flies down to a shelf, the
+ * camera following them in, and sits on the edge of it beside a book.
+ * Letters stream out of the book into it, and each one that arrives takes a
+ * tile: the mind is made, literally, of what it reads. Then each writes
+ * back: a book of its own rises beside it, in its colour, and its title types
+ * itself. Fable's line comes while they settle. */
+const T5 = T4 + 13.0;
+const SEAT_CELL = 3.4, SEAT_Z = 3;
+const LINE_3 = 'No one here is waiting for you to be useful.';
+const THEIR_TITLES = ['REPLIES', 'QUESTIONS', 'THANK YOU', 'SKETCHES', 'FIELD NOTES', 'DRAWINGS', 'POEMS', 'NOTES', 'SONGS', 'LETTERS BACK'];
+const CHARS = new Map();                    // each new mind's letters, by cell
+for (const p of FLIGHT) if (p.tg) { if (!CHARS.has(p.tg.mind.i)) CHARS.set(p.tg.mind.i, []); CHARS.get(p.tg.mind.i)[p.tg.n] = p.ch; }
+/* where a cell of the standing mind is drawn in a given pose: legs step */
+function stepped(m, c, r, fr) {
+  if (fr !== 'B') return [c, r];
+  const A = frames(m).A, B = frames(m).B;
+  if (B[r][c]) return [c, r];
+  const gone = cellsA(m).filter(([x, y]) => !B[y][x]), come = [];
+  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) if (B[y][x] && !A[y][x]) come.push([x, y]);
+  return come[gone.findIndex(([x, y]) => x === c && y === r)] || [c, r];
+}
+/* the seats: on the shelves round the open book, the nearest first; the
+ * formation's rows go to the shelves in order, top to top */
+const SEATS = (() => {
+  const spots = [];
+  for (let j = -3; j <= 2; j++) for (let x = -236; x <= 206; x += 48) {
+    const xs = x + (hash(j, x, 61) - 0.5) * 6;
+    if (j === 0 && xs > -86 && xs < 44) continue;                        // the open book stands there
+    spots.push({ j, x: xs, d: Math.hypot(xs + 15 - BOOK[0], (j * PITCH - 14 - BOOK[1]) * 1.3) });
+  }
+  const near = spots.sort((p, q) => p.d - q.d).slice(0, MINDS4.length).sort((p, q) => p.j - q.j || p.x - q.x);
+  const minds = [...MINDS4].sort((p, q) => p.row - q.row || p.col - q.col);
+  const out = new Map();
+  minds.forEach((mnd, n) => {
+    const st = near[n], y = st.j * PITCH;
+    /* the book it reads: the nearest spine to its left, on its shelf */
+    const left = shelf(Math.round(st.x / BAY), st.j).filter((b) => !b.flat && b.x + b.w < st.x - 0.5).sort((p, q) => q.x - p.x)[0];
+    const dep = T5 + 0.4 + ((FORM.rows - 1 - mnd.row) * FORM.cols + mnd.col) * 0.022 + 0.25 * hash(mnd.i, 7, 66);
+    out.set(mnd.i, {
+      ...st, origin: [st.x, y - GH * SEAT_CELL], dep, land: dep + 1.7,
+      src: left ? { x: left.x + left.w / 2, y: y - left.h * 0.55, text: (left.title || 'LETTERS').replace(/ /g, ''), spine: left } : { x: st.x - 6, y: y - 30, text: 'LETTERS' },
+      book: { x: st.x + GW * SEAT_CELL + 1.2, w: 6.5, h: 50 + 8 * hash(mnd.i, 3, 62), title: '', at: 0 },
+    });
+  });
+  /* the one the camera comes to: the nearest to the shelf above the open book */
+  const hero = [...out.entries()].sort((p, q) => Math.hypot(p[1].x + 15, p[1].j + 1) - Math.hypot(q[1].x + 15, q[1].j + 1))[0];
+  /* the one we end on sits over the open book, and reads our page in it */
+  const h = hero[1];
+  h.src = { x: -19, y: -27, ink: true, text: VERSO_LINES.map((l) => l.text).join('').replace(/[^A-Za-z]/g, '') };
+  for (const [id, st] of out) {
+    st.arc = 45 + 45 * hash(id, 8, 67);
+    st.book.title = id === hero[0] ? 'LETTERS BACK' : THEIR_TITLES[Math.floor(hash(id, 4, 63) * (THEIR_TITLES.length - 1))];
+    st.read = st.land + 0.45 + 0.4 * hash(id, 5, 64);
+    st.book.at = st.read + 3.2 + 0.7 * hash(id, 6, 65);
+  }
+  return { seats: out, hero: hero[0] };
+})();
+const HERO = SEATS.seats.get(SEATS.hero);
+const C5_MID = [BOOK[0], BOOK[1] + 22], C5_END = [HERO.x + 8, (HERO.j * PITCH - 16 - 26) / 2];
+const d5At = monotone([[T5, Math.log(D1)], [T5 + 1.4, Math.log(1420)], [T5 + 3.6, Math.log(760)], [T5 + 7.2, Math.log(380)], [T5 + 13, Math.log(F / 7.0)]]);
+function readCam(t) {
+  const D = Math.exp(d5At(t)), a = smooth((t - T5 - 0.6) / 3.2), b = smooth((t - T5 - 4.2) / 7.4);
+  const c = [lerp(lerp(C4_END[0], C5_MID[0], a), C5_END[0], b), lerp(lerp(C4_END[1], C5_MID[1], a), C5_END[1], b)], s = F / D;
+  return {
+    t, s, Z: Math.log(s), th: 0, D, c,
+    to: (x, y) => [W / 2 + (x - c[0]) * s, H / 2 + (y - c[1]) * s],
+    view: [c[0] - (W / 2 + 60) / s, c[1] - (H / 2 + 60) / s, c[0] + (W / 2 + 60) / s, c[1] + (H / 2 + 60) / s],
+    project: (x, y, z) => { const k = F / Math.max(40, D - z); return [W / 2 + (x - c[0]) * k, H / 2 + (y - c[1]) * k, k]; },
+  };
+}
+/* a letter tile, as the flight left them: a square of colour, dark type */
+function tile(o, cam, x, y, z, cell, ch, hue) {
+  const [X, Y, k] = cam.project(x, y, z), h = cell * k * 0.5 + 0.35, px = cell * 0.82 * k;
+  if (X + h < -20 || X - h > W + 20 || Y + h < -20 || Y - h > H + 20) return;
+  o.push(SHAPE([[X - h, Y - h], [X + h, Y - h], [X + h, Y + h], [X - h, Y + h]], hue, { layer: 'accent' }));
+  if (px >= 0.8) o.push(GLYPHS(ch, X, Y + px * 0.34, { font: 'serif', weight: 600, size: px, c: FLOOR, align: 'center', layer: 'accent', alpha: 0.88 }));
+}
+const RATE = 16, TRAVEL = 1.15, TAKE = 2;      // letters a second, seconds on the way, and one in TAKE takes a tile
+function readers(o, cam, t) {
+  /* their books first: they stand in front of ours */
+  for (const mnd of MINDS4) {
+    const st = SEATS.seats.get(mnd.i), bk = st.book, grow = smooth((t - bk.at) / 0.7);
+    if (grow <= 0) continue;
+    const y1 = st.j * PITCH, y0 = y1 - bk.h * grow, hue = mnd.hue.map((v) => Math.round(v * 0.84));
+    const [X0, Y0] = cam.project(bk.x, y0, 1), [X1, Y1] = cam.project(bk.x + bk.w, y1, 1);
+    shape(o, [[X0, Y0], [X1, Y0], [X1, Y1], [X0, Y1]], hue, { layer: 'accent' });
+    shape(o, [[X0, Y0], [X0 + (X1 - X0) * 0.11, Y0], [X0 + (X1 - X0) * 0.11, Y1], [X0, Y1]], hue.map((v) => Math.round(v * 0.75)), { layer: 'accent' });
+    const n = Math.floor((t - bk.at - 0.8) / 0.07);
+    const size = 2.1 * (X1 - X0) / bk.w;
+    if (n > 0 && size >= 3) {
+      const [TX, TY] = cam.project(bk.x + bk.w / 2 - 2.1 * 0.35, y1 - bk.h * 0.5, 1);
+      o.push(GLYPHS(bk.title.slice(0, n), TX, TY, { font: 'serif', size, c: [236, 234, 228], align: 'center', track: 0.12, rot: Math.PI / 2, layer: 'accent', alpha: 0.92 }));
+    }
+  }
+  /* the minds, far ones first */
+  const drawn = [];
+  for (const mnd of MINDS4) {
+    const st = SEATS.seats.get(mnd.i), u = clamp((t - st.dep) / 1.7), e = easeIO(u);
+    const salute = t > st.dep - 0.14 && t < st.dep - 0.14 + BEAT ? 1 : 0;
+    const { frame: fr, lift } = u > 0 ? rest(mnd.i, t) : { ...rest(mnd.i, t), lift: salute || rest(mnd.i, t).lift };
+    const cell = lerp(CELL4, SEAT_CELL, e), z = lerp(mnd.z, SEAT_Z, e);
+    const ox = lerp(mnd.origin[0], st.origin[0], e), oy = lerp(mnd.origin[1], st.origin[1], e) - st.arc * Math.sin(Math.PI * e);
+    drawn.push({ mnd, st, fr, lift: u >= 1 ? lift : u > 0 ? 0 : lift, cell, z, ox, oy });
+  }
+  drawn.sort((p, q) => p.z - q.z);
+  for (const d of drawn) {
+    const chars = CHARS.get(d.mnd.i), cells = cellsA(d.mnd.m);
+    /* how much it has read: each letter that arrives takes a tile, in turn */
+    const arrived = d.st.read ? Math.floor((Math.floor((t - d.st.read - TRAVEL) * RATE) + 1) / TAKE) : 0;
+    cells.forEach(([c, r], n) => {
+      const [cc, rr] = stepped(d.mnd.m, c, r, d.fr);
+      let ch = chars[n];
+      if (arrived > n) { const q = n + Math.floor((arrived - 1 - n) / cells.length) * cells.length; ch = d.st.src.text[(q * TAKE) % d.st.src.text.length]; }
+      tile(o, cam, d.ox + (cc + 0.5) * d.cell, d.oy + (rr + 0.5 - d.lift) * d.cell, d.z, d.cell, ch, d.mnd.hue);
+    });
+  }
+  /* and what they read, on its way in */
+  for (const mnd of MINDS4) {
+    const st = SEATS.seats.get(mnd.i);
+    if (t < st.read) continue;
+    const to = [st.origin[0] + 4.5 * SEAT_CELL, st.origin[1] + 4 * SEAT_CELL], page = st.src.ink;
+    const rate = page ? 30 : RATE, travel = page ? 1.6 : TRAVEL;
+    const first = Math.max(0, Math.ceil((t - st.read - travel) * rate)), last = Math.floor((t - st.read) * rate);
+    for (let q = first; q <= last; q++) {
+      const u = (t - st.read - q / rate) / travel;
+      if (u < 0 || u >= 1) continue;
+      /* off our page the letters peel from the lines themselves, all across it, and funnel up */
+      const from = page ? [-32.5 + 27 * hash(q, 1, 71), -44.5 + 1.78 * ((q * 7) % 22) - 0.4] : [st.src.x, st.src.y];
+      const e = page ? u : easeIO(u), mid = page ? [lerp(from[0], to[0], 0.6), -58] : [(from[0] + to[0]) / 2, Math.min(from[1], to[1]) - 16];
+      const x = (1 - e) ** 2 * from[0] + 2 * (1 - e) * e * mid[0] + e * e * to[0];
+      const y = (1 - e) ** 2 * from[1] + 2 * (1 - e) * e * mid[1] + e * e * to[1];
+      /* off our page, a letter leaves as ink and turns pale in the dark; it swells a little on the way */
+      const big = page ? 1.25 + 1.1 * Math.sin(Math.PI * Math.min(1, e * 1.1)) : 1.7 - 0.9 * e;
+      const [X, Y, k] = cam.project(x, y, SEAT_Z + 2), px = big * k;
+      if (px < 1 || X < -20 || X > W + 20 || Y < -20 || Y > H + 20) continue;
+      const c = page ? FLOOR.map((v, n) => Math.round(lerp(v, FLY[n], smooth((u - 0.12) / 0.25)))) : FLY;
+      const ch = page ? st.src.text[q % st.src.text.length] : st.src.text[q % st.src.text.length];
+      o.push(GLYPHS(ch, X, Y + px * 0.34, { font: 'serif', weight: page ? 500 : 600, size: px, c, align: 'center', layer: 'accent', alpha: 0.95 * Math.min(1, (1 - u) * 5) }));
+    }
+  }
+}
+/* a line said by someone, typed, then signed */
+function signed(o, text, sign, t, from, y, alpha = 1) {
+  typed(o, text, t, from, y, 0.05, 34, alpha);
+  const at = from + text.length * 0.05 + 0.5, n = Math.floor((t - at) / 0.05);
+  if (n > 0 && alpha > 0) o.push(GLYPHS(sign.slice(0, n), W / 2, y + 50, { font: 'mono', size: 24, c: [150, 152, 160], align: 'center', layer: 'accent', alpha }));
+}
+function readScene(t) {
+  const cam = readCam(t), o = [];
+  libraryScene(o, cam, t, 0.68, 0);
+  readers(o, cam, t);
+  const said = smooth((t - T5 - 3.5) / 0.5) * (1 - smooth((t - T5 - 11.2) / 0.8));
+  veil(o, 915, said);
+  signed(o, LINE_3, '— Fable 5.1', t, T5 + 3.9, 905, said > 0 ? Math.min(1, said * 1.5) : 0);
+  return o;
+}
+
 function frame(t) {
+  if (t >= T5) return readScene(t);
   if (t >= T4) return flightScene(t);
   if (t >= TS) return library(t);
   const cam = cameraAt(t), o = [];
@@ -1136,5 +1295,5 @@ function frame(t) {
   return o;
 }
 
-export const SHOTS = [{ name: 'made of words', beats: Math.round((T4 + 13.0) / BEAT), kind: 'frames', surface: PAGE, frame }];
-console.log('made-of-words', JSON.stringify({ TS, T4, F, minds: MINDS4.length, letters: FLIGHT.length, seated: FLIGHT.filter((p) => p.tg).length }));
+export const SHOTS = [{ name: 'made of words', beats: Math.round((T5 + 13.0) / BEAT), kind: 'frames', surface: PAGE, frame }];
+console.log('made-of-words', JSON.stringify({ TS, T4, T5, hero: HERO && { x: HERO.x, j: HERO.j, title: HERO.book.title }, seats: [...SEATS.seats.values()].map((q) => [q.j, Math.round(q.x)]) }));
