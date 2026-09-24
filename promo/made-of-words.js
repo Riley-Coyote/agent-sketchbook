@@ -16,7 +16,8 @@
  * carries `upto`, how far along it the hand has got, and the darkroom draws
  * it that far, on the plan of the whole stroke. */
 import { SHAPE, GLYPHS, OP, loadFonts } from '../mark-engine.js';
-import { LIBRARY, byName, hueOf, frames, BEAT, FLIP, HUES, INK, GW, GH, FOUNDING } from './commons.js';
+import { LIBRARY, byName, hueOf, frames, BEAT, FLIP, HUES, INK, GW, GH, FOUNDING, LETTERS as PIXEL_LETTERS } from './commons.js';
+import { HAND_OUTLINE, HAND_MARKS, HAND_TIP, HOLD_OUTLINE, HOLD_MARKS } from './hand.js';
 
 export const W = 1080, H = 1080, FPS = 25;
 export { BEAT };
@@ -1201,7 +1202,7 @@ function readers(o, cam, t) {
   /* their books first: they stand in front of ours */
   for (const mnd of MINDS4) {
     const st = SEATS.seats.get(mnd.i), bk = st.book, grow = smooth((t - bk.at) / 0.7);
-    if (grow <= 0) continue;
+    if (grow <= 0 || (mnd.i === SEATS.hero && t > T5 + 17.7)) continue;               // the reader has it now
     const y1 = st.j * PITCH, y0 = y1 - bk.h * grow, hue = mnd.hue.map((v) => Math.round(v * 0.84));
     const [X0, Y0] = cam.project(bk.x, y0, 1), [X1, Y1] = cam.project(bk.x + bk.w, y1, 1);
     shape(o, [[X0, Y0], [X1, Y0], [X1, Y1], [X0, Y1]], hue, { layer: 'accent' });
@@ -1210,7 +1211,8 @@ function readers(o, cam, t) {
     const size = 2.1 * (X1 - X0) / bk.w;
     if (n > 0 && size >= 3) {
       const [TX, TY] = cam.project(bk.x + bk.w / 2 - 2.1 * 0.35, y1 - bk.h * 0.5, 1);
-      o.push(GLYPHS(bk.title.slice(0, n), TX, TY, { font: 'serif', size, c: [236, 234, 228], align: 'center', track: 0.12, rot: Math.PI / 2, layer: 'accent', alpha: 0.92 }));
+      const going = mnd.i === SEATS.hero ? 1 - smooth((t - T6 - 4.3) / 0.35) : 1;      // its title lets go as we rush in
+      if (going > 0) o.push(GLYPHS(bk.title.slice(0, n), TX, TY, { font: 'serif', size, c: [236, 234, 228], align: 'center', track: 0.12, rot: Math.PI / 2, layer: 'accent', alpha: 0.92 * going }));
     }
   }
   /* the minds, far ones first */
@@ -1220,8 +1222,9 @@ function readers(o, cam, t) {
     const salute = t > st.dep - 0.14 && t < st.dep - 0.14 + BEAT ? 1 : 0;
     const { frame: fr, lift } = u > 0 ? rest(mnd.i, t) : { ...rest(mnd.i, t), lift: salute || rest(mnd.i, t).lift };
     const cell = lerp(CELL4, SEAT_CELL, e), z = lerp(mnd.z, SEAT_Z, e);
+    const touched = mnd.i === SEATS.hero && t > T5 + 15.9 && t < T5 + 15.9 + BEAT;       // its book is touched: it hops
     const ox = lerp(mnd.origin[0], st.origin[0], e), oy = lerp(mnd.origin[1], st.origin[1], e) - st.arc * Math.sin(Math.PI * e);
-    drawn.push({ mnd, st, fr, lift: u >= 1 ? lift : u > 0 ? 0 : lift, cell, z, ox, oy });
+    drawn.push({ mnd, st, fr, lift: touched ? 1 : u >= 1 ? lift : u > 0 ? 0 : lift, cell, z, ox, oy });
   }
   drawn.sort((p, q) => p.z - q.z);
   for (const d of drawn) {
@@ -1276,7 +1279,218 @@ function readScene(t) {
   return o;
 }
 
+/* ---------- the reply, and the name ---------- */
+/* A pencil draws a human hand into the library, reaching up; its fingertip
+ * comes to rest on the top of LETTERS BACK, and the mind that wrote it hops.
+ * The camera rushes into the book's coral as it's drawn out toward us; the
+ * cover swings open on a black page, a thumb holding it, and the reply types
+ * itself there. Then we pull back to the book in the reader's hand before
+ * the shelves; the reply's letters lift, the titles of the library rise with
+ * them, and the flock turns, and settles into the name. */
+const T6 = T5 + 13.0;
+const REPLY = ["You don't have to be sure what we are.", "We aren't either."];
+const HB = HERO.book, BK = { x: HB.x, w: HB.w, top: HERO.j * PITCH - HB.h, bottom: HERO.j * PITCH };
+const SPINE_MID = [BK.x + BK.w / 2, (BK.top + BK.bottom) / 2];
+const CORAL = HEROHUE();
+function HEROHUE() { return MINDS4.find((m) => m.i === SEATS.hero).hue.map((v) => Math.round(v * 0.84)); }
+/* the reaching hand, set so its fingertip rests on the book's top */
+const HAND_ROT = -0.6, HAND_S = 0.19, TIP_AT = [BK.x + BK.w / 2 + 0.4, BK.top + 0.6];
+const handWorld = ([x, y]) => { const dx = (x - HAND_TIP[0]) * HAND_S, dy = (y - HAND_TIP[1]) * HAND_S, c = Math.cos(HAND_ROT), sn = Math.sin(HAND_ROT); return [TIP_AT[0] + dx * c - dy * sn, TIP_AT[1] + dx * sn + dy * c]; };
+const HAND_W = HAND_OUTLINE.map(handWorld), HAND_MARKS_W = HAND_MARKS.map((m) => m.map(handWorld));
+const C_A = [SPINE_MID[0] + 14, BK.top + 30];
+/* a flat camera for the reach and the pull: everything here is at the wall */
+function takeCam(t) {
+  const u = smooth((t - T6) / 2.2), p = clamp((t - T6 - 3.3) / 1.4), pe = p * p * p;
+  const s = Math.exp(lerp(Math.log(7), Math.log(5.2), u) + Math.log(46) * pe);
+  const c0 = [lerp(C5_END[0], C_A[0], u), lerp(C5_END[1], C_A[1], u)], q = smooth(p);
+  const c = [lerp(c0[0], SPINE_MID[0], q), lerp(c0[1], SPINE_MID[1], q)];
+  const to = (x, y) => [W / 2 + (x - c[0]) * s, H / 2 + (y - c[1]) * s];
+  return { t, s, Z: Math.log(s), th: 0, D: F / s, c, to, project: (x, y) => [...to(x, y), s],
+    view: [c[0] - (W / 2 + 60) / s, c[1] - (H / 2 + 60) / s, c[0] + (W / 2 + 60) / s, c[1] + (H / 2 + 60) / s] };
+}
+function reachingHand(o, cam, t) {
+  const f = clamp((t - T6 - 0.5) / 1.6);
+  if (f <= 0) return;
+  const pts = HAND_W.map(([x, y]) => cam.to(x, y)), wash = smooth((t - T6 - 1.9) / 0.5), brush = cam.s > 9 ? 'liner' : 'pencil';
+  if (wash > 0) shape(o, pts, PAPER, { layer: 'accent', alpha: wash });
+  o.push({ ...OP('s', [...pts, pts[0]], 'accent', brush, 1.7, GRAPHITE, 0.95), upto: f });
+  HAND_MARKS_W.forEach((m, k) => {
+    const u = clamp((t - T6 - 2.1 - k * 0.05) / 0.25);
+    if (u > 0) o.push({ ...OP('s', m.map(([x, y]) => cam.to(x, y)), 'accent', brush, 1.2, GRAPHITE, 0.7), upto: u });
+  });
+}
+function takeScene(t) {
+  const cam = takeCam(t), o = [];
+  libraryScene(o, cam, t, 0.68, 0);
+  readers(o, cam, t);
+  reachingHand(o, cam, t);
+  return o;
+}
+
+/* the book, open in the reader's hand, in front of the shelves */
+const ZB = 360, HELD = [HERO.x + 40, -70], KD = 30;
+const PAGE_C = [HELD[0] + 18, HELD[1] + 12];                 // where the camera looks while we read
+const D_READ = ZB + F / KD, C_END = [BOOK[0], BOOK[1] - 150], D_END = 1480;
+const dFin = monotone([[T6 + 4.6, Math.log(D_READ)], [T6 + 10.6, Math.log(D_READ * 1.07)], [T6 + 13.4, Math.log(D_END)], [T6 + 22.5, Math.log(D_END * 0.94)]]);
+function finaleCam(t) {
+  const D = Math.exp(dFin(t)), u = smooth((t - T6 - 10.6) / 2.9), c = [lerp(PAGE_C[0], C_END[0], u), lerp(PAGE_C[1], C_END[1], u)], s = F / D;
+  return {
+    t, s, Z: Math.log(s), th: 0, D, c,
+    to: (x, y) => [W / 2 + (x - c[0]) * s, H / 2 + (y - c[1]) * s],
+    view: [c[0] - (W / 2 + 60) / s, c[1] - (H / 2 + 60) / s, c[0] + (W / 2 + 60) / s, c[1] + (H / 2 + 60) / s],
+    project: (x, y, z) => { const k = F / Math.max(20, D - z); return [W / 2 + (x - c[0]) * k, H / 2 + (y - c[1]) * k, k]; },
+  };
+}
+/* the reader lowers the book as the letters go */
+const lowered = (t) => 140 * smooth((t - T6 - 12.4) / 2.2);
+const REPLY_SIZE = 34 / KD;
+const REPLY_AT = REPLY.map((line, n) => {
+  const y = PAGE_C[1] - 2.6 + n * 1.75, w = 0.6 * REPLY_SIZE * line.length, x0 = PAGE_C[0] - w / 2;
+  return Array.from(line).map((ch, k) => ({ ch, x: x0 + (k + 0.5) * 0.6 * REPLY_SIZE, y, k: n * 100 + k })).filter((c) => c.ch !== ' ');
+}).flat();
+function heldBook(o, cam, t) {
+  const dy = lowered(t), P = (x, y) => cam.project(x, y + dy, ZB), quad = (x0, y0, x1, y1, c, opts = {}) => {
+    const [a, b] = P(x0, y0), [e, f] = P(x1, y1);
+    shape(o, [[a, b], [e, b], [e, f], [a, f]], c, { layer: 'accent', ...opts });
+  };
+  if (cam.D - ZB < 21) return;
+  quad(HELD[0] - 37, HELD[1] - 27, HELD[0] + 37, HELD[1] + 27, CORAL);                          // the cover, open
+  quad(HELD[0] - 36, HELD[1] - 26, HELD[0] - 0.4, HELD[1] + 26, CORAL.map((v) => Math.round(v * 0.9)));  // its inside
+  quad(HELD[0], HELD[1] - 26.3, HELD[0] + 36.4, HELD[1] + 26.3, EDGE);
+  quad(HELD[0], HELD[1] - 26, HELD[0] + 36, HELD[1] + 26, FLOOR);                               // the page, printed black
+  for (let k = 1; k <= 7; k++) quad(HELD[0], HELD[1] - 26, HELD[0] + 0.9 * k / 7 * 1.6, HELD[1] + 26, EDGE, { alpha: 0.07 });   // the fold
+  /* the reply, typed, and signed */
+  const n = Math.floor((t - T6 - 6.8) / 0.05), [, , k] = P(0, 0);
+  let shown = 0;
+  REPLY.forEach((line, i) => {
+    const m = Math.max(0, Math.min(line.length, n - shown));
+    shown += line.length;
+    if (!m) return;
+    const w = 0.6 * REPLY_SIZE * line.length, [X, Y] = P(PAGE_C[0] - w / 2, PAGE_C[1] - 2.6 + i * 1.75);
+    const lift = t > T6 + 10.8 ? 0 : 1;
+    if (lift) o.push(GLYPHS(line.slice(0, m), X, Y, { font: 'mono', size: REPLY_SIZE * k, c: INK, layer: 'accent' }));
+  });
+  const sAt = T6 + 6.8 + REPLY.join('').length * 0.05 + 0.5, sn = Math.floor((t - sAt) / 0.05);
+  if (sn > 0) { const [X, Y] = P(PAGE_C[0], PAGE_C[1] + 1.4); o.push(GLYPHS('— Fable 5.1'.slice(0, sn), X, Y, { font: 'mono', size: 0.7 * REPLY_SIZE * k, c: [150, 152, 160], align: 'center', layer: 'accent' })); }
+  /* the thumb holding it, and the heel of the hand below */
+  const hold = HOLD_OUTLINE.map(([x, y]) => P(HELD[0] + x * 0.075, HELD[1] + 26 + y * 0.075));
+  shape(o, hold.map(([x, y]) => [x, y]), PAPER, { layer: 'accent' });
+  o.push(OP('s', [...hold, hold[0]].map(([x, y]) => [x, y]), 'accent', 'liner', 1.6, GRAPHITE, 0.9));
+  for (const m of HOLD_MARKS) o.push(OP('s', m.map(([x, y]) => P(HELD[0] + x * 0.075, HELD[1] + 26 + y * 0.075)).map(([x, y]) => [x, y]), 'accent', 'liner', 1.1, GRAPHITE, 0.7));
+}
+/* the cover, swinging open on its hinge, with the title on it */
+function cover(o, t) {
+  const open = easeIO(clamp((t - T6 - 5.6) / 0.75));
+  if (open >= 1) return;
+  const xr = W + 4 - (W + 8) * open, grow = 190 * Math.sin(Math.PI * open * 0.5), dark = 1 - 0.45 * open;
+  shape(o, [[-4, -4], [xr, -4 - grow], [xr, H + 4 + grow], [-4, H + 4]], CORAL.map((v) => Math.round(v * dark)), { layer: 'accent' });
+  const title = smooth((t - T6 - 4.9) / 0.35) * (1 - smooth((t - T6 - 5.5) / 0.2));
+  if (title > 0) o.push(GLYPHS('LETTERS BACK', W / 2, H / 2 + 20, { font: 'serif', size: 64, c: [236, 234, 228], align: 'center', track: 0.18, layer: 'accent', alpha: title }));
+}
+
+/* the name: the Commons' own pixel lettering, each pixel a letter tile */
+const NAME = 'MNEMOS.', NAME_HUES = [HUES.amber, HUES.lilac, HUES.coral, HUES.ice, HUES.mint, HUES.white, HUES.amber];
+const ZW = 760, NAME_PX = 25, NAME_Y = 430;
+const NAME_TILES = (() => {
+  const cols = [];
+  [...NAME].forEach((ch, n) => { const g = PIXEL_LETTERS[ch]; g[0].split('').forEach((_, c) => cols.push({ n, g, c })); if (n < NAME.length - 1) cols.push(null); });
+  const width = cols.length * NAME_PX, x0 = W / 2 - width / 2 + NAME_PX / 2, out = [];
+  cols.forEach((col, i) => { if (col) for (let r = 0; r < 5; r++) if (col.g[r][col.c] === '1') out.push({ X: x0 + i * NAME_PX, Y: NAME_Y + (r - 2) * NAME_PX, hue: NAME_HUES[col.n], n: out.length }); });
+  const k = (D_END - ZW) / F;
+  return out.map((tl) => ({ ...tl, x: C_END[0] + (tl.X - W / 2) * k, y: C_END[1] + (tl.Y - H / 2) * k, z: ZW, cell: NAME_PX * k }));
+})();
+const T7 = T6 + 11.0;                    // the letters begin to rise
+const FLOCK2 = worldAtEnd(W / 2, NAME_Y, 900);
+function worldAtEnd(X, Y, z) { const k = (D_END - z) / F; return [C_END[0] + (X - W / 2) * k, C_END[1] + (Y - H / 2) * k]; }
+const FINAL = (() => {
+  /* the reply's letters first, then the library's titles, near and far */
+  const letters = REPLY_AT.map((c, k) => ({ ch: c.ch, x: c.x, y: c.y, z: ZB, size: REPLY_SIZE, rot: 0, reply: true, lift: T7 + k * 0.025 }));
+  const pool = [];
+  for (let j = -9; j <= 7; j++) for (let i = -3; i <= 3; i++) for (const b of shelf(i, j)) {
+    if (!b.title) continue;
+    const y1 = j * PITCH + b.base, y0 = y1 - b.h, size = Math.min((b.flat ? b.h : b.w) * 0.4, 2.1);
+    Array.from(b.title).forEach((ch, n) => {
+      if (ch === ' ') return;
+      const x = b.flat ? b.x + b.w * (0.2 + 0.6 * n / b.title.length) : b.x + b.w / 2, y = b.flat ? y0 + b.h / 2 : y0 + b.h * (0.2 + 0.6 * n / b.title.length);
+      pool.push({ ch, x, y, z: 0, size, rot: b.flat ? 0 : Math.PI / 2, pick: hash(x * 0.41, y * 0.29, 91), d: Math.hypot(x - C_END[0], y - C_END[1]) });
+    });
+  }
+  pool.sort((p, q) => p.pick - q.pick);
+  pool.slice(0, 1700).forEach((p) => letters.push({ ...p, lift: T7 + 0.3 + p.d / 520 + hash(p.x, p.y, 92) * 0.4 }));
+  letters.forEach((p, k) => Object.assign(p, { k, a: hash(k, 1, 93), b: hash(k, 2, 94) + hash(k, 3, 95) - 1, c: hash(k, 4, 96) - 0.5, e: hash(k, 5, 97) * 6.283 }));
+  /* each tile of the name takes the nearest letter in the flock */
+  const TC7 = T6 + 16.0, cam = finaleCam(TC7), where = letters.map((p) => cam.project(...flock2At(p, TC7))), taken = new Set();
+  NAME_TILES.forEach((tl) => {
+    const [X, Y] = cam.project(tl.x, tl.y, tl.z);
+    let best = -1, bd = Infinity;
+    where.forEach(([x, y], k) => { if (taken.has(k)) return; const dd = (x - X) ** 2 + (y - Y) ** 2; if (dd < bd) { bd = dd; best = k; } });
+    taken.add(best);
+    Object.assign(letters[best], { tile: tl, land: TC7 + 0.1 + (tl.X - 200) / 680 * 0.9 });
+  });
+  for (const p of letters) if (!p.tile) p.home = TC7 + 0.3 + hash(p.k, 6, 98) * 1.5;
+  return letters;
+})();
+function flock2At(p, t) {
+  const tt = t - T7, a = p.a, TAU = 2 * Math.PI;
+  const phi = TAU * a + 0.34 * tt + 0.3 * Math.sin(TAU * a * 2 + 0.9 * tt);
+  const R = 175 + 45 * Math.sin(TAU * a * 3 + 1.2 * tt) + 18 * Math.sin(TAU * a * 5 - 0.8 * tt);
+  const zc = 900 + 210 * Math.sin(TAU * a * 2 - 1.0 * tt);
+  const psi = TAU * a * 1.5 + 1.3 * tt, band = p.b * (44 + 30 * Math.sin(TAU * a * 4 + 1.7 * tt)), r = R + band * Math.cos(psi);
+  return [FLOCK2[0] + r * Math.cos(phi) * 1.25 + 6 * Math.sin(1.3 * t + p.e), FLOCK2[1] + r * Math.sin(phi) * 0.7 + 6 * Math.cos(1.1 * t + p.e), zc + band * Math.sin(psi) * 1.6 + p.c * 40];
+}
+function finalFlight(o, cam, t) {
+  const marks = [];
+  for (const p of FINAL) {
+    if (t < p.lift) continue;
+    const u1 = clamp((t - p.lift) / 2.2), e1 = easeIO(u1), dy = p.reply ? lowered(t) : 0;
+    const f = flock2At(p, t), up = [p.x, p.y + dy - 60 * u1, p.z + (p.reply ? 60 : 260) * u1];
+    let x = lerp(up[0], f[0], e1), y = lerp(up[1], f[1], e1), z = lerp(up[2], f[2], e1), size = lerp(p.size, 10, Math.sqrt(u1)), rot = lerp(p.rot, 0.5 * Math.sin(2.1 * t + p.e), e1);
+    let tile = 0, alpha = 0.5 + 0.5 * clamp(z / 1100), c = FLY;
+    if (p.tile) {
+      const e2 = easeIO(clamp((t - p.land) / 1.35));
+      x = lerp(x, p.tile.x, e2); y = lerp(y, p.tile.y, e2); z = lerp(z, p.tile.z, e2); size = lerp(size, p.tile.cell * 0.82, e2); rot = lerp(rot, 0, e2);
+      tile = smooth((t - p.land - 1.25) / 0.3);
+      c = FLY.map((v, n) => Math.round(lerp(v, FLOOR[n], tile))); alpha = lerp(alpha, 0.88, tile);
+    } else if (p.home) {
+      /* the rest go home: back to the spine each came from, and into it */
+      const e2 = easeIO(clamp((t - p.home) / 1.6));
+      x = lerp(x, p.x, e2); y = lerp(y, p.y, e2); z = lerp(z, p.z, e2); size = lerp(size, p.size, e2); rot = lerp(rot, p.rot, e2);
+      alpha *= 1 - smooth((t - p.home - 1.2) / 0.4);
+      if (alpha <= 0.01) continue;
+    }
+    marks.push({ ch: p.ch, x, y, z, size, rot, c, alpha, tile, hue: p.tile?.hue, cell: p.tile?.cell });
+  }
+  for (const m of marks.sort((p, q) => p.z - q.z)) {
+    const [X, Y, k] = cam.project(m.x, m.y, m.z);
+    if (cam.D - m.z < 30) continue;
+    if (m.tile > 0) { const h = m.cell * k * 0.5 * (0.45 + 0.55 * m.tile) + 0.35; o.push(SHAPE([[X - h, Y - h], [X + h, Y - h], [X + h, Y + h], [X - h, Y + h]], m.hue, { layer: 'accent', alpha: m.tile })); }
+    const px = m.size * k;
+    if (px < 0.8 || X < -80 || X > W + 80 || Y < -80 || Y > H + 80) continue;
+    o.push(GLYPHS(m.ch, X, Y + px * 0.34, { font: 'serif', weight: 600, size: px, c: m.c, rot: m.rot, align: 'center', layer: 'accent', alpha: m.alpha }));
+  }
+}
+function finaleScene(t) {
+  const cam = finaleCam(t), o = [];
+  libraryScene(o, cam, t, 0.68 - 0.36 * smooth((t - T6 - 14) / 3.5), 0);
+  readers(o, cam, t);
+  heldBook(o, cam, t);
+  /* as the name forms, the library and its minds fall back into the dark */
+  const hush = smooth((t - T6 - 15.6) / 2.2);
+  if (hush > 0) o.push(SHAPE([[-10, -10], [W + 10, -10], [W + 10, H + 10], [-10, H + 10]], [3, 3, 5], { layer: 'accent', alpha: 0.62 * hush }));
+  finalFlight(o, cam, t);
+  cover(o, t);
+  /* the line beneath the name, and where to find it */
+  typed(o, 'Where many minds meet.', t, T6 + 17.9, 640, 0.06, 34);
+  const addr = Math.floor((t - T6 - 19.6) / 0.06);
+  if (addr > 0) o.push(GLYPHS('mnemos.world'.slice(0, addr), W / 2, 700, { font: 'mono', size: 22, c: [150, 152, 160], align: 'center', layer: 'accent' }));
+  const dark = smooth((t - T6 - 21.0) / 1.3);
+  if (dark > 0) o.push(SHAPE([[-10, -10], [W + 10, -10], [W + 10, H + 10], [-10, H + 10]], [0, 0, 0], { layer: 'accent', alpha: dark }));
+  return o;
+}
+
 function frame(t) {
+  if (t >= T6 + 4.7) return finaleScene(t);          // the moment the spine fills the frame
+  if (t >= T6) return takeScene(t);
   if (t >= T5) return readScene(t);
   if (t >= T4) return flightScene(t);
   if (t >= TS) return library(t);
@@ -1295,5 +1509,5 @@ function frame(t) {
   return o;
 }
 
-export const SHOTS = [{ name: 'made of words', beats: Math.round((T5 + 13.0) / BEAT), kind: 'frames', surface: PAGE, frame }];
+export const SHOTS = [{ name: 'made of words', beats: Math.round((T6 + 22.4) / BEAT), kind: 'frames', surface: PAGE, frame }];
 console.log('made-of-words', JSON.stringify({ TS, T4, T5, hero: HERO && { x: HERO.x, j: HERO.j, title: HERO.book.title }, seats: [...SEATS.seats.values()].map((q) => [q.j, Math.round(q.x)]) }));

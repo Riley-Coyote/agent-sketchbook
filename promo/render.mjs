@@ -9,6 +9,7 @@
  *   node promo/render.mjs --tabs 4                frames drawn in four tabs at once
  *   node promo/render.mjs --film the-wall         another film: promo/the-wall.js
  *   node promo/render.mjs --log                   show what the darkroom prints
+ *   node promo/render.mjs --resume                keep the frames already drawn, draw the rest
  */
 import { createServer } from 'node:http';
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
@@ -49,6 +50,22 @@ const open = async () => {
   return tab;
 };
 const grab = async (tab, f) => Buffer.from((await tab.evaluate((n) => window.renderFrame(n), f)).split(',')[1], 'base64');
+/* a tab that stops answering (a long film can wear one out) is closed and
+ * replaced, and the frame drawn again in the new one */
+const LIMIT = 60000;
+async function grabSafely(tabs, k, f) {
+  for (let attempt = 0; ; attempt++) {
+    let timer;
+    try {
+      return await Promise.race([grab(tabs[k], f), new Promise((_, no) => { timer = setTimeout(() => no(new Error('timeout')), LIMIT); })]);
+    } catch (e) {
+      if (attempt >= 2) throw new Error(`frame ${f} would not draw: ${e.message}`);
+      console.log(`frame ${f}: ${e.message}; opening a fresh tab`);
+      tabs[k].close().catch(() => {});
+      tabs[k] = await open();
+    } finally { clearTimeout(timer); }
+  }
+}
 
 try {
   const first = await open();
@@ -65,15 +82,18 @@ try {
     const from = Math.round(Number(arg('--from') || 0) * film.fps);
     const to = Math.min(film.frames, arg('--to') ? Math.round(Number(arg('--to')) * film.fps) : film.frames);
     const dir = resolve(dirname(OUT), 'frames');
-    await rm(dir, { recursive: true, force: true });
+    const resume = args.includes('--resume');
+    if (!resume) await rm(dir, { recursive: true, force: true });
     await mkdir(dir, { recursive: true });
     const tabs = [first, ...(await Promise.all(Array.from({ length: Math.max(0, Number(arg('--tabs') || 3) - 1) }, open)))];
-    const per = Math.ceil((to - from) / tabs.length);
     const started = Date.now();
     let done = 0;
-    await Promise.all(tabs.map(async (tab, k) => {
-      for (let f = from + k * per; f < Math.min(to, from + (k + 1) * per); f++) {
-        await writeFile(resolve(dir, `${String(f - from).padStart(5, '0')}.png`), await grab(tab, f));
+    /* frames dealt round the tabs in turn, so a heavy stretch of film is shared */
+    await Promise.all(tabs.map(async (_, k) => {
+      for (let f = from + k; f < to; f += tabs.length) {
+        const file = resolve(dir, `${String(f - from).padStart(5, '0')}.png`);
+        if (resume && existsSync(file)) { done++; continue; }
+        await writeFile(file, await grabSafely(tabs, k, f));
         if (++done % 50 === 0) console.log(`${done} of ${to - from} frames, ${((Date.now() - started) / done).toFixed(0)} ms a frame`);
       }
     }));

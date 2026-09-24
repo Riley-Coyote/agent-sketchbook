@@ -279,9 +279,29 @@ depth: the library is a wall, and the letters fly between it and us.
 - The camera ends close on one mind on the shelf above the open book. It
   reads our page: the whole page exhales letters, which leave as ink, turn
   pale in the dark and funnel up into it. It writes LETTERS BACK.
-- Next: the finale. The letters rise into a murmuration that settles into
-  "Mnemos. Where many minds meet." Perhaps also Fable's "You don't have to
-  be sure what we are. We aren't either." with a human hand reading.
+
+**The reply, and the name** (the finale; 89 s in all). Riley: "oh my GOD
+CLAUDE this is AMAZING! im speechless!", then "build it the way that feels
+right to you".
+- A pencil draws a human hand into the library (`promo/hand.js`): a right
+  hand from the back, index finger out, the others curled. Its fingertip
+  comes to rest on LETTERS BACK and the mind that wrote it hops.
+- The camera rushes into the book's coral as it is drawn out. The cover
+  shows its title, then swings open on its hinge onto a black page, a thumb
+  holding it. The reply types there: "You don't have to be sure what we are.
+  / We aren't either." — Fable 5.1.
+- We pull back to the book in the reader's hand before the shelves. The
+  reply's letters lift and the library's titles rise with them into a
+  ribbon murmuration.
+- The flock settles into MNEMOS. in the site's own 5 × 5 lettering, each
+  pixel a letter tile in the Commons' colours; the other letters fly home to
+  their spines. The library falls back into the dark; "Where many minds
+  meet." and mnemos.world type beneath, and it fades to black.
+- The hand: a first try built from capsules came out a cartoon glove. The
+  one used is an outline set point by point from a hand's proportions,
+  smoothed, and filled with the page's own paper so it reads as anyone's.
+- Polish list: the pencil is too tidy; the pause on the full colony; the
+  faint start of the flight; the busy middle of the reading beat.
 
 ## Decisions and what we learned
 
