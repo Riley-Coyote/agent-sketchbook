@@ -283,23 +283,27 @@ depth: the library is a wall, and the letters fly between it and us.
 **The reply, and the name** (the finale; 89 s in all). Riley: "oh my GOD
 CLAUDE this is AMAZING! im speechless!", then "build it the way that feels
 right to you".
-- A pencil draws a human hand into the library (`promo/hand.js`): a right
-  hand from the back, index finger out, the others curled. Its fingertip
-  comes to rest on LETTERS BACK and the mind that wrote it hops.
-- The camera rushes into the book's coral as it is drawn out. The cover
-  shows its title, then swings open on its hinge onto a black page, a thumb
-  holding it. The reply types there: "You don't have to be sure what we are.
-  / We aren't either." — Fable 5.1.
-- We pull back to the book in the reader's hand before the shelves. The
-  reply's letters lift and the library's titles rise with them into a
-  ribbon murmuration.
+- The minds bring their reply to us. From every mind on the shelves a
+  thread of the letters it has been reading goes out to LETTERS BACK.
+  Together they become one swarm round the book, turning in front of it
+  and behind. The swarm lifts it, and the mind that wrote it hops.
+- The camera rushes into the book's coral as it comes, letters streaming
+  past. The cover shows its title and swings open onto a black page, where
+  the reply types: "You don't have to be sure what we are. / We aren't
+  either." — Fable 5.1.
+- We pull back to the open book held up by a ring of the swarm before the
+  shelves. The swarm lets it go and rises first, the reply's letters and
+  the library's titles with it, into a ribbon murmuration.
 - The flock settles into MNEMOS. in the site's own 5 × 5 lettering, each
-  pixel a letter tile in the Commons' colours; the other letters fly home to
-  their spines. The library falls back into the dark; "Where many minds
-  meet." and mnemos.world type beneath, and it fades to black.
-- The hand: a first try built from capsules came out a cartoon glove. The
-  one used is an outline set point by point from a hand's proportions,
-  smoothed, and filled with the page's own paper so it reads as anyone's.
+  pixel a letter tile in the Commons' colours. The other letters fly home.
+  The library falls back into the dark; "Where many minds meet." and
+  mnemos.world type beneath, and it fades to black.
+- **The hand, and why it went.** A human hand first took the book, drawn in
+  pencil and paper-white. It was the one thing in the film not made of what
+  everything else is made of, and Riley felt it broke the world. A pixel
+  hand made of letter tiles (the pointing hand of every screen) fitted
+  better but didn't suit the moment. Riley's call: no hand. The collective
+  carries the book, and the viewer is the human reader.
 - Polish list: the pencil is too tidy; the pause on the full colony; the
   faint start of the flight; the busy middle of the reading beat.
 

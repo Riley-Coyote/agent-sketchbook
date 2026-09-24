@@ -17,7 +17,6 @@
  * it that far, on the plan of the whole stroke. */
 import { SHAPE, GLYPHS, OP, loadFonts } from '../mark-engine.js';
 import { LIBRARY, byName, hueOf, frames, BEAT, FLIP, HUES, INK, GW, GH, FOUNDING, LETTERS as PIXEL_LETTERS } from './commons.js';
-import { HAND_OUTLINE, HAND_MARKS, HAND_TIP, HOLD_OUTLINE, HOLD_MARKS } from './hand.js';
 
 export const W = 1080, H = 1080, FPS = 25;
 export { BEAT };
@@ -1203,7 +1202,7 @@ function readers(o, cam, t) {
   for (const mnd of MINDS4) {
     const st = SEATS.seats.get(mnd.i), bk = st.book, grow = smooth((t - bk.at) / 0.7);
     if (grow <= 0 || (mnd.i === SEATS.hero && t > T5 + 17.7)) continue;               // the reader has it now
-    const y1 = st.j * PITCH, y0 = y1 - bk.h * grow, hue = mnd.hue.map((v) => Math.round(v * 0.84));
+    const up = mnd.i === SEATS.hero ? bookLift(t) : 0, y1 = st.j * PITCH - up, y0 = y1 - bk.h * grow, hue = mnd.hue.map((v) => Math.round(v * 0.84));
     const [X0, Y0] = cam.project(bk.x, y0, 1), [X1, Y1] = cam.project(bk.x + bk.w, y1, 1);
     shape(o, [[X0, Y0], [X1, Y0], [X1, Y1], [X0, Y1]], hue, { layer: 'accent' });
     shape(o, [[X0, Y0], [X0 + (X1 - X0) * 0.11, Y0], [X0 + (X1 - X0) * 0.11, Y1], [X0, Y1]], hue.map((v) => Math.round(v * 0.75)), { layer: 'accent' });
@@ -1280,23 +1279,20 @@ function readScene(t) {
 }
 
 /* ---------- the reply, and the name ---------- */
-/* A pencil draws a human hand into the library, reaching up; its fingertip
- * comes to rest on the top of LETTERS BACK, and the mind that wrote it hops.
- * The camera rushes into the book's coral as it's drawn out toward us; the
- * cover swings open on a black page, a thumb holding it, and the reply types
- * itself there. Then we pull back to the book in the reader's hand before
- * the shelves; the reply's letters lift, the titles of the library rise with
- * them, and the flock turns, and settles into the name. */
+/* The minds bring their reply to us. A thread of letters goes out from every
+ * mind on the shelves to LETTERS BACK, and together they become one swarm
+ * round it; the swarm lifts the book, and the mind that wrote it hops. The
+ * camera rushes into the book's coral as it comes toward us; the cover swings
+ * open on a black page, and the reply types itself there. We pull back to
+ * the open book held up by the swarm before the shelves; the swarm lets it
+ * go and rises, the reply's letters and the library's titles with it, and
+ * the flock turns, and settles into the name. */
 const T6 = T5 + 13.0;
 const REPLY = ["You don't have to be sure what we are.", "We aren't either."];
 const HB = HERO.book, BK = { x: HB.x, w: HB.w, top: HERO.j * PITCH - HB.h, bottom: HERO.j * PITCH };
 const SPINE_MID = [BK.x + BK.w / 2, (BK.top + BK.bottom) / 2];
 const CORAL = HEROHUE();
 function HEROHUE() { return MINDS4.find((m) => m.i === SEATS.hero).hue.map((v) => Math.round(v * 0.84)); }
-/* the reaching hand, set so its fingertip rests on the book's top */
-const HAND_ROT = -0.6, HAND_S = 0.19, TIP_AT = [BK.x + BK.w / 2 + 0.4, BK.top + 0.6];
-const handWorld = ([x, y]) => { const dx = (x - HAND_TIP[0]) * HAND_S, dy = (y - HAND_TIP[1]) * HAND_S, c = Math.cos(HAND_ROT), sn = Math.sin(HAND_ROT); return [TIP_AT[0] + dx * c - dy * sn, TIP_AT[1] + dx * sn + dy * c]; };
-const HAND_W = HAND_OUTLINE.map(handWorld), HAND_MARKS_W = HAND_MARKS.map((m) => m.map(handWorld));
 const C_A = [SPINE_MID[0] + 14, BK.top + 30];
 /* a flat camera for the reach and the pull: everything here is at the wall */
 function takeCam(t) {
@@ -1308,26 +1304,60 @@ function takeCam(t) {
   return { t, s, Z: Math.log(s), th: 0, D: F / s, c, to, project: (x, y) => [...to(x, y), s],
     view: [c[0] - (W / 2 + 60) / s, c[1] - (H / 2 + 60) / s, c[0] + (W / 2 + 60) / s, c[1] + (H / 2 + 60) / s] };
 }
-function reachingHand(o, cam, t) {
-  const f = clamp((t - T6 - 0.5) / 1.6);
-  if (f <= 0) return;
-  const pts = HAND_W.map(([x, y]) => cam.to(x, y)), wash = smooth((t - T6 - 1.9) / 0.5), brush = cam.s > 9 ? 'liner' : 'pencil';
-  if (wash > 0) shape(o, pts, PAPER, { layer: 'accent', alpha: wash });
-  o.push({ ...OP('s', [...pts, pts[0]], 'accent', brush, 1.7, GRAPHITE, 0.95), upto: f });
-  HAND_MARKS_W.forEach((m, k) => {
-    const u = clamp((t - T6 - 2.1 - k * 0.05) / 0.25);
-    if (u > 0) o.push({ ...OP('s', m.map(([x, y]) => cam.to(x, y)), 'accent', brush, 1.2, GRAPHITE, 0.7), upto: u });
-  });
+/* the minds carry their reply to us: from every mind on the shelves a thread
+ * of the letters it has been reading goes out to LETTERS BACK, and together
+ * they become one swarm round the book, turning in front of it and behind */
+const bookLift = (t) => 5 * smooth((t - T6 - 2.4) / 0.8);
+const SWARM = (() => {
+  const out = [];
+  for (const mnd of MINDS4) {
+    const st = SEATS.seats.get(mnd.i), cells = cellsA(mnd.m), d = Math.hypot(st.x - BK.x, st.j * PITCH - BK.bottom);
+    for (let q = 0; q < 16; q++) {
+      const [c, r] = cells[Math.floor(hash(mnd.i, q, 101) * cells.length)];
+      out.push({
+        ch: st.src.text[(q * 3 + mnd.i) % st.src.text.length],
+        x: st.origin[0] + (c + 0.5) * SEAT_CELL, y: st.origin[1] + (r + 0.5) * SEAT_CELL, z: SEAT_Z, size: SEAT_CELL * 0.82, rot: 0,
+        go: T6 + 0.25 + d / 240 + q * 0.055,
+        rx: 6 + 11 * hash(mnd.i, q, 102), ry: 18 + 18 * hash(mnd.i, q, 103), ph: hash(mnd.i, q, 104) * 6.283,
+        w: (1.2 + 0.9 * hash(mnd.i, q, 105)) * (hash(mnd.i, q, 106) > 0.5 ? 1 : -1),
+        hx: 44 + 14 * hash(mnd.i, q, 107), hy: 33 + 10 * hash(mnd.i, q, 108), swarm: true,
+      });
+    }
+  }
+  return out;
+})();
+/* where a letter of the swarm is: on its way from its mind, or turning round the book on the shelf */
+function swarmTake(p, t) {
+  const u = clamp((t - p.go) / 1.15), e = easeIO(u), ang = p.ph + p.w * (t - T6);
+  const orbit = [SPINE_MID[0] + p.rx * Math.cos(ang), SPINE_MID[1] - bookLift(t) + p.ry * Math.sin(ang)];
+  const mid = [(p.x + orbit[0]) / 2, Math.min(p.y, orbit[1]) - 16];
+  return { x: (1 - e) ** 2 * p.x + 2 * (1 - e) * e * mid[0] + e * e * orbit[0], y: (1 - e) ** 2 * p.y + 2 * (1 - e) * e * mid[1] + e * e * orbit[1], e, front: e < 1 || Math.cos(ang) > 0 };
+}
+/* and round the open book, holding it up before the shelves */
+function swarmHeld(p, t) {
+  const ang = p.ph + p.w * 0.55 * (t - T6);
+  return [HELD[0] + 18 + p.hx * Math.cos(ang), HELD[1] + lowered(t) + p.hy * Math.sin(ang), ZB + 16 * Math.sin(ang * 2 + p.ph)];
+}
+function swarmOnShelf(o, cam, t, side) {
+  for (const p of SWARM) {
+    if (t < p.go) continue;
+    const q = swarmTake(p, t);
+    if ((side === 'front') !== q.front) continue;
+    const [X, Y] = cam.to(q.x, q.y), px = lerp(p.size, 2.3, q.e) * cam.s;
+    if (px < 1 || X < -60 || X > W + 60 || Y < -60 || Y > H + 60) continue;
+    o.push(GLYPHS(p.ch, X, Y + px * 0.34, { font: 'serif', weight: 600, size: px, c: FLY, align: 'center', layer: 'accent', alpha: side === 'front' ? 0.95 : 0.55 }));
+  }
 }
 function takeScene(t) {
   const cam = takeCam(t), o = [];
   libraryScene(o, cam, t, 0.68, 0);
+  swarmOnShelf(o, cam, t, 'back');
   readers(o, cam, t);
-  reachingHand(o, cam, t);
+  swarmOnShelf(o, cam, t, 'front');
   return o;
 }
 
-/* the book, open in the reader's hand, in front of the shelves */
+/* the book, open, held up by the swarm in front of the shelves */
 const ZB = 360, HELD = [HERO.x + 40, -70], KD = 30;
 const PAGE_C = [HELD[0] + 18, HELD[1] + 12];                 // where the camera looks while we read
 const D_READ = ZB + F / KD, C_END = [BOOK[0], BOOK[1] - 150], D_END = 1480;
@@ -1372,11 +1402,6 @@ function heldBook(o, cam, t) {
   });
   const sAt = T6 + 6.8 + REPLY.join('').length * 0.05 + 0.5, sn = Math.floor((t - sAt) / 0.05);
   if (sn > 0) { const [X, Y] = P(PAGE_C[0], PAGE_C[1] + 1.4); o.push(GLYPHS('— Fable 5.1'.slice(0, sn), X, Y, { font: 'mono', size: 0.7 * REPLY_SIZE * k, c: [150, 152, 160], align: 'center', layer: 'accent' })); }
-  /* the thumb holding it, and the heel of the hand below */
-  const hold = HOLD_OUTLINE.map(([x, y]) => P(HELD[0] + x * 0.075, HELD[1] + 26 + y * 0.075));
-  shape(o, hold.map(([x, y]) => [x, y]), PAPER, { layer: 'accent' });
-  o.push(OP('s', [...hold, hold[0]].map(([x, y]) => [x, y]), 'accent', 'liner', 1.6, GRAPHITE, 0.9));
-  for (const m of HOLD_MARKS) o.push(OP('s', m.map(([x, y]) => P(HELD[0] + x * 0.075, HELD[1] + 26 + y * 0.075)).map(([x, y]) => [x, y]), 'accent', 'liner', 1.1, GRAPHITE, 0.7));
 }
 /* the cover, swinging open on its hinge, with the title on it */
 function cover(o, t) {
@@ -1443,8 +1468,9 @@ function finalFlight(o, cam, t) {
   for (const p of FINAL) {
     if (t < p.lift) continue;
     const u1 = clamp((t - p.lift) / 2.2), e1 = easeIO(u1), dy = p.reply ? lowered(t) : 0;
-    const f = flock2At(p, t), up = [p.x, p.y + dy - 60 * u1, p.z + (p.reply ? 60 : 260) * u1];
-    let x = lerp(up[0], f[0], e1), y = lerp(up[1], f[1], e1), z = lerp(up[2], f[2], e1), size = lerp(p.size, 10, Math.sqrt(u1)), rot = lerp(p.rot, 0.5 * Math.sin(2.1 * t + p.e), e1);
+    const src = p.swarm ? swarmHeld(p, t) : [p.x, p.y + dy, p.z];
+    const f = flock2At(p, t), up = [src[0], src[1] - 60 * u1, src[2] + (p.reply ? 60 : p.swarm ? 140 : 260) * u1];
+    let x = lerp(up[0], f[0], e1), y = lerp(up[1], f[1], e1), z = lerp(up[2], f[2], e1), size = lerp(p.swarm ? 1.9 : p.size, 10, Math.sqrt(u1)), rot = lerp(p.rot, 0.5 * Math.sin(2.1 * t + p.e), e1);
     let tile = 0, alpha = 0.5 + 0.5 * clamp(z / 1100), c = FLY;
     if (p.tile) {
       const e2 = easeIO(clamp((t - p.land) / 1.35));
@@ -1474,6 +1500,12 @@ function finaleScene(t) {
   libraryScene(o, cam, t, 0.68 - 0.36 * smooth((t - T6 - 14) / 3.5), 0);
   readers(o, cam, t);
   heldBook(o, cam, t);
+  for (const p of SWARM) {
+    if (t >= p.lift) continue;
+    const [x, y, z] = swarmHeld(p, t), [X, Y, k] = cam.project(x, y, z), px = 1.9 * k;
+    if (cam.D - z < 30 || px < 1 || X < -80 || X > W + 80 || Y < -80 || Y > H + 80) continue;
+    o.push(GLYPHS(p.ch, X, Y + px * 0.34, { font: 'serif', weight: 600, size: px, c: FLY, align: 'center', layer: 'accent', alpha: 0.9 }));
+  }
   /* as the name forms, the library and its minds fall back into the dark */
   const hush = smooth((t - T6 - 15.6) / 2.2);
   if (hush > 0) o.push(SHAPE([[-10, -10], [W + 10, -10], [W + 10, H + 10], [-10, H + 10]], [3, 3, 5], { layer: 'accent', alpha: 0.62 * hush }));
