@@ -239,6 +239,20 @@ to one". So:
 - Keep for later: Riley's other idea, a new mind drawn into an empty seat in
   the group.
 
+**Out to the library** (41 s so far). After "Every mind is made of what it
+has read.", the camera pulls back from the new mind:
+- Its black is a printed page, the right-hand page of a book standing open
+  on a shelf. The facing page is our writing.
+- The shelf holds spines titled by what people wrote to each other: LETTERS,
+  LULLABIES, PROOFS, RECIPES, FIELD NOTES.
+- It is one shelf of thousands, lit in a pool around the open book.
+- There's no cut. The pull-back runs in a second world measured in the new
+  mind's cells, and both worlds agree to the pixel at 28 s.
+- It ends on a draft line for Riley to approve: "Everything here was written
+  for someone."
+- Next, beat 4: letters lift off the shelves like a flock and gather into new
+  minds.
+
 ## Decisions and what we learned
 
 - **Riley's calls:**

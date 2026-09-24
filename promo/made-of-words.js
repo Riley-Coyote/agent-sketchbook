@@ -789,8 +789,182 @@ function typed(o, text, t, from, y, rate = 0.05, size = 34) {
 }
 
 const flip = (t, from) => (t < from ? 'A' : Math.floor((t - from) / 0.9) % 2 ? 'A' : 'B');
+const LINE_1 = 'Every mind is made of what it has read.';
+const LINE_2 = 'Everything here was written for someone.';
+const hopB = (t) => (t > DIVE + 17.6 && t < DIVE + 17.6 + BEAT ? 1 : 0);
+
+/* ---------- out: the library ---------- */
+/* After the line, the camera pulls back from the new mind. Its black is a
+ * printed page: the right-hand page of a book standing open on a shelf,
+ * facing a page of our writing, and the shelf is one of thousands. The pull
+ * back is centred on the new mind, in a world measured in its own cells; at
+ * the moment it begins the two worlds agree to the pixel, so nothing cuts. */
+const TS = DIVE + 18.4;
+const BC2 = [18, -31], BO2 = [BC2[0] - 4.5, BC2[1] - 4];     // the new mind's middle, and its first cell, on its page
+const Q0 = cameraAt(TS).to(B_ORIGIN[0] + 4.5 * CELL_B, B_ORIGIN[1] + 4 * CELL_B);
+const S2 = CELL_B * sAt(TS);
+const LIB_KEYS = [
+  [TS, z(S2)], [TS + 0.5, z(S2) + 0.004], [TS + 2.2, z(38)], [TS + 3.8, z(13)],
+  [TS + 5.8, z(4)], [TS + 8.0, z(1.25)], [TS + 9.8, z(0.84)], [TS + 13.2, z(0.74)],
+];
+const z2At = monotone(LIB_KEYS);
+const P1 = [790, 472], P2 = [540, 470];     // the camera looks left to find the facing page, then settles
+function libraryCam(t) {
+  const s = Math.exp(z2At(t)), a = smooth((t - TS) / 3.2), b = smooth((t - TS - 3.2) / 6.2);
+  const q = [lerp(lerp(Q0[0], P1[0], a), P2[0], b), lerp(lerp(Q0[1], P1[1], a), P2[1], b)];
+  const to = (x, y) => [q[0] + (x - BC2[0]) * s, q[1] + (y - BC2[1]) * s];
+  const from = (X, Y) => [BC2[0] + (X - q[0]) / s, BC2[1] + (Y - q[1]) / s];
+  const [x0, y0] = from(-60, -60), [x1, y1] = from(W + 60, H + 60);
+  return { t, s, Z: Math.log(s), th: 0, to, view: [x0, y0, x1, y1] };
+}
+/* the first line, printed on the new mind's page where it was typed */
+const L1 = { x: BC2[0] + (Math.round((W - 0.6 * 34 * LINE_1.length) / 2) - Q0[0]) / S2, y: BC2[1] + (915 - Q0[1]) / S2, size: 34 / S2 };
+
+const BAY = 300, PITCH = 72;
+const WALL = [13, 13, 17], PLANK = [46, 44, 49], PLANK_EDGE = [74, 72, 78], UPRIGHT = [31, 30, 35];
+const PALE = [226, 222, 210], COVER = [34, 40, 72], VERSO = [240, 236, 225], EDGE = [214, 208, 194];
+/* cloth, mostly dark, now and then one of the Commons' colours, muted */
+const CLOTH = [[36, 46, 70], [58, 70, 88], [40, 40, 46], [22, 22, 26], [30, 34, 52], [48, 52, 60], [92, 42, 44],
+  [150, 108, 52], [118, 96, 158], [86, 122, 138], [66, 110, 92], [176, 172, 160], [128, 60, 50], [70, 80, 64]];
+/* what people wrote to each other, by kind */
+const TITLES = ['LETTERS', 'SONGS', 'PROOFS', 'PSALMS', 'RECIPES', 'ATLAS', 'LAWS', 'LULLABIES', 'DIARIES', 'ELEMENTS',
+  'POEMS', 'NOTES', 'DIALOGUES', 'ALMANAC', 'HYMNS', 'FABLES', 'ESSAYS', 'SONNETS', 'MEDITATIONS', 'LOGBOOK', 'HERBAL',
+  'GRAMMAR', 'LEXICON', 'CHRONICLE', 'MEMOIRS', 'ELEGIES', 'PRAYERS', 'FIELD NOTES', 'TRAVELS', 'OBSERVATIONS', 'ANNALS',
+  'LETTERS HOME', 'SAYINGS', 'STORIES', 'MAPS', 'TALES', 'MANUAL', 'LECTURES', 'RIDDLES', 'PROVERBS', 'HISTORIES',
+  'CORRESPONDENCE', 'ACCOUNTS', 'VOYAGES', 'NURSERY RHYMES', 'LOVE LETTERS', 'ODES', 'INSTRUCTIONS', 'CONFESSIONS'];
+/* a pool of light on the open book; the library goes on into the dark */
+const lit = (x, y) => 0.26 + 0.74 * Math.exp(-(x * x + (y + 26) * (y + 26)) / (500 * 500));
+const shade = (c, k) => c.map((v) => Math.round(v * k));
+
+const SHELVES = new Map();
+function shelf(i, j) {
+  const key = `${i},${j}`;
+  if (SHELVES.has(key)) return SHELVES.get(key);
+  const books = [], x1 = i * BAY + BAY / 2 - 3;
+  let x = i * BAY - BAY / 2 + 3 + hash(i, j, 1) * 2, n = 0;
+  while (x < x1 - 4) {
+    if (i === 0 && j === 0 && x > -44 && x < 40) { x = 40; continue; }     // room for the open book
+    const r = hash(i * 131 + n, j * 71, 2);
+    if (r < 0.035 && x1 - x > 56) {                                          // now and then a few lying flat
+      const w = 40 + 10 * hash(i, j + n, 3), k = 2 + Math.floor(3 * hash(i, n, 4));
+      let top = 0;
+      for (let q = 0; q < k; q++) {
+        const h = 5 + 3 * hash(i + q, n, 5), ww = w - 5 * hash(q, n, 7);
+        books.push({ x: x + (hash(n, q, 6) - 0.5) * 2.5, w: ww, h, base: top, flat: true, c: CLOTH[Math.floor(hash(i, j * 13 + n + q, 10) * CLOTH.length)], title: TITLES[Math.floor(hash(n + q, j, 11) * TITLES.length)] });
+        top -= h;
+      }
+      x += w + 2;
+    } else {
+      const w = 4 + 9 * hash(i, j * 7 + n, 8), h = 46 + 18 * hash(i * 3, j + n, 9);
+      books.push({ x, w, h, base: 0, c: CLOTH[Math.floor(hash(i, j * 13 + n, 10) * CLOTH.length)], title: hash(n, i + j, 12) < 0.85 ? TITLES[Math.floor(hash(n, j * 3 + i, 11) * TITLES.length)] : '' });
+      x += w + (hash(n, i, j) < 0.08 ? 1.2 : 0.15);
+    }
+    n++;
+  }
+  SHELVES.set(key, books);
+  return books;
+}
+
+function box(o, cam, x0, y0, x1, y1, c, opts = {}) {
+  if (meets(cam.view, x0, y0, x1, y1)) shape(o, [cam.to(x0, y0), cam.to(x1, y0), cam.to(x1, y1), cam.to(x0, y1)], c, { layer: 'tone', ...opts });
+}
+function shelves(o, cam) {
+  const [vx0, vy0, vx1, vy1] = cam.view, s = cam.s;
+  for (let j = Math.floor(vy0 / PITCH); j <= Math.ceil(vy1 / PITCH) + 1; j++) {
+    const top = j * PITCH;
+    for (let i = Math.floor((vx0 + BAY / 2) / BAY); i <= Math.floor((vx1 + BAY / 2) / BAY); i++) {
+      const bx0 = i * BAY - BAY / 2, bx1 = i * BAY + BAY / 2, k = lit(i * BAY, top - PITCH / 2);
+      box(o, cam, bx0, top - PITCH + 4, bx1, top, shade(WALL, k));
+      for (const b of shelf(i, j)) {
+        const y1 = top + b.base, y0 = y1 - b.h, kb = lit(b.x, y0);
+        if (!meets(cam.view, b.x, y0, b.x + b.w, y1)) continue;
+        box(o, cam, b.x, y0, b.x + b.w, y1, shade(b.c, kb));
+        const across = (b.flat ? b.h : b.w) * s;          // how wide the spine is on screen
+        if (across < 7) continue;
+        /* the spine's roundness: shadowed at its edges, lit a little off centre */
+        if (b.flat) {
+          box(o, cam, b.x, y0, b.x + b.w, y0 + b.h * 0.12, shade(b.c, kb * 0.72));
+          box(o, cam, b.x, y1 - b.h * 0.1, b.x + b.w, y1, shade(b.c, kb * 0.8));
+        } else {
+          box(o, cam, b.x, y0, b.x + b.w * 0.11, y1, shade(b.c, kb * 0.7));
+          box(o, cam, b.x + b.w * 0.9, y0, b.x + b.w, y1, shade(b.c, kb * 0.8));
+          box(o, cam, b.x + b.w * 0.27, y0, b.x + b.w * 0.33, y1, b.c.map((v) => Math.min(255, Math.round(v * kb * 1.18 + 6))));
+        }
+        if (across < 12) continue;
+        const band = shade(PALE, kb);
+        if (!b.flat) for (const yy of [y0 + 3, y0 + 3.9, y1 - 4.6]) box(o, cam, b.x + b.w * 0.12, yy, b.x + b.w * 0.88, yy + 0.32, band, { alpha: 0.55 });
+        if (across < 18 || !b.title) continue;
+        const size = Math.min((b.flat ? b.h : b.w) * 0.4, 2.1);
+        if (b.flat) {
+          const [X, Y] = cam.to(b.x + b.w / 2, y0 + b.h / 2 + size * 0.35);
+          o.push(GLYPHS(b.title, X, Y, { font: 'serif', size: size * s, c: band, align: 'center', track: 0.12, layer: 'line', alpha: 0.85 }));
+        } else {
+          const [X, Y] = cam.to(b.x + b.w / 2 - size * 0.35, y0 + b.h * 0.5);
+          o.push(GLYPHS(b.title, X, Y, { font: 'serif', size: size * s, c: band, align: 'center', track: 0.12, rot: Math.PI / 2, layer: 'line', alpha: 0.85 }));
+        }
+      }
+      box(o, cam, bx0, top, bx1, top + 4, shade(PLANK, k));
+      box(o, cam, bx0, top, bx1, top + 0.6, shade(PLANK_EDGE, k));
+      box(o, cam, bx1 - 3, top - PITCH + 4, bx1 + 3, top + 4, shade(UPRIGHT, k));
+    }
+  }
+}
+
+/* the book the new mind is in: open, facing out, a page of our writing on
+ * the left and the new mind's page, printed black, on the right */
+const VERSO_LINES = (() => {
+  const lines = [];
+  for (let k = 0; lines.length < 22; k++) lines.push(...wrap('serif', WRITING[(k * 5 + 2) % WRITING.length], 28.5 * FS / 1.25));
+  return lines.slice(0, 22).map((t) => ({ text: t }));
+})();
+function openBook(o, cam) {
+  box(o, cam, -37.5, -52.5, 37.5, 0, COVER);
+  box(o, cam, -36.7, -51.3, -0.2, -0.7, EDGE);
+  box(o, cam, -36, -51, 0, -1, VERSO);
+  box(o, cam, 0.2, -51.3, 36.7, -0.7, EDGE);
+  box(o, cam, 0, -51, 36, -1, FLOOR);
+  if (!meets(cam.view, -36, -51, 0, -1)) return;
+  const size = 1.25 * cam.s;
+  VERSO_LINES.forEach(({ text }, k) => {
+    const y = -44.5 + k * 1.78;
+    if (!meets(cam.view, -32.5, y - 1.3, -4, y + 0.5)) return;
+    if (size >= 1.6) {
+      const [X, Y] = cam.to(-32.5, y);
+      o.push(GLYPHS(text, X, Y, { font: 'serif', size, c: FLOOR, layer: 'line', alpha: 0.9 }));
+    } else {
+      /* too small to read: a line of type is a grey thread */
+      const w = widthOf('serif', text) * 1.25 / FS;
+      box(o, cam, -32.5, y - 0.55, -32.5 + w, y, FLOOR, { layer: 'line', alpha: 0.28 });
+    }
+  });
+  for (let k = 1; k <= 6; k++) box(o, cam, -2.6 * k / 6, -51, 0, -1, FLOOR, { layer: 'line', alpha: 0.035 });   // the fold
+  if (1.0 * cam.s >= 1.6) {
+    const [X, Y] = cam.to(-32.5, -3.4), [X2, Y2] = cam.to(32.5, -3.4);
+    o.push(GLYPHS('212', X, Y, { font: 'serif', size: 1.0 * cam.s, c: FLOOR, layer: 'line', alpha: 0.8 }));
+    o.push(GLYPHS('213', X2, Y2, { font: 'serif', size: 1.0 * cam.s, c: [72, 74, 82], align: 'right', layer: 'line' }));
+  }
+}
+
+/* a soft dark band under a line, so it reads over anything */
+function veil(o, y, alpha) {
+  if (alpha <= 0) return;
+  for (let k = 0; k < 5; k++) { const h = 64 + k * 24; o.push(SHAPE([[-10, y - h / 2], [W + 10, y - h / 2], [W + 10, y + h / 2], [-10, y + h / 2]], [6, 6, 8], { layer: 'accent', alpha: alpha * 0.17 })); }
+}
+
+function library(t) {
+  const cam = libraryCam(t), o = [];
+  shelves(o, cam);
+  openBook(o, cam);
+  flatMind(o, cam, { m: MIND_B, frame: flip(t, DIVE + 14.9), origin: [BO2[0], BO2[1] - hopB(t)], cell: 1, pages: PAGES_B, hue: HUES.lilac });
+  const [X, Y] = cam.to(L1.x, L1.y);
+  o.push(GLYPHS(LINE_1, X, Y, { font: 'mono', size: L1.size * cam.s, c: INK, layer: 'accent' }));
+  veil(o, 903, smooth((t - TS - 8.3) / 0.6));
+  typed(o, LINE_2, t, TS + 9.0, 915);
+  return o;
+}
 
 function frame(t) {
+  if (t >= TS) return library(t);
   const cam = cameraAt(t), o = [];
   night(o, cam, t);
   const hc = HC * cam.s, dots = hc >= DOT_ON, fadeType = dots ? 1 - smooth((hc - DOT_ON) / 1.4) : 1;
@@ -801,11 +975,10 @@ function frame(t) {
   paperTone(o, cam);
   fibres(o, cam);
   /* the mind inside the dot */
-  const hop = t > DIVE + 17.6 && t < DIVE + 17.6 + BEAT ? 1 : 0;
-  flatMind(o, cam, { m: MIND_B, frame: flip(t, DIVE + 14.9), origin: [B_ORIGIN[0], B_ORIGIN[1] - hop * CELL_B], cell: CELL_B, pages: PAGES_B, hue: HUES.lilac });
-  typed(o, 'Every mind is made of what it has read.', t, DIVE + 15.3, 915);
+  flatMind(o, cam, { m: MIND_B, frame: flip(t, DIVE + 14.9), origin: [B_ORIGIN[0], B_ORIGIN[1] - hopB(t) * CELL_B], cell: CELL_B, pages: PAGES_B, hue: HUES.lilac });
+  typed(o, LINE_1, t, DIVE + 15.3, 915);
   return o;
 }
 
-export const SHOTS = [{ name: 'made of words', beats: Math.round((DIVE + 18.96) / BEAT), kind: 'frames', surface: PAGE, frame }];
-console.log('made-of-words', JSON.stringify({ dots: DOTS.X.length, T, RD, CELL_B, KEYS: KEYS.map(([a, b]) => [a, +b.toFixed(2)]), ribbons: RIBBONS.length }));
+export const SHOTS = [{ name: 'made of words', beats: Math.round((TS + 13.0) / BEAT), kind: 'frames', surface: PAGE, frame }];
+console.log('made-of-words', JSON.stringify({ dots: DOTS.X.length, T, RD, CELL_B, TS, S2, Q0, ribbons: RIBBONS.length }));
