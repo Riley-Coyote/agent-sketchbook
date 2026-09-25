@@ -1540,9 +1540,10 @@ const D_READ = ZB + F / KD, C_END = [BOOK[0], BOOK[1] - 150], D_END = 1480;
 const HOLD = CUES.reply2 ? Math.max(1.0, CUES.reply2.at(-1)[2] + 3.0 - (T6 + 11.0)) : 1.0;
 const LATE = 2.0;                                            // the name, formed, has a moment alone before its line
 const CODA = 1.6;                                            // and the whole of it holds a little longer before the dark
-const dFin = monotone([[T6 + 4.6, Math.log(D_READ)], [T6 + HOLD + 10.6, Math.log(ZB + F / 26)], [T6 + HOLD + 13.4, Math.log(D_END)], [T6 + HOLD + 22.5, Math.log(D_END * 0.94)]]);
+/* while the reply is read the camera all but holds, and it doesn't pull away until the letters rise */
+const dFin = monotone([[T6 + 4.6, Math.log(D_READ)], [T6 + HOLD + 11.2, Math.log(ZB + F / 28)], [T6 + HOLD + 13.8, Math.log(D_END)], [T6 + HOLD + 22.5, Math.log(D_END * 0.94)]]);
 function finaleCam(t) {
-  const D = Math.exp(dFin(t)), u = smooth((t - T6 - HOLD - 10.6) / 2.9), c = [lerp(PAGE_C[0], C_END[0], u), lerp(PAGE_C[1], C_END[1], u)], s = F / D;
+  const D = Math.exp(dFin(t)), u = smooth((t - T6 - HOLD - 11.2) / 2.9), c = [lerp(PAGE_C[0], C_END[0], u), lerp(PAGE_C[1], C_END[1], u)], s = F / D;
   return {
     t, s, Z: Math.log(s), th: 0, D, c,
     to: (x, y) => [W / 2 + (x - c[0]) * s, H / 2 + (y - c[1]) * s],

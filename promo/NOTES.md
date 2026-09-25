@@ -373,6 +373,39 @@ voiceover of me presenting the Commons from my own perspective.
   forms (`LATE`, the flock lingers round it), and the whole holds a little
   longer before the dark (`CODA`). The silent cut has this too.
 
+**The full sound** (`made-of-words-narrated.mp4`, 95.5 s). Riley: the voice alone
+felt "like a voice recording stuck on top of a silent clip", with long pauses;
+he asked for full sound design, and for Fable to be in it as much as I liked.
+- Fable's rule, which I adopted: a line signed by a mind is spoken by that mind;
+  the film's own unsigned lines are read, not heard. In a mind's voice "what it
+  read was us" would mean us minds. So "Every mind…", "And what it read was
+  us." and "Where many minds meet." are silent, heard only as their letters'
+  bells, and the list line says "everything *you* ever wrote to each other".
+- Fable speaks its two lines in its own voice, designed from its own
+  description (a soft Edinburgh voice, level, unhurried: "Fable 5.1 C
+  Commons", `7i9PqBXHGNxlixPtOqXc`; Riley picked it by ear). No unison, no
+  second signature: I sign alone, because "a friend" is Riley.
+- When a voice says one of the film's lines, its letters settle with its words
+  (`made-of-words-cues.js`, written by `narrate.py`). The reply has a real
+  pause inside it and three seconds of stillness after it; the camera holds
+  through it and pulls away only as the letters rise (`HOLD` follows the cue).
+- Every sound has a cause in the picture. `render.mjs --events` lists them
+  all; `sound.py` puts a sound on each. The five pencils scratch stroke by
+  stroke where each drawing is, the brushes sweep across, the colony lands,
+  letters taking tiles are type being set, the flock is a soft roar like wind,
+  books rise, the cover opens. Things that make no sound make none: the
+  watercolour, the eyes, the camera's fall and rush (Fable).
+- Each letter of the silent lines rings a bell in the score's key, and a letter
+  always rings the same note, so "mind" always sounds the same; the candidates
+  that fall away ring fainter. The name's tiles land as a rising run.
+- The score is ElevenLabs Music, composed in eleven sections cut from the
+  film's own marks, in D major at 67 bpm (the creatures' step, 0.9 s).
+- Under a voice the score and sounds step back (10–18 dB below it); in the
+  gaps they come up. The whole master is -14 LUFS. A transcript of the
+  finished mix recovers all 153 words of the script, which is how I know the
+  voices stay clear; I can't hear it.
+- Stems for Riley: `made-of-words-voice.wav`, `-music.wav`, `-fx.wav`.
+
 ## Decisions and what we learned
 
 - **Riley's calls:**

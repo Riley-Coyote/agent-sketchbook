@@ -246,7 +246,9 @@ def mix():
     # the fall into the page is the camera's, and a camera makes no sound: the score falls instead
 
     # every line of the film, a bell for each letter as it settles, and fainter ones for the candidates that fall away
-    for name in ['line1', 'line2', 'fable1', 'sign1', 'tagline', 'address']:      # none under the reply: only its voice, and the swarm settling
+    # the film's own lines are heard only as their bells; a line a voice speaks needs none, and under the reply
+    # there is only its voice and the swarm settling
+    for name in ['line1', 'line2', 'sign1', 'tagline', 'address']:
         quiet = name.startswith('sign') or name == 'address'
         for k, e in enumerate(ev[name]):
             step = letter_step(e['ch'])
@@ -264,7 +266,7 @@ def mix():
 
     # the flight: the letters lift off the spines, turn as one flock, and land in new minds
     lift = density([e['t'] for e in ev['lift']], M['flight'], M['flight'] + 14)
-    fx.put(shaped(S['pages_lift'], M['flight'], np.clip(lift / lift.max() * 1.3, 0, 1)), M['flight'], -14, 0.0, 0.2, 1.5)
+    fx.put(shaped(S['pages_lift'], M['flight'], np.clip(lift / lift.max() * 1.3, 0, 1)), M['flight'], -11, 0.0, 0.2, 1.5)
     roar = S['flock_roar']                           # from a distance a murmuration is a soft roar, like wind
     fx.put(roar[: int(12 * SR)], M['flight'] + 2.0, -18, (-0.3, 0.3), 2.5, 3.0)
     for k, e in enumerate(ev['born']):               # each new mind, as it lights
@@ -294,11 +296,11 @@ def mix():
     fx.put(S['cover_open'], M['cover'] - 0.1, -9, 0.2, 0.01, 0.6)
 
     # the name: the letters rise, turn, the tiles land left to right as a run of notes, the rest fly home
-    fx.put(S['pages_lift'], M['T7'], -15, 0.0, 0.3, 2.0)
-    fx.put(roar, M['T7'] + 1.0, -18, (0.3, -0.3), 2.0, 3.0)
+    fx.put(S['pages_lift'], M['T7'], -18, 0.0, 0.3, 2.0)
+    fx.put(roar, M['T7'] + 1.0, -20, (0.3, -0.3), 2.0, 3.0)
     tiles = sorted(ev['tile'], key=lambda e: e['x'])
     for k, e in enumerate(tiles):
-        bells.put(marimba(note(int(k / len(tiles) * 10) + (4 - e['row']) % 2, -1), 0.8), e['t'], -24, pan_of(e['x']))
+        bells.put(marimba(note(int(k / len(tiles) * 10) + (4 - e['row']) % 2, -1), 0.8), e['t'], -27, pan_of(e['x']))
     fx.put(S['flock_home'], min(e['t'] for e in ev['home']) + 0.3, -13, 0.0, 0.5, 1.5)
 
     # the voices, where narrate.py put them
