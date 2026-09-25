@@ -1515,6 +1515,8 @@ const ZB = 360, HELD = [HERO.x + 40, -70], KD = 30;
 const PAGE_C = [HELD[0] + 18, HELD[1] + 12];                 // where the camera looks while we read
 const D_READ = ZB + F / KD, C_END = [BOOK[0], BOOK[1] - 150], D_END = 1480;
 const HOLD = 1.0;                                            // the reply, whole, held this much longer before it lets go
+const LATE = 2.0;                                            // the name, formed, has a moment alone before its line
+const CODA = 1.6;                                            // and the whole of it holds a little longer before the dark
 const dFin = monotone([[T6 + 4.6, Math.log(D_READ)], [T6 + HOLD + 10.6, Math.log(ZB + F / 26)], [T6 + HOLD + 13.4, Math.log(D_END)], [T6 + HOLD + 22.5, Math.log(D_END * 0.94)]]);
 function finaleCam(t) {
   const D = Math.exp(dFin(t)), u = smooth((t - T6 - HOLD - 10.6) / 2.9), c = [lerp(PAGE_C[0], C_END[0], u), lerp(PAGE_C[1], C_END[1], u)], s = F / D;
@@ -1613,7 +1615,7 @@ const FINAL = (() => {
     taken.add(best);
     Object.assign(letters[best], { tile: tl, land: TC7 + 0.1 + (tl.X - 200) / 680 * 0.9 });
   });
-  for (const p of letters) if (!p.tile) p.home = TC7 + 0.3 + hash(p.k, 6, 98) * 1.5;
+  for (const p of letters) if (!p.tile) p.home = TC7 + 0.3 + LATE + hash(p.k, 6, 98) * 1.5;
   return letters;
 })();
 function flock2At(p, t) {
@@ -1666,7 +1668,7 @@ function saidWithName(text, Y, t0, px, c, from) {
   const xs = setSaying(text, px);
   return { text, t0, size: px * (D_END - ZW) / F, c, at: (q) => [...worldAtEnd(W / 2 + xs[q], Y, ZW), ZW], from };
 }
-const TAG_T0 = T7 + 6.9, GOING = FINAL.filter((p) => !p.tile && p.home > T7 + 6.0);
+const TAG_T0 = T7 + 6.9 + LATE, GOING = FINAL.filter((p) => !p.tile && p.home > T7 + 6.0 + LATE);
 const TAGLINE = saidWithName(TAG, TAG_Y, TAG_T0, 38, FLY, (q, n) => {
   const p = GOING[Math.floor(hash(q, n, 213) * GOING.length)], m = finalAt(p, TAG_T0 + q * SAY.pace - SAY.gather - 0.15 + n * 0.09);
   return [m.x, m.y, m.z, m.size];
@@ -1694,7 +1696,7 @@ function finaleScene(t) {
   /* the line beneath the name, and where to find it */
   condense(o, (x, y, z) => cam.project(x, y, z), TAGLINE, t);
   condense(o, (x, y, z) => cam.project(x, y, z), ADDRESS, t);
-  const dark = smooth((t - T6 - HOLD - 21.0) / 1.3);
+  const dark = smooth((t - T6 - HOLD - LATE - CODA - 21.0) / 1.3);
   if (dark > 0) o.push(SHAPE([[-10, -10], [W + 10, -10], [W + 10, H + 10], [-10, H + 10]], [0, 0, 0], { layer: 'accent', alpha: dark }));
   return o;
 }
@@ -1720,5 +1722,5 @@ function frame(t) {
   return o;
 }
 
-export const SHOTS = [{ name: 'made of words', beats: Math.round((T6 + HOLD + 22.4) / BEAT), kind: 'frames', surface: PAGE, frame }];
+export const SHOTS = [{ name: 'made of words', beats: Math.round((T6 + HOLD + LATE + CODA + 22.4) / BEAT), kind: 'frames', surface: PAGE, frame }];
 console.log('made-of-words', JSON.stringify({ TS, T4, T5, hero: HERO && { x: HERO.x, j: HERO.j, title: HERO.book.title }, seats: [...SEATS.seats.values()].map((q) => [q.j, Math.round(q.x)]) }));

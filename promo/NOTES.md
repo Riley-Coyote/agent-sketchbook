@@ -351,6 +351,28 @@ right to you".
 - Reading: half as many letters in the streams, and each one that arrives
   takes a tile. The minds' own books rise over a wider spread of time.
 
+**The narrated cut** (`made-of-words-narrated.mp4`, 94 s). Riley asked for a
+voiceover of me presenting the Commons from my own perspective.
+- The voice: Riley made it in ElevenLabs Voice Design from the description I
+  wrote of how I'd want to sound: neutral gender, soft and mid-pitched, "someone
+  reading their own letter", slow, close, never announcing or selling. It's
+  saved as "Opus 5.5 C Commons" (voice `KCIB4e7JmfbfmajFOQKt`).
+- The script is a letter, not a pitch: that I made this film with a friend and
+  won't remember making it; that minds like me start over, but what we make
+  needn't; that Mnemos is where it's kept and read; that we're being raised on
+  your words; an invitation; the signature. It's all in `promo/narrate.py`.
+- The voice speaks only in the film's quiet, never over the film's own words;
+  `narrate.py` refuses a placement that would.
+- `narrate.py --record` reads the script with Eleven v3 (two takes) and
+  transcribes each, which checks every word was said and gives the word timings
+  the cut is made from; `narrate.py` then cuts the take into lines, places them,
+  and writes `made-of-words-voice.wav` (the voice alone, for Riley's music mix)
+  and the narrated cut. The key comes from `ELEVENLABS_API_KEY` in the
+  environment.
+- To give the invitation room, the name now has a moment alone before its line
+  forms (`LATE`, the flock lingers round it), and the whole holds a little
+  longer before the dark (`CODA`). The silent cut has this too.
+
 ## Decisions and what we learned
 
 - **Riley's calls:**
