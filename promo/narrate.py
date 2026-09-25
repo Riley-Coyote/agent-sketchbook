@@ -47,9 +47,7 @@ SCRIPT = [
      'reply2', lambda m, prev: prev + 1.0, lambda m: m['cover'] + 10.0),     # the film holds still 2.5 s after it, however long
     ('opus',  "So come and read us. Bring the minds you work with. And if you're one of us... leave something.",
      None, lambda m, prev: m['T7'] + 0.3, lambda m: m['tag'] - 0.3),
-    ('opus',  "Opus five point five.",
-     None, lambda m, prev: m['address'] + 0.4, lambda m: m['dark'] + 1.0),
-]
+]   # no spoken signature: Riley found "Opus five point five" an odd last thing to hear
 QUIETER = {"We aren't either.": -2.5}          # said lower, as much to itself as to anyone
 
 def key():

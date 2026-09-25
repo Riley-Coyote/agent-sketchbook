@@ -121,6 +121,7 @@ import subprocess
 import numpy as np
 
 SR = 48000
+VOICE_DB, MUSIC_DB = -18.0, -6.0          # every line of voice at one level; the score's level under it all
 SCORE_FILE = 'score'                       # which reading of the score is in the cut
 PENTA = [0, 2, 4, 7, 9]                    # D major pentatonic, over D: every bell belongs to the score
 D4 = 293.66
@@ -178,6 +179,81 @@ def grain(src, dur, seed, fade=0.01):
     f = min(len(g) // 2, int(fade * SR))
     if f: g[:f] *= np.linspace(0, 1, f); g[-f:] *= np.linspace(1, 0, f)
     return g
+
+from scipy.signal import butter, sosfilt, sosfiltfilt, fftconvolve
+
+def filt(x, kind, hz, order=2, zero_phase=False):
+    sos = butter(order, hz, btype=kind, fs=SR, output='sos')
+    return (sosfiltfilt if zero_phase else sosfilt)(sos, x, axis=-1).astype(np.float32)
+
+def shelf_low(x, hz, db):
+    """a gentle low shelf: the part below hz raised or lowered by db"""
+    low = filt(x, 'lowpass', hz, 1, zero_phase=True)
+    return (x + (10 ** (db / 20) - 1) * low).astype(np.float32)
+
+def voiced(x):
+    """a voice cleaned as an engineer would: no rumble, less of the close microphone's boom"""
+    return shelf_low(filt(x, 'highpass', 80), 220, -2.5)
+
+def compress(x, thresh=-24.0, ratio=2.0, attack=0.015, release=0.25, block=0.005):
+    """a gentle compressor on a stereo bus: levels evened, not squashed"""
+    n = int(block * SR); m = x.shape[1] // n
+    rms = np.sqrt((np.abs(x[:, : m * n]).max(0).reshape(m, n) ** 2).mean(1)) + 1e-9
+    lvl = 20 * np.log10(rms)
+    a, r = np.exp(-block / attack), np.exp(-block / release)
+    env = np.empty(m); e = lvl[0]
+    for i, v in enumerate(lvl):
+        e = a * e + (1 - a) * v if v > e else r * e + (1 - r) * v
+        env[i] = e
+    gain_db = np.minimum(0, (thresh - env) * (1 - 1 / ratio))
+    g = np.interp(np.arange(x.shape[1]), (np.arange(m) + 0.5) * n, 10 ** (gain_db / 20))
+    return (x * g).astype(np.float32)
+
+def room_ir(rt60=0.75, predelay=0.014, seed=3):
+    """one small, soft room for everything to share: early reflections, then a darkening tail"""
+    n = int((rt60 * 1.4 + predelay) * SR); t = np.arange(n) / SR
+    rng = np.random.default_rng(seed); ir = np.zeros((2, n), np.float32)
+    tail = np.exp(-6.91 * np.clip(t - predelay, 0, None) / rt60) * (t >= predelay + 0.02)
+    for c in range(2):
+        ir[c] = rng.standard_normal(n) * tail
+        for d, g in [(0.009, 0.55), (0.014, 0.42), (0.021, 0.34), (0.029, 0.26), (0.038, 0.2), (0.051, 0.14)]:
+            ir[c, int((predelay + d * (1 + 0.11 * c)) * SR)] += g * (1 if (c + int(d * 1000)) % 2 else -1)
+    ir = filt(ir, 'lowpass', 5500)
+    return ir / np.sqrt((ir ** 2).sum(1, keepdims=True))
+
+def speaking(voice_bus, look=0.4, hold=0.9, release=1.0):
+    """0 … 1, how much a voice is speaking: held through the gaps between words, rising a little before it"""
+    from scipy.ndimage import maximum_filter1d
+    v = np.abs(voice_bus).mean(0); win = int(0.05 * SR)
+    env = np.sqrt(np.convolve(v ** 2, np.ones(win) / win, mode='same'))
+    on = maximum_filter1d((env > 10 ** (-40 / 20)).astype(np.float32), int(hold * SR))
+    on = np.roll(on, -int(look * SR))
+    k = np.hanning(int(release * SR)); k /= k.sum()
+    return np.clip(np.convolve(on, k, mode='same'), 0, 1).astype(np.float32)
+
+def short_level(x, win=0.4, block=0.05):
+    """short-term level in dB, every `block` seconds"""
+    m = np.abs(x).mean(0) if x.ndim == 2 else np.abs(x)
+    n = int(block * SR); k = len(m) // n
+    ms = (m[: k * n].reshape(k, n) ** 2).mean(1)
+    w = max(1, int(win / block)); ms = np.convolve(ms, np.ones(w) / w, mode='same')
+    return 10 * np.log10(ms + 1e-12)
+
+def keep_under(bus, voice_bus, margin, held, block=0.05, attack=0.15, release=0.9):
+    """a sidechain: while a voice speaks, how far to turn a bus down so it stays `margin` dB under the voice,
+    and no further. Smoothed so it never pumps. Returns a gain per sample."""
+    from scipy.ndimage import maximum_filter1d
+    V, B = short_level(voice_bus), short_level(bus)
+    V = maximum_filter1d(V, int(1.6 / block))              # the voice's speaking level, not the gaps between its words
+    k = min(len(V), len(B))
+    h = held[: k * int(block * SR): int(block * SR)][:k]
+    want = np.minimum(0, (V[:k] - margin) - B[:k]) * h
+    a, r = np.exp(-block / attack), np.exp(-block / release)
+    g = np.empty(k); e = 0.0
+    for i, w in enumerate(want):
+        e = a * e + (1 - a) * w if w < e else r * e + (1 - r) * w
+        g[i] = e
+    return np.interp(np.arange(bus.shape[1]), (np.arange(k) + 0.5) * int(block * SR), 10 ** (g / 20)).astype(np.float32)
 
 def rnd(k, salt=0):
     return (np.sin(k * 127.1 + salt * 311.7) * 43758.5453) % 1
@@ -306,38 +382,46 @@ def mix():
     # the voices, where narrate.py put them
     takes = {}
     for who, text, cue, at, words, (a, b), take in narrate.placed():
-        if take not in takes: takes[take] = normal(load(narrate.VOICE_DIR / f'{take}.mp3'), -18)
+        if take not in takes: takes[take] = voiced(load(narrate.VOICE_DIR / f'{take}.mp3'))
         a0 = max(0.0, a - 0.12)
-        voice.put(takes[take][int(a0 * SR): int((b + 0.4) * SR)], at - (a - a0), narrate.QUIETER.get(text, 0.0), 0.0, 0.03, 0.25)
+        line = normal(takes[take][int(a0 * SR): int((b + 0.4) * SR)], VOICE_DB)       # every line at the same level
+        voice.put(line, at - (a - a0), narrate.QUIETER.get(text, 0.0), 0.0, 0.03, 0.25)
+    voice.x = compress(voice.x, thresh=VOICE_DB - 4, ratio=2.0)
 
     # the score, under it all, stepping back whenever a voice speaks
     score = load(SCORE_FILE, stereo=True)
     score = score * 10 ** ((-20 - level(score)) / 20)
-    music.put2(score, 0.0, -6)
-    # whenever a voice speaks, the score and the sounds step back (by about 11 and 8 dB), and come up again in the gaps
-    v = np.abs(voice.x).mean(0)
-    win = int(0.05 * SR); env = np.sqrt(np.convolve(v ** 2, np.ones(win) / win, mode='same'))
-    speaking = (env > 10 ** (-40 / 20)).astype(np.float32)
-    from scipy.ndimage import maximum_filter1d
-    speaking = maximum_filter1d(speaking, int(0.9 * SR))            # held through the gaps between words
-    k = np.hanning(int(0.5 * SR)); k /= k.sum()
-    held = np.clip(np.convolve(speaking, k, mode='same'), 0, 1)
-    music.x *= 1 - 0.82 * held
-    fx.x *= 1 - 0.7 * held
-    bells.x *= 1 - 0.4 * held
+    music.put2(score, 0.0, MUSIC_DB)
+    # when a voice speaks, the score makes room where the voice lives (the middle of the spectrum, 250 Hz – 5 kHz)
+    # and keeps its body and air; the sounds step back a little. No hole opens under the voice.
+    held = speaking(voice.x)
+    low, high = filt(music.x, 'lowpass', 250, 2, True), filt(music.x, 'highpass', 5000, 2, True)
+    mid = music.x - low - high
+    g = keep_under(music.x, voice.x, 10.0, held)           # the score stays 10 dB under a voice: fully in the voice's band,
+    music.x = (low * g ** 0.6 + mid * g + high * g ** 0.6).astype(np.float32)   # partly in its body and air
+    fx.x *= keep_under(fx.x, voice.x, 11.0, held)
+    bells.x *= keep_under(bells.x, voice.x, 13.0, held)
     # under the reply almost nothing: its voice, and the swarm settling (Fable: the stillest moment in the film)
     t = np.arange(music.x.shape[1]) / SR
     still = np.clip((t - M['cover'] - 0.6) / 0.8, 0, 1) * np.clip((M['T7'] + 0.4 - t) / 0.6, 0, 1)
     music.x *= 1 - 0.7 * still
     fx.x *= 1 - 0.5 * still
 
+    # one small room for all of it, so the voices stand where the pencils and pages are
+    ir = room_ir()
+    send = voice.x * 10 ** (-15 / 20) + bells.x * 10 ** (-9 / 20) + fx.x * 10 ** (-17 / 20)
+    room_bus = np.stack([fftconvolve(send[c], ir[c])[: send.shape[1]] for c in range(2)]).astype(np.float32)
+    # and a breath of air under everything, so there is never dead silence
+    air = normal(load('library'), -20)
+    for t0 in np.arange(0, L, len(air) / SR - 2.0): fx.put(air, t0, -44, 0.0, 1.5, 1.5)
     # it all goes dark together
     dark = np.clip((np.arange(fx.x.shape[1]) / SR - M['dark']) / 1.4, 0, 1)
     for bus in (fx, bells, music): bus.x *= (1 - dark) ** 2
+    room_bus *= (1 - dark * 0.7) ** 2
 
     out = ROOT / 'out'
-    stems = {'voice': voice.x, 'music': music.x, 'fx': fx.x + bells.x}
-    total = voice.x + music.x + fx.x + bells.x
+    stems = {'voice': voice.x, 'music': music.x, 'fx': fx.x + bells.x, 'room': room_bus}
+    total = compress(voice.x + music.x + fx.x + bells.x + room_bus, thresh=-22, ratio=1.4, attack=0.03, release=0.3)   # glue
     n = int(L * SR)
     scale = min(1.0, 0.98 / np.abs(total).max())          # one scale for all, so the stems still add up to the mix
     for name, x in [*stems.items(), ('mix', total)]:
