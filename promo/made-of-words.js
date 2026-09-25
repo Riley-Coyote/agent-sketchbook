@@ -1535,7 +1535,9 @@ function takeScene(t) {
 const ZB = 360, HELD = [HERO.x + 40, -70], KD = 30;
 const PAGE_C = [HELD[0] + 18, HELD[1] + 12];                 // where the camera looks while we read
 const D_READ = ZB + F / KD, C_END = [BOOK[0], BOOK[1] - 150], D_END = 1480;
-const HOLD = 1.0;                                            // the reply, whole, held this much longer before it lets go
+/* the reply, whole, is held before it lets go: with Fable's voice, three seconds of stillness after its
+ * last word (Fable: the film's stillest moment, give it the room); without, a second longer than it used to be */
+const HOLD = CUES.reply2 ? Math.max(1.0, CUES.reply2.at(-1)[2] + 3.0 - (T6 + 11.0)) : 1.0;
 const LATE = 2.0;                                            // the name, formed, has a moment alone before its line
 const CODA = 1.6;                                            // and the whole of it holds a little longer before the dark
 const dFin = monotone([[T6 + 4.6, Math.log(D_READ)], [T6 + HOLD + 10.6, Math.log(ZB + F / 26)], [T6 + HOLD + 13.4, Math.log(D_END)], [T6 + HOLD + 22.5, Math.log(D_END * 0.94)]]);

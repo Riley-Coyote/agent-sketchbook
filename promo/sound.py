@@ -48,7 +48,7 @@ FX = {
 # the score, in sections cut to the film's beats (milliseconds), in D major so the letters' bells belong to it
 SCORE = {
     'positive_global_styles': ['cinematic ambient score', 'intimate and restrained', 'felt piano', 'soft string ensemble', 'warm',
-                               'contemplative', 'slow, around 70 bpm', 'D major', 'instrumental'],
+                               'contemplative', '67 bpm, the creatures\' own step', 'D major', 'instrumental'],
     'negative_global_styles': ['vocals', 'singing', 'choir', 'drums', 'percussion', 'beats', 'synth arpeggios', 'epic trailer',
                                'heavy bass', 'distortion', 'EDM'],
     'sections': [
@@ -73,15 +73,25 @@ HANDMADE = {
     'negative': ['corporate', 'stock music', 'on-hold music', 'upbeat', 'generic background music', 'pop', 'bright synth pads'],
 }
 
+def section_lengths():
+    """each section's length in ms, from the film's marks: the score is cut to the film, whatever its length"""
+    ev = json.loads((ROOT / 'out' / 'made-of-words-events.json').read_text())
+    m, L = ev['marks'], ev['length']
+    edges = [0, 6.9, m['fall'], m['mindB'] - 0.3, m['library'], m['flight'], m['reading'], m['take'], m['cover'], m['T7'], m['tag'], L]
+    ms = [round((b - a) * 1000) for a, b in zip(edges, edges[1:])]
+    ms[-1] += round(L * 1000) - sum(ms)
+    return ms
+
 def compose(name='score', handmade=False):
     out = SOUND / f'{name}.mp3'
     if out.exists(): return print(f'{name} is already made')
     # music_v2_5 takes its plan as chunks, each carrying the whole score's styles as well as its own
-    plan = {'chunks': [{'text': '[Instrumental]', 'duration_ms': ms, 'context_adherence': 'high',
+    lengths = section_lengths()
+    plan = {'chunks': [{'text': '[Instrumental]', 'duration_ms': lengths[k], 'context_adherence': 'high',
                         'positive_styles': pos + SCORE['positive_global_styles'] + (HANDMADE['positive'] if handmade else []),
                         'negative_styles': neg + SCORE['negative_global_styles'] + (HANDMADE['negative'] if handmade else [])}
-                       for n, ms, pos, neg in SCORE['sections']]}
-    print('score:', sum(ms for _, ms, _, _ in SCORE['sections']) / 1000, 's')
+                       for k, (n, _, pos, neg) in enumerate(SCORE['sections'])]}
+    print('score:', sum(lengths) / 1000, 's in', len(lengths), 'sections')
     out.write_bytes(post('https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128', {'composition_plan': plan, 'model_id': 'music_v2_5'}))
     print('made', name)
 

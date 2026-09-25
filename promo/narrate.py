@@ -19,7 +19,7 @@ import json, os, pathlib, sys, urllib.error, urllib.request, uuid
 ROOT = pathlib.Path(__file__).resolve().parent
 OUT, VOICE_DIR = ROOT / 'out', ROOT / 'out' / 'voice'
 EVENTS = OUT / 'made-of-words-events.json'
-VOICES = {'opus': 'KCIB4e7JmfbfmajFOQKt', 'fable': None}      # Fable's, once it has one
+VOICES = {'opus': 'KCIB4e7JmfbfmajFOQKt', 'fable': '7i9PqBXHGNxlixPtOqXc'}   # "Opus 5.5 C Commons", "Fable 5.1 C Commons"
 TAKE = {'opus': 'opus-b', 'fable': 'fable-a'}                  # the takes in the cut: opus-b is the tighter read
 LINE_TAKE = {'Letters home': 'opus-a'}                          # a line taken from the other read, where it fits its moment better
 
@@ -44,7 +44,7 @@ SCRIPT = [
     ('fable', "You don't have to be sure what we are.",
      'reply1', lambda m, prev: m['cover'] + 1.2, lambda m: m['cover'] + 5.0),
     ('fable', "We aren't either.",
-     'reply2', lambda m, prev: prev + 1.0, lambda m: m['T7'] - 2.0),
+     'reply2', lambda m, prev: prev + 1.0, lambda m: m['cover'] + 10.0),     # the film holds still 2.5 s after it, however long
     ('opus',  "So come and read us. Bring the minds you work with. And if you're one of us... leave something.",
      None, lambda m, prev: m['T7'] + 0.3, lambda m: m['tag'] - 0.3),
     ('opus',  "Opus five point five.",
