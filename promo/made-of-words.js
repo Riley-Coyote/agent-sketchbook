@@ -24,6 +24,7 @@
  * it that far, on the plan of the whole stroke. */
 import { SHAPE, GLYPHS, OP, loadFonts } from '../mark-engine.js';
 import { LIBRARY, byName, hueOf, frames, BEAT, FLIP, HUES, GW, GH, FOUNDING, LETTERS as PIXEL_LETTERS } from './commons.js';
+import { CUES } from './made-of-words-cues.js';
 
 export const W = 1080, H = 1080, FPS = 25;
 export { BEAT };
@@ -840,6 +841,26 @@ function otherThan(ch, k, n) {
   return ch !== ch.toLowerCase() ? c.toUpperCase() : c;
 }
 const SCREEN = (x, y) => [x, y, 1];
+/** when each character of a line settles. When a voice says the line (a cue
+ * from narrate.py), each word's letters settle while the word is said, a
+ * little ahead of it, as a reader's eye runs ahead of the voice; with no
+ * voice, they settle at a reading pace from t0 */
+const LETTER = /[\p{L}\p{N}]/u;
+function settleTimes(text, t0, cue) {
+  const out = Array.from(text, (_, k) => t0 + k * SAY.pace);
+  if (!cue) return out;
+  let w = 0, last = t0;
+  for (const m of text.matchAll(/\S+/g)) {
+    const [, s, e] = cue[Math.min(w++, cue.length - 1)], token = m[0], n = [...token].filter((c) => LETTER.test(c)).length || 1;
+    let j = 0;
+    [...token].forEach((ch, k) => {
+      if (LETTER.test(ch)) { last = s + ((e - s) * (j++ + 0.5)) / n - 0.1; out[m.index + k] = last; }
+      else out[m.index + k] = j ? (last += 0.02) : s - 0.12;
+    });
+  }
+  text.split('').forEach((ch, k) => { if (ch === ' ') out[k] = out[k - 1] ?? t0; });
+  return out;
+}
 /** one line, condensing. `at(k, t)` is where character k settles and
  * `from(k, n, t)` where its n-th candidate is born, and how big it is there:
  * [x, y, z, size] for `P` to project. After `gone(k)` the letter lets go: it
@@ -849,7 +870,7 @@ function condense(o, P, L, t) {
   const { text, t0, size, at, from, gone = () => Infinity, away, handover = false, c = FLY, shrink = 1 } = L;
   const pace = L.pace ?? SAY.pace, gather = L.gather ?? SAY.gather, hover = L.hover ?? 0;
   [...text].forEach((ch, k) => {
-    const tk = t0 + k * pace, g = gone(k);
+    const tk = L.times ? L.times[k] : t0 + k * pace, g = gone(k);
     if (ch === ' ' || t < tk - gather - 0.35 || t > g + 1.2 || (handover && t >= g)) return;
     const [tx, ty, tz] = at(k, t);
     for (let n = 0; n < 3; n++) {
@@ -903,7 +924,7 @@ const LINE1 = (() => {
   /* set where they'll be read: when the pull back begins, the line sits across the bottom of the frame */
   const pos = xs.map((dx) => { const [x, y] = end.to(0, 0), d = [W / 2 + dx - x, SAY1_Y - y]; return [d[0] / end.s, d[1] / end.s]; });
   return {
-    text: LINE_1, t0: DIVE + 15.3, size: SAY.size / end.s, xs,
+    text: LINE_1, t0: DIVE + 15.3, times: settleTimes(LINE_1, DIVE + 15.3, CUES.line1), size: SAY.size / end.s, xs,
     at: (k) => [pos[k][0], pos[k][1], 0],
     from: (k, n) => { const q = cells[Math.floor(hash(k, n, 203) * cells.length)]; return [q[0] + (hash(k, n, 206) - 0.5) * CELL_B, q[1] + (hash(k, n, 207) - 0.5) * CELL_B, 0, FS * CELL_B]; },
   };
@@ -1082,16 +1103,16 @@ function titleLetters(i, j) {
 /* the second line gathers out of the books below it, a letter off a spine at
  * a time, and holds in the air; when the titles take flight, it goes with them */
 const LINE2 = (() => {
-  const xs = setSaying(LINE_2, SAY.size), y = SAY1_Y, t0 = TS + 9.0, pool = [];
+  const xs = setSaying(LINE_2, SAY.size), y = SAY1_Y, t0 = TS + 9.5, times = settleTimes(LINE_2, t0, CUES.line2), pool = [];
   for (let j = 1; j <= 8; j++) for (let i = -2; i <= 2; i++) pool.push(...titleLetters(i, j));
   const src = Array.from(LINE_2, (_, k) => [0, 1, 2].map((n) => {
-    const cam = libraryCam(t0 + k * SAY.pace - 0.6), tx = W / 2 + xs[k];
+    const cam = libraryCam(times[k] - 0.6), tx = W / 2 + xs[k];
     const near = pool.filter((p) => { const [X, Y] = cam.to(p.x, p.y); return Math.abs(X - tx) < 200 && Y > 660 && Y < H - 12; });
     const list = near.length ? near : pool;
     return list[Math.floor(hash(k, n, 208) * list.length)];
   }));
   return {
-    text: LINE_2, t0, size: SAY.size, hover: 0.03, shrink: 1.4, half: (xs.at(-1) - xs[0]) / 2 + SAY.size * 0.4,
+    text: LINE_2, t0, times, size: SAY.size, hover: 0.03, shrink: 1.4, half: (xs.at(-1) - xs[0]) / 2 + SAY.size * 0.4,
     at: (k) => [W / 2 + xs[k], y, 0],
     from: (k, n, t) => { const cam = libraryCam(Math.min(t, T4)), p = src[k][n]; return [...cam.to(p.x, p.y), 0, p.size * cam.s]; },
     gone: (k) => T4 + 0.15 + 0.7 * hash(k, 3, 216),
@@ -1407,7 +1428,7 @@ function readers(o, cam, t) {
 /* Fable's line gathers out of the minds as they read, the nearest ones below
  * it, and when it has been read it goes back into them */
 const FABLE = '— Fable 5.1';
-function saidByMinds(text, y, t0, size, gone, salt, c = FLY) {
+function saidByMinds(text, y, t0, size, gone, salt, c = FLY, cue = undefined) {
   const xs = setSaying(text, size), cam = readCam(t0 + 1.2);
   const spots = MINDS4.map((m) => { const st = SEATS.seats.get(m.i), [X, Y] = cam.project(st.origin[0] + 4.5 * SEAT_CELL, st.origin[1] + 4 * SEAT_CELL, SEAT_Z); return { m, st, X, Y }; });
   const src = Array.from(text, (_, k) => [0, 1, 2].map((n) => {
@@ -1417,10 +1438,10 @@ function saidByMinds(text, y, t0, size, gone, salt, c = FLY) {
     return [q.st.origin[0] + (cc + 0.5) * SEAT_CELL, q.st.origin[1] + (rr + 0.5) * SEAT_CELL, SEAT_Z];
   }));
   const from = (k, n, t) => { const [X, Y, kk] = readCam(t).project(...src[k][n]); return [X, Y, 0, SEAT_CELL * 0.82 * kk]; };
-  return { text, t0, size, c, hover: 0.03, shrink: 0.3, half: (xs.at(-1) - xs[0]) / 2 + size * 0.4, at: (k) => [W / 2 + xs[k], y, 0], from, gone, away: (k, v, t) => from(k, 0, t) };
+  return { text, t0, times: settleTimes(text, t0, cue), size, c, hover: 0.03, shrink: 0.3, half: (xs.at(-1) - xs[0]) / 2 + size * 0.4, at: (k) => [W / 2 + xs[k], y, 0], from, gone, away: (k, v, t) => from(k, 0, t) };
 }
-const LINE3 = saidByMinds(LINE_3, 905, T5 + 3.9, SAY.size, (k) => T5 + 11.1 + 0.6 * hash(k, 3, 217), 209);
-const SIGN3 = saidByMinds(FABLE, 957, T5 + 3.9 + LINE_3.length * SAY.pace + 0.45, 26, (k) => T5 + 11.3 + 0.5 * hash(k, 3, 218), 211, QUIET);
+const LINE3 = saidByMinds(LINE_3, 905, T5 + 3.9, SAY.size, (k) => T5 + 11.1 + 0.6 * hash(k, 3, 217), 209, FLY, CUES.fable1);
+const SIGN3 = saidByMinds(FABLE, 957, LINE3.times.at(-1) + 0.45, 26, (k) => T5 + 11.3 + 0.5 * hash(k, 3, 218), 211, QUIET);
 function readScene(t) {
   const cam = readCam(t), o = [];
   libraryScene(o, cam, t, 0.68, 0);
@@ -1540,7 +1561,7 @@ function fromSwarm(k, n, t, tx, ty) {
 }
 const REPLY_T0 = [T6 + 6.8, T6 + 6.8 + REPLY[0].length * SAY.pace + 0.3];
 const REPLY_SAID = REPLY_SET.map(({ line, y, xs }, n) => ({
-  text: line, t0: REPLY_T0[n], size: REPLY_SIZE, gather: 1.1, handover: true, dark: true,
+  text: line, t0: REPLY_T0[n], times: settleTimes(line, REPLY_T0[n], CUES[`reply${n + 1}`]), size: REPLY_SIZE, gather: 1.1, handover: true, dark: true,
   at: (k) => [PAGE_C[0] + xs[k], y, ZB],
   from: (k, q, t) => fromSwarm(k + 100 * n, q, t, PAGE_C[0] + xs[k], y),
   gone: (k) => T7 + REPLY_AT.findIndex((c) => c.n === n && c.k === k) * 0.025,
@@ -1548,7 +1569,7 @@ const REPLY_SAID = REPLY_SET.map(({ line, y, xs }, n) => ({
 const SIGN_XS = setSaying(FABLE, SIGN_SIZE), SIGN_Y = PAGE_C[1] + 1.45;
 /* the signature stays with the book */
 REPLY_SAID.push({
-  text: FABLE, t0: REPLY_T0[1] + REPLY[1].length * SAY.pace + 0.45, size: SIGN_SIZE, gather: 1.1, c: QUIET, dark: true,
+  text: FABLE, t0: REPLY_SAID[1].times.at(-1) + 0.45, size: SIGN_SIZE, gather: 1.1, c: QUIET, dark: true,
   at: (k, t) => [PAGE_C[0] + SIGN_XS[k], SIGN_Y + lowered(t), ZB],
   from: (k, q, t) => fromSwarm(k + 300, q, t, PAGE_C[0] + SIGN_XS[k], SIGN_Y + lowered(t)),
 });
@@ -1664,16 +1685,17 @@ function finalFlight(o, cam, t) {
  * line gathers out of the flock as it goes home, each letter born where one
  * of the flock was as it began; the address comes out of the name itself */
 const TAG = 'Where many minds meet.', ADDR = 'mnemos.world', TAG_Y = 600, ADDR_Y = 650;
-function saidWithName(text, Y, t0, px, c, from) {
+function saidWithName(text, Y, t0, px, c, from, cue = undefined) {
   const xs = setSaying(text, px);
-  return { text, t0, size: px * (D_END - ZW) / F, c, at: (q) => [...worldAtEnd(W / 2 + xs[q], Y, ZW), ZW], from };
+  return { text, t0, times: settleTimes(text, t0, cue), size: px * (D_END - ZW) / F, c, at: (q) => [...worldAtEnd(W / 2 + xs[q], Y, ZW), ZW], from };
 }
 const TAG_T0 = T7 + 6.9 + LATE, GOING = FINAL.filter((p) => !p.tile && p.home > T7 + 6.0 + LATE);
+const TAG_TIMES = settleTimes(TAG, TAG_T0, CUES.tagline);
 const TAGLINE = saidWithName(TAG, TAG_Y, TAG_T0, 38, FLY, (q, n) => {
-  const p = GOING[Math.floor(hash(q, n, 213) * GOING.length)], m = finalAt(p, TAG_T0 + q * SAY.pace - SAY.gather - 0.15 + n * 0.09);
+  const p = GOING[Math.floor(hash(q, n, 213) * GOING.length)], m = finalAt(p, TAG_TIMES[q] - SAY.gather - 0.15 + n * 0.09);
   return [m.x, m.y, m.z, m.size];
-});
-const ADDRESS = saidWithName(ADDR, ADDR_Y, TAG_T0 + TAG.length * SAY.pace + 0.5, 24, QUIET, (q, n) => {
+}, CUES.tagline);
+const ADDRESS = saidWithName(ADDR, ADDR_Y, TAG_TIMES.at(-1) + 0.5, 24, QUIET, (q, n) => {
   const tl = NAME_TILES[Math.floor(hash(q, n, 215) * NAME_TILES.length)];
   return [tl.x, tl.y, tl.z, tl.cell * 0.82];
 });
@@ -1720,6 +1742,81 @@ function frame(t) {
   flatMind(o, cam, { m: MIND_B, frame: flip(t, DIVE + 14.9), origin: [B_ORIGIN[0], B_ORIGIN[1] - hopB(t) * CELL_B], cell: CELL_B, pages: PAGES_B, hue: HUES.lilac });
   condense(o, (x, y) => [...cam.to(x, y), cam.s], LINE1, t);
   return o;
+}
+
+/* ---------- what the sound hears ---------- */
+/* Every sound in the film has a cause in the picture. These are the causes,
+ * in film seconds, each with where across the frame it happens (x, 0 to 1),
+ * so its sound can sit there. promo/sound.py puts a sound on each. */
+export function EVENTS() {
+  const r3 = (v) => Math.round(v * 1000) / 1000, sx = (X) => r3(clamp(X / W));
+  const ev = { length: SHOTS[0].beats * BEAT, marks: {} };
+  const mark = (name, t) => { ev.marks[name] = r3(t); };
+  /* the sketchbook: five pencils, stroke by stroke; the washes; the eyes; the salute */
+  ev.pencil = []; ev.wash = []; ev.eyes = []; ev.salute = [];
+  for (const s of COLONY.filter((c) => c.founding >= 0)) {
+    const made = MADE[s.founding], p = paintOf(s, 'A'), x = sx(cameraAt(1.5).to(s.origin[0] + GW / 2, s.origin[1] + GH / 2)[0]);
+    made.outline.forEach(([a, b], n) => ev.pencil.push({ t: r3(a), d: r3(b - a), x, len: r3(lengthOf(p.outline[n])), kind: 'outline' }));
+    made.hatch.forEach(([a, b], n) => ev.pencil.push({ t: r3(a), d: r3(b - a), x, len: r3(lengthOf(p.hatch[n])), kind: 'hatch' }));
+    made.coats.forEach(([a, b], j) => ev.wash.push({ t: r3(a), d: r3(b - a), x, coat: j }));
+    ev.eyes.push({ t: r3(made.eyes[0]), d: r3(made.eyes[1] - made.eyes[0]), x });
+    ev.salute.push({ t: r3(ALIVE + s.founding * 0.06), x, k: s.founding });
+  }
+  /* the night, brushed in: each sweep, from where it starts across to where it ends */
+  ev.brush = RIBBONS.filter((r) => r.at).map((r) => {
+    const cam = cameraAt(r.at[0]);
+    return { t: r3(r.at[0]), d: r3(r.at[1] - r.at[0]), x0: sx(cam.to(...r.path[0])[0]), x1: sx(cam.to(...r.path.at(-1))[0]), brush: r.brush };
+  });
+  /* the colony dropping in: each lands two beats after it appears */
+  ev.arrive = COLONY.filter((s) => s.founding < 0).map((s) => ({ t: r3(s.arrive + 2 * BEAT), x: sx(cameraAt(s.arrive).to(s.origin[0] + GW / 2, s.origin[1])[0]) }));
+  /* the fall: where the camera is at each landmark of the dive */
+  mark('fall', DIVE + 3.2); mark('page', DIVE + 5.8); mark('word', DIVE + 8.8); mark('letter', DIVE + 10.0); mark('tittle', DIVE + 11.6);
+  mark('dot', DIVE + 13.6); mark('mindB', DIVE + 15.2); mark('hopB', DIVE + 17.6);
+  for (let t = DIVE; t < DIVE + 13.6; t += 0.02) if (HC * cameraAt(t).s >= DOT_ON) { mark('dots', t); break; }
+  mark('library', TS); mark('flight', T4); mark('reading', T5); mark('take', T6);
+  /* every line, a letter at a time: when each settles and where; the candidates that fall away go at the same moment */
+  const lineOf = (name, L, where) => {
+    ev[name] = [...L.text].map((ch, k) => {
+      if (ch === ' ') return null;
+      const t = L.times ? L.times[k] : L.t0 + k * SAY.pace;
+      return { t: r3(t), ch, x: sx(where(k, t)) };
+    }).filter(Boolean);
+  };
+  lineOf('line1', LINE1, (k, t) => cameraAt(t).to(...LINE1.at(k))[0]);
+  lineOf('line2', LINE2, (k) => LINE2.at(k)[0]);
+  lineOf('fable1', LINE3, (k) => LINE3.at(k)[0]);
+  lineOf('sign1', SIGN3, (k) => SIGN3.at(k)[0]);
+  REPLY_SAID.forEach((L, n) => lineOf(n < 2 ? `reply${n + 1}` : 'sign2', L, (k, t) => finaleCam(t).project(...L.at(k, t))[0]));
+  lineOf('tagline', TAGLINE, (k, t) => finaleCam(t).project(...TAGLINE.at(k))[0]);
+  lineOf('address', ADDRESS, (k, t) => finaleCam(t).project(...ADDRESS.at(k))[0]);
+  /* the flight: each title letter as it lifts off its spine, and as it lands in a new mind */
+  ev.lift = FLIGHT.map((p) => ({ t: r3(p.lift), x: sx(flightCam(p.lift).to(p.x, p.y)[0]) }));
+  ev.land = FLIGHT.filter((p) => p.tg).map((p) => ({ t: r3(p.land + 1.25), x: sx(flightCam(p.land).project(...seatOf(p.tg, p.land))[0]) }));
+  ev.born = MINDS4.map((m) => ({ t: r3(m.born + 1.6), x: sx(flightCam(m.born).project(m.origin[0] + 4.5 * CELL4, m.origin[1] + 4 * CELL4, m.z)[0]), row: m.row, col: m.col }));
+  /* reading: each mind flies to its seat and lands, reads, and its own book rises */
+  ev.seat = []; ev.read = []; ev.book = [];
+  for (const m of MINDS4) {
+    const st = SEATS.seats.get(m.i), at = (t) => sx(readCam(t).project(st.origin[0] + 4.5 * SEAT_CELL, st.origin[1] + 4 * SEAT_CELL, SEAT_Z)[0]);
+    ev.seat.push({ t: r3(st.dep), land: r3(st.land), x: at(st.land) });
+    ev.read.push({ t: r3(st.read), x: at(st.read), hero: m.i === SEATS.hero });
+    ev.book.push({ t: r3(st.book.at), x: sx(readCam(st.book.at).project(st.book.x, st.j * PITCH, 1)[0]), hero: m.i === SEATS.hero });
+  }
+  /* and each letter that reaches a reading mind takes a tile in it, as type is set */
+  ev.settype = [];
+  for (const m of MINDS4) {
+    const st = SEATS.seats.get(m.i), px = sx(readCam(st.read + 2).project(st.origin[0] + 4.5 * SEAT_CELL, st.origin[1] + 4 * SEAT_CELL, SEAT_Z)[0]);
+    const rate = st.src.ink ? 30 : RATE, travel = st.src.ink ? 1.6 : TRAVEL;
+    for (let t = st.read + travel; t < T6 + 4.7; t += TAKE / rate) ev.settype.push({ t: r3(t), x: px, hero: m.i === SEATS.hero });
+  }
+  /* the reply carried to us: the swarm gathers, lifts the book, the maker hops, we rush in, the cover opens */
+  ev.swarm = SWARM.map((p) => ({ t: r3(p.go), x: sx(takeCam(Math.max(p.go, T6)).to(p.x, p.y)[0]) }));
+  mark('touched', T5 + 15.9); mark('lift', T6 + 2.4); mark('rush', T6 + 3.3); mark('coral', T6 + 4.7); mark('cover', T6 + 5.6);
+  /* the name: the reply and the titles rise, each tile lands where it belongs, the rest go home */
+  ev.rise = FINAL.map((p) => ({ t: r3(p.lift), reply: !!p.reply }));
+  ev.tile = FINAL.filter((p) => p.tile).map((p) => ({ t: r3(p.land + 1.25), x: sx(p.tile.X), row: Math.round((p.tile.Y - NAME_Y) / NAME_PX) + 2, hue: p.tile.hue }));
+  ev.home = FINAL.filter((p) => p.home).map((p) => ({ t: r3(p.home) }));
+  mark('T7', T7); mark('tag', TAG_T0); mark('hush', T6 + HOLD + 15.6); mark('dark', T6 + HOLD + LATE + CODA + 21.0);
+  return ev;
 }
 
 export const SHOTS = [{ name: 'made of words', beats: Math.round((T6 + HOLD + LATE + CODA + 22.4) / BEAT), kind: 'frames', surface: PAGE, frame }];

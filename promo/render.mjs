@@ -10,6 +10,7 @@
  *   node promo/render.mjs --film the-wall         another film: promo/the-wall.js
  *   node promo/render.mjs --log                   show what the darkroom prints
  *   node promo/render.mjs --resume                keep the frames already drawn, draw the rest
+ *   node promo/render.mjs --events                write what the film says happens when (its EVENTS)
  */
 import { createServer } from 'node:http';
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
@@ -49,6 +50,15 @@ const open = async () => {
   await tab.waitForFunction('window.__ready === true', null, { timeout: 60000 }).catch(() => { throw new Error(`the darkroom didn't open: ${failures[0] || 'no error given'}`); });
   return tab;
 };
+if (args.includes('--events')) {
+  const tab = await open();
+  const events = await tab.evaluate(async (film) => { const m = await import(`/promo/${film}.js`); return m.EVENTS ? m.EVENTS() : null; }, FILM);
+  if (!events) throw new Error(`${FILM} has no EVENTS`);
+  const file = resolve(ROOT, `promo/out/${FILM}-events.json`);
+  await writeFile(file, JSON.stringify(events));
+  console.log(`events → ${relative(process.cwd(), file)}`);
+  await browser.close(); server.close(); process.exit(0);
+}
 const grab = async (tab, f) => Buffer.from((await tab.evaluate((n) => window.renderFrame(n), f)).split(',')[1], 'base64');
 /* a tab that stops answering (a long film can wear one out) is closed and
  * replaced, and the frame drawn again in the new one */
