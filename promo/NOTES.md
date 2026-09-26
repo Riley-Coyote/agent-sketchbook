@@ -424,6 +424,21 @@ he asked for full sound design, and for Fable to be in it as much as I liked.
   new voice for the reply changes only the reply's letters, not the finale.
 
 
+**The cover** (97.4 s in all). Riley wanted the film to start on the Commons'
+mark, so the video's thumbnail is the logo, animating into the opening.
+- The mark is the sketchbook's cover: the creature in tiles of the Commons'
+  five colours on the film's black, exactly as Riley's image (9 × 8 cells,
+  scaled 64 → 69 px; the first frame matches it to within 0.23 of 255).
+- It holds still (the thumbnail), hops once on the beat as the creatures
+  do, and the cover swings open on its hinge (0.84–1.70 s), the way the
+  reply's cover opens near the end, onto the blank first page, where the
+  pencils begin. The film after the cover is exactly as it was (`INTRO`,
+  16 beats); events and cues keep the film's own times, and the mixer
+  places everything `intro` later.
+- Sound: the mark rings once (three soft bells), the hop has the creatures'
+  blip, and the recorded cover's thump lands as the swing ends. The score
+  begins with the page.
+
 ## Decisions and what we learned
 
 - **Riley's calls:**

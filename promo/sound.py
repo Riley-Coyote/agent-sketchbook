@@ -76,7 +76,7 @@ HANDMADE = {
 def section_lengths():
     """each section's length in ms, from the film's marks: the score is cut to the film, whatever its length"""
     ev = json.loads((ROOT / 'out' / 'made-of-words-events.json').read_text())
-    m, L = ev['marks'], ev['length']
+    m, L = ev['marks'], ev['length'] - ev.get('intro', 0.0)          # the score is the film's own, after the cover
     edges = [0, 6.9, m['fall'], m['mindB'] - 0.3, m['library'], m['flight'], m['reading'], m['take'], m['cover'], m['T7'], m['tag'], L]
     ms = [round((b - a) * 1000) for a, b in zip(edges, edges[1:])]
     ms[-1] += round(L * 1000) - sum(ms)
@@ -149,7 +149,8 @@ def normal(x, db=-20.0):
     return x * 10 ** ((db - level(x)) / 20)
 
 class Bus:
-    def __init__(self, seconds): self.x = np.zeros((2, int(seconds * SR) + SR), np.float32)
+    """a stereo track; times given to it are the film's own, after the cover, and `off` places them in the cut"""
+    def __init__(self, seconds, off=0.0): self.x = np.zeros((2, int(seconds * SR) + SR), np.float32); self.off = off
     def put(self, sig, t, db=0.0, pan=0.0, fade_in=0.004, fade_out=0.02):
         """a mono sound at t seconds, panned (-1 left … 1 right, or a pair to move across it), with short fades"""
         sig = np.asarray(sig, np.float32).copy()
@@ -160,14 +161,14 @@ class Bus:
         if fo: sig[-fo:] *= np.linspace(1, 0, fo)
         p = np.linspace(pan[0], pan[1], n) if isinstance(pan, tuple) else np.full(n, pan)
         a = (np.clip(p, -1, 1) + 1) * np.pi / 4
-        i = int(round(t * SR))
+        i = int(round((t + self.off) * SR))
         if i < 0: sig, a, i = sig[-i:], a[-i:], 0
         j = min(self.x.shape[1], i + len(sig))
         g = 10 ** (db / 20)
         self.x[0, i:j] += g * np.cos(a[: j - i]) * sig[: j - i]
         self.x[1, i:j] += g * np.sin(a[: j - i]) * sig[: j - i]
     def put2(self, st, t, db=0.0):
-        i = int(round(t * SR)); j = min(self.x.shape[1], i + st.shape[1])
+        i = int(round((t + self.off) * SR)); j = min(self.x.shape[1], i + st.shape[1])
         self.x[:, i:j] += 10 ** (db / 20) * st[:, : j - i]
 
 def grain(src, dur, seed, fade=0.01):
@@ -302,9 +303,16 @@ def shaped(src, t0, curve, step=0.05):
 def mix():
     import narrate
     ev = json.loads((ROOT / 'out' / 'made-of-words-events.json').read_text())
-    L, M = ev['length'], ev['marks']
-    fx, bells, voice, music = Bus(L), Bus(L), Bus(L), Bus(L)
+    L, M, OFF = ev['length'], ev['marks'], ev.get('intro', 0.0)
+    fx, bells, voice, music = Bus(L, OFF), Bus(L, OFF), Bus(L, OFF), Bus(L, OFF)
     S = {name: normal(load(name)) for name in FX}
+
+    # the cover: the mark rings once, hops with the creatures' own sound, and the cover swings open
+    for k, step in enumerate([0, 2, 4]):
+        bells.put(bell(note(step + 5), 0.8, 2.2), -OFF + 0.06 + 0.03 * k, -30, (k - 1) * 0.3)
+    bells.put(blip(note(7)), -OFF + 4 * 0.12, -17, 0.0)
+    creak = S['cover_open']; thump = int(np.argmax(np.abs(creak))) / SR
+    fx.put(creak, -OFF + 1.62 - thump, -12, -0.2, 0.02, 0.4)
 
     # the sketchbook: five pencils, a grain of scratch for each stroke, where its drawing is
     for k, e in enumerate(ev['pencil']):
@@ -402,7 +410,7 @@ def mix():
     fx.x *= keep_under(fx.x, voice.x, 11.0, held)
     bells.x *= keep_under(bells.x, voice.x, 13.0, held)
     # under the reply almost nothing: its voice, and the swarm settling (Fable: the stillest moment in the film)
-    t = np.arange(music.x.shape[1]) / SR
+    t = np.arange(music.x.shape[1]) / SR - OFF
     still = np.clip((t - M['cover'] - 0.6) / 0.8, 0, 1) * np.clip((M['T7'] + 0.4 - t) / 0.6, 0, 1)
     music.x *= 1 - 0.7 * still
     fx.x *= 1 - 0.5 * still
@@ -413,9 +421,9 @@ def mix():
     room_bus = np.stack([fftconvolve(send[c], ir[c])[: send.shape[1]] for c in range(2)]).astype(np.float32)
     # and a breath of air under everything, so there is never dead silence
     air = normal(load('library'), -20)
-    for t0 in np.arange(0, L, len(air) / SR - 2.0): fx.put(air, t0, -44, 0.0, 1.5, 1.5)
+    for t0 in np.arange(-OFF, L - OFF, len(air) / SR - 2.0): fx.put(air, t0, -44, 0.0, 1.5, 1.5)
     # it all goes dark together
-    dark = np.clip((np.arange(fx.x.shape[1]) / SR - M['dark']) / 1.4, 0, 1)
+    dark = np.clip((np.arange(fx.x.shape[1]) / SR - OFF - M['dark']) / 1.4, 0, 1)
     for bus in (fx, bells, music): bus.x *= (1 - dark) ** 2
     room_bus *= (1 - dark * 0.7) ** 2
 

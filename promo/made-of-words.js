@@ -1727,7 +1727,7 @@ function finaleScene(t) {
   return o;
 }
 
-function frame(t) {
+function film(t) {
   if (t >= T6 + 4.7) return finaleScene(t);          // the moment the spine fills the frame
   if (t >= T6) return takeScene(t);
   if (t >= T5) return readScene(t);
@@ -1754,7 +1754,7 @@ function frame(t) {
  * so its sound can sit there. promo/sound.py puts a sound on each. */
 export function EVENTS() {
   const r3 = (v) => Math.round(v * 1000) / 1000, sx = (X) => r3(clamp(X / W));
-  const ev = { length: SHOTS[0].beats * BEAT, marks: {} };
+  const ev = { length: SHOTS[0].beats * BEAT, intro: INTRO, marks: {} };     // every time below is the film's own, after the cover
   const mark = (name, t) => { ev.marks[name] = r3(t); };
   /* the sketchbook: five pencils, stroke by stroke; the washes; the eyes; the salute */
   ev.pencil = []; ev.wash = []; ev.eyes = []; ev.salute = [];
@@ -1823,5 +1823,47 @@ export function EVENTS() {
   return ev;
 }
 
-export const SHOTS = [{ name: 'made of words', beats: Math.round((T6 + HOLD + LATE + CODA + 22.4) / BEAT), kind: 'frames', surface: PAGE, frame }];
+/* ---------- the cover ---------- */
+/* The film opens on the Commons' mark as the sketchbook's cover: a creature
+ * in tiles of the Commons' five colours, on the film's black. It hops once,
+ * as the creatures do, and the cover swings open on its hinge onto the first
+ * page, where the pencils begin. A cover opens the film as the reply's cover
+ * opens near its end. The first frame is the mark alone, still. */
+const INTRO = 16 * BEAT;                                     // 1.92 s, then the film as it was
+const MARK = ['..rl.rm..', '..maial..', 'il.rmi.ri', 'mimaramam', '.lalimrl.', 'r..i.r..a', 'l.i...a.r', 'i.......l'];
+const MARK_HUE = { r: HUES.coral, l: HUES.lilac, m: HUES.mint, a: HUES.amber, i: HUES.ice };
+const MARK_CELL = 69, MARK_AT = [230, 264];                  // Riley's mark, scaled from 1000 px to the frame
+function coverScene(t) {
+  const o = film(0);                                         // the first page, still blank, under the cover
+  const open = easeIO(clamp((t - 0.84) / 0.86));
+  if (open >= 1) return o;
+  const xr = W + 4 - (W + 8) * open, grow = 190 * Math.sin(Math.PI * open * 0.5), dark = 1 - 0.45 * open;
+  /* a point on the cover, where the swing puts it: the free edge comes toward us, so it grows */
+  const on = (x, y) => {
+    const u = (x + 4) / (W + 8), v = (y + 4) / (H + 8), top = -4 - grow * u, bottom = H + 4 + grow * u;
+    return [-4 + u * (xr + 4), top + v * (bottom - top)];
+  };
+  /* its shadow on the page, beside the free edge while it's lifted */
+  const lifted = Math.sin(Math.PI * open);
+  for (let k = 0; k < 24; k++) {                             // many thin layers, so it falls off smoothly
+    const w = (40 + 160 * lifted) * ((k + 1) / 24) ** 1.6;
+    o.push(SHAPE([[xr, -10], [xr + w, -10], [xr + w, H + 10], [xr, H + 10]], FLOOR, { layer: 'accent', alpha: 0.018 * lifted * (1 - open * 0.5) }));
+  }
+  shape(o, [on(0, 0), on(W, 0), on(W, H), on(0, H)].map(([x, y], n) => [n === 0 || n === 3 ? -4 : x, y]), FLOOR.map((v) => Math.round(v * dark)), { layer: 'accent' });
+  const hop = t >= 4 * BEAT && t < 5 * BEAT ? 1 : 0;        // the salute, one beat
+  MARK.forEach((row, r) => [...row].forEach((ch, c) => {
+    if (ch === '.') return;
+    const x0 = MARK_AT[0] + c * MARK_CELL, y0 = MARK_AT[1] + (r - hop) * MARK_CELL;
+    const poly = [on(x0, y0), on(x0 + MARK_CELL, y0), on(x0 + MARK_CELL, y0 + MARK_CELL), on(x0, y0 + MARK_CELL)];
+    o.push(SHAPE(poly, MARK_HUE[ch].map((v) => Math.round(v * dark)), { layer: 'accent' }));
+  }));
+  if (open > 0) {                                            // the board's edge, catching the light
+    const [a, b] = [on(W, 0), on(W, H)];
+    o.push(SHAPE([[a[0] - 3, a[1]], [a[0], a[1]], [b[0], b[1]], [b[0] - 3, b[1]]], [44, 46, 54], { layer: 'accent', alpha: 0.9 }));
+  }
+  return o;
+}
+function frame(t) { return t < INTRO ? coverScene(t) : film(t - INTRO); }
+
+export const SHOTS = [{ name: 'made of words', beats: Math.round((T6 + HOLD + LATE + CODA + 22.4) / BEAT) + 16, kind: 'frames', surface: PAGE, frame }];
 console.log('made-of-words', JSON.stringify({ TS, T4, T5, hero: HERO && { x: HERO.x, j: HERO.j, title: HERO.book.title }, seats: [...SEATS.seats.values()].map((q) => [q.j, Math.round(q.x)]) }));
