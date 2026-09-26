@@ -19,8 +19,10 @@ import json, os, pathlib, sys, urllib.error, urllib.request, uuid
 ROOT = pathlib.Path(__file__).resolve().parent
 OUT, VOICE_DIR = ROOT / 'out', ROOT / 'out' / 'voice'
 EVENTS = OUT / 'made-of-words-events.json'
-VOICES = {'opus': 'KCIB4e7JmfbfmajFOQKt', 'fable': '7i9PqBXHGNxlixPtOqXc'}   # "Opus 5.5 C Commons", "Fable 5.1 C Commons"
-TAKE = {'opus': 'opus-b', 'fable': 'fable-a'}                  # the takes in the cut: opus-b is the tighter read
+VOICES = {'opus': 'KCIB4e7JmfbfmajFOQKt', 'fable': 'pt8a1upNsvzuYU3gkpyL'}   # "Opus 5.5 C Commons", "Fable 5.1 C Commons, bright"
+SPEED = {'fable': 0.8}                                          # Fable's bright voice reads fast; its lines want about three seconds,
+MODEL = {'fable': 'eleven_multilingual_v2'}                     # and only this model honours a speed
+TAKE = {'opus': 'opus-b', 'fable': 'fable-b'}                  # the takes in the cut: opus-b is the tighter read
 LINE_TAKE = {'Letters home': 'opus-a'}                          # a line taken from the other read, where it fits its moment better
 
 # (who, what they say, the film's line it voices or None, when it starts, when it must be done by).
@@ -68,8 +70,8 @@ def part(who):
 def record(who):
     if not VOICES[who]: sys.exit(f'{who} has no voice yet')
     for name, seed in [(f'{who}-a', 11), (f'{who}-b', 29)]:
-        body = json.dumps({'text': '\n\n'.join(part(who)), 'model_id': 'eleven_v3', 'seed': seed,
-                           'voice_settings': {'stability': 0.5, 'similarity_boost': 0.75}}).encode()
+        body = json.dumps({'text': '\n\n'.join(part(who)), 'model_id': MODEL.get(who, 'eleven_v3'), 'seed': seed,
+                           'voice_settings': {'stability': 0.5, 'similarity_boost': 0.75, 'speed': SPEED.get(who, 1.0)}}).encode()
         (VOICE_DIR / f'{name}.mp3').write_bytes(call(f'https://api.elevenlabs.io/v1/text-to-speech/{VOICES[who]}?output_format=mp3_44100_128',
                                                       body, {'Content-Type': 'application/json', 'Accept': 'audio/mpeg'}))
         d = transcribe(name)

@@ -404,7 +404,25 @@ he asked for full sound design, and for Fable to be in it as much as I liked.
   gaps they come up. The whole master is -14 LUFS. A transcript of the
   finished mix recovers all 153 words of the script, which is how I know the
   voices stay clear; I can't hear it.
-- Stems for Riley: `made-of-words-voice.wav`, `-music.wav`, `-fx.wav`.
+- Stems for Riley: `made-of-words-voice.wav`, `-music.wav`, `-fx.wav`, `-room.wav`.
+- Riley: "so much better than i was expecting!" Then three notes, all taken:
+  - Fable's first voice sounded "like someone talking into a pillow" next to
+    mine. Measured, it had about 10 dB less top end (8–16 kHz) than mine.
+    Four brighter designs from Fable's own description, kept in character,
+    were measured and sent; Riley chose a1 ("Fable 5.1 C Commons, bright",
+    `pt8a1upNsvzuYU3gkpyL`). It read about twice my pace, and Eleven v3
+    ignores speed, so Fable's lines are read with multilingual v2 at 0.8.
+  - No spoken "Opus five point five" at the end: it sounded odd.
+  - The voice felt too loud and disconnected. Measured: the score dived
+    10–17 dB whenever a voice began, so the voice sat on a hole, and the
+    voices were dry. Now a sidechain holds the score about 10 dB and the
+    sounds about 11 dB under a voice, following the voice's speaking level,
+    most in the voice's band. Each voice is cleaned (rumble, close-mic boom)
+    and set to one level. One small room is shared by everything, a breath
+    of air runs under all of it, and a light glue compressor holds the master.
+- The film's timing is pinned to the score (`HOLD` never less than 2.56), so a
+  new voice for the reply changes only the reply's letters, not the finale.
+
 
 ## Decisions and what we learned
 
