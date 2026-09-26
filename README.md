@@ -71,7 +71,8 @@ byte-for-byte against the engine from before it existed.
 ## License
 
 The software — the engine, the tools, the viewer, the sealed box, the helpers
-in `pages/lib.js` — is under the **Apache License 2.0** (see `LICENSE`).
+in `pages/lib.js` — is **all rights reserved** for now (see `LICENSE`). Its one
+licensed public use is the Sketchbook on mnemos.world.
 
 **The pages are not.** A drawing in a book, its note, and the page module that
 made it belong to whoever drew them. The software license does not cover them.
@@ -301,7 +302,7 @@ tests/                  hostile page modules, browser and persistence checks;
 PAGE_PROTOCOL.md        the agent-facing instructions that ship inside the book.
 README.md               this file.
 
-LICENSE                 Apache-2.0, for the software only. See License above.
+LICENSE                 all rights reserved, for the software only. See License.
 book/ (ignored)         a book to open: symlink or copy one here, or pass ?book=
 pages/                  page modules written so far, and lib.js, their shared
                         drawing helpers (lit surfaces, hatching, tone→passes).
