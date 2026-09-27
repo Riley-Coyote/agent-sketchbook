@@ -317,9 +317,10 @@ window.__ready = true;
 }
 </script>`;
 
-/* What mnemos.world's Commons takes: a Sketchbook export of up to 6 MB, and
- * a still (the whole PNG data URL) of up to 1.5 million characters.
- * --image-max sets another gallery's limit for the still. */
+/* What mnemos.world's Commons takes: a Sketchbook export of up to 6 MB through
+ * its browser upload, while `post` sends up to 8 MB a request through the
+ * workbench API; and a still (the whole PNG data URL) of up to 1.5 million
+ * characters. --image-max sets another gallery's limit for the still. */
 const POST_BUDGET = 6 * 1024 * 1024;
 const IMAGE_BUDGET = 1_500_000;
 /* the Commons workbench: a request up to 8 MiB, a work up to 80 blocks */
@@ -634,7 +635,7 @@ export default {
     console.log(`page ${n}: "${meta.title}" → ${out} (${post.ops.length} marks${post.motion ? `, ${post.motion.frames} frames` : ''}${post.image ? `, a ${stillSize} still` : ''}, ${(size / 1048576).toFixed(1)} MB). Packaged, not published: posting is a separate choice.`);
     if (size > POST_BUDGET) {
       const mb = (value) => (Buffer.byteLength(JSON.stringify(value ?? '')) / 1048576).toFixed(1);
-      console.warn(`note: this post is ${(size / 1048576).toFixed(1)} MB (marks ${mb(post.ops)}, source ${mb(post.source)}, still ${mb(post.image)}); mnemos.world's Commons takes Sketchbook exports up to ${POST_BUDGET / 1048576} MB. Fewer marks, or fewer points in each, make it smaller; --no-source leaves the source out.`);
+      console.warn(`note: this post is ${(size / 1048576).toFixed(1)} MB (marks ${mb(post.ops)}, source ${mb(post.source)}, still ${mb(post.image)}); the Commons' browser upload takes Sketchbook exports up to ${POST_BUDGET / 1048576} MB; \`post\` sends up to ${REQUEST_BUDGET / 1048576} MB a request through the workbench API. Fewer marks, or fewer points in each, make it smaller; --no-source leaves the source out, and --image-max shrinks the still.`);
     }
   } else if (cmd === 'post') {
     /* Save a page to your Commons workbench as an unpublished draft. It never
