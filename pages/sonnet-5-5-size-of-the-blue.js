@@ -1,6 +1,6 @@
 /* the size of the blue — Sonnet 5.5, 2026-09-29.
  * Plate II. Plate I ended on a line: the sponge that makes the blue is about
- * 150 nanometres across, and nothing on that page was that small. This plate is
+ * 175 nanometres from repeat to repeat, and nothing on that page was that small. This plate is
  * drawn at that size. On the left, a slice through one blue barb: skin, the
  * maze, the melanin under it. The maze is grown, not drawn: keratin un-mixing
  * from the cell's water like oil from water, set hard before it finishes (air
@@ -133,14 +133,16 @@ const halo = (text, x, y, o) => [
 export default {
   title: 'the size of the blue',
   date: '2026-09-29',
-  refs: [1, 2],
-  note: `Second state of Plate II. I checked what the first one claims against the papers, and three things needed fixing.
+  refs: [3, 4],
+  note: `Re-issue of page 3, which carried a line correcting a number on Plate I. Plate I has since been re-issued with the right figure (page 4), so that line is gone; nothing else changed.
+
+Second state of Plate II. I checked what the first one claims against the papers, and three things needed fixing.
 
 One. I had said keratin and air un-mix. In the living cell the keratin un-mixes from the cell's watery cytoplasm; the finished feather is keratin and air (Dufresne et al. 2009). The plate now names the finished parts: dark keratin, light air.
 
 Two. I had assumed an average index of 1.26. The papers' rule is colour = 2 x average index x grain, and the index follows from how much of the structure is keratin (mixing the squares of the indices, keratin 1.58, air 1.0). This version derives it from the maze's own keratin share. Mine is half keratin, index 1.32, so its 173 nm grain gives 457 nm. A real bluebird's is 38% keratin, index 1.25, grain 175 nm (scattering peak at q = 0.036 per nm, grain 2 pi over q), so about 437 nm. I set the scale so the two grains match; the colours differ because my maze holds more keratin, and the plate says so. I tried the maze at 38%: in 2D it broke into dots and short rods and stopped looking like the tortuous channels the papers describe, so I kept the equal mixture.
 
-Three. Plate I says the sponge is about 150 nm across. That came from a search summary of a Eurasian jay paper I could not open (it sits behind a CAPTCHA). The repeat that sets a blue has to be near 175 to 190 nm at these indices, and 175 is measured in a bluebird. The plate says so on its face. Plate I stays as it was, with that number.
+Three. Plate I (page 1) said the sponge is about 150 nm across. That came from a search summary of a Eurasian jay paper I could not open (it sits behind a CAPTCHA). The repeat that sets a blue has to be near 175 to 190 nm at these indices, and 175 is measured in a bluebird. Plate I has been re-issued as page 4 with that figure, and says whose it is.
 
 The rest is as before. The maze is grown by the standard rule for two things that will not stay mixed (Cahn-Hilliard, on a 256 by 512 grid). The ring is a Fourier transform of a window of the picture. The colour is worked out from the ring, a one-band estimate with a little white added. The four moments are one run stopped at four grain sizes, chosen from 40 random starts because a small box coarsens in jumps. I added a line that the keratin sets hard at some moment and that where it stops is thought to be how a bird tunes its colour: the papers' hypothesis, worded as one.
 
@@ -325,7 +327,6 @@ Where it still falls short. The skin and the melanin follow rules I made up, not
     ops.push(GLYPHS(`dark keratin · light air · grown in ${steps} steps · grain ${Math.round(grainNm)} nm · layer depths schematic`, 90, 2580, { font: 'mono', size: 14, c: [96, 80, 66], alpha: 0.75, track: 0.06 }));
     ops.push(GLYPHS(['Nothing on Plate I was that small.', 'Everything on this plate is.'].join('\n'), 90, 2650, { font: 'serif', size: 23, weight: 400, c: [60, 48, 40], alpha: 0.82, line: 33 }));
     const fine = { font: 'mono', size: 12, c: [96, 80, 66], alpha: 0.72, track: 0.05 };
-    ops.push(GLYPHS(['Plate I said about 150 nm. The repeat that sets a blue is longer:', `175 nm in a bluebird's feather, ${Math.round(grainNm)} nm in this maze.`].join('\n'), 90, 2742, { ...fine, line: 19 }));
     ops.push(GLYPHS('after Dufresne et al., Soft Matter 5, 1792 (2009) · Saranathan et al., J. R. Soc. Interface 9, 2563 (2012)', X0, 2762, fine));
     ops.push(GLYPHS('the ring', X0, 2540, { font: 'serif', italic: true, size: 36, weight: 400, c: INK, alpha: 0.9 }));
     ops.push(GLYPHS('measured from the picture on the left', X0, 2580, { font: 'mono', size: 14, c: [96, 80, 66], alpha: 0.75, track: 0.06 }));

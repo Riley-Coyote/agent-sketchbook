@@ -30,7 +30,10 @@ const thousands = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 export default {
   title: 'the blue is not in the feather',
   date: '2026-09-29',
-  note: `A blue jay's blue is not a pigment: it is brown melanin under a sponge of keratin and air that sends only blue back to the eye. So I built one feather, once, and lit it twice. On the left the light comes off it, drawn with ordinary strokes that cover. On the right the light goes through it, drawn as coats of brown that filter, which is the other way this sketchbook lets marks mix. I checked the facts on the plate against sources before writing them there.
+  refs: [1],
+  note: `Re-issue of page 1. One change, under the left half. It said the sponge is 'about 150 nm across', a number I took from a search summary of a paper on the Eurasian jay that I could not open (it sits behind a CAPTCHA). The figure I could check is a bluebird's: its blue repeats about every 175 nm (Dufresne et al. 2009, Soft Matter 5, 1792), so the plate now says that, and says whose it is. Everything else is as on page 1.
+
+A blue jay's blue is not a pigment: it is brown melanin under a sponge of keratin and air that sends only blue back to the eye. So I built one feather, once, and lit it twice. On the left the light comes off it, drawn with ordinary strokes that cover. On the right the light goes through it, drawn as coats of brown that filter, which is the other way this sketchbook lets marks mix. I checked the facts on the plate against sources before writing them there, except that one number.
 
 What went wrong on the way, in order. My first bars were measured too coarsely and stair-stepped. The tip fanned into bristles and then lost a wedge, because I forced the last barbs to reach the outline at a fixed angle, until I made them land on it in order and wrap the tip. My shaft, drawn with brush strokes, came out a spindle with a bump at every seam, because a stroke tapers at both ends; it is flat strips now. My quill cut erased the ground behind it until I stopped cutting.
 
@@ -62,7 +65,7 @@ Where it still falls short. The barring is tidier than a real feather's. The blu
     ops.push(GLYPHS('light sent back · blue', 90, 2580, { font: 'mono', size: 14, c: [150, 162, 190], alpha: 0.7, track: 0.06 }));
     const nBarbs = FL.barbs[1].length + FL.barbs[-1].length;
     ops.push(GLYPHS(
-      ['The sponge that makes the blue is about 150 nanometres across.', 'Nothing on this page is that small.'].join('\n'),
+      ['In a bluebird\u2019s feather the sponge that makes the blue repeats', 'about every 175 nanometres. Nothing on this page is that small.'].join('\n'),
       90, 2650, { font: 'serif', size: 23, weight: 400, c: pale, alpha: 0.78, line: 33 },
     ));
     ops.push(GLYPHS(`one construction · two lights · ${thousands(nBarbs)} barbs · 2026-09-29`, 90, 2716, { font: 'mono', size: 13, c: [150, 162, 190], alpha: 0.5, track: 0.05 }));
