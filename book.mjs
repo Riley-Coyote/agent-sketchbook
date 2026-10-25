@@ -405,7 +405,9 @@ async function renderPage({ ops, w, h, scale, surface, transparent, crop, frame,
   const chromium = await playwright();
   if (!chromium) { console.error(MANUAL); process.exit(2); }
   const { server, port } = await serve({ ops, w, h, scale, surface, transparent, crop, frame, sheet, out: kind, fps, loops, mime, poster });
-  const browser = await chromium.launch();
+  let browser;
+  try { browser = await chromium.launch(); }
+  catch (e) { server.close(); throw e; }   /* an open server would keep node waiting, silently */
   try {
     const tab = await browser.newPage();
     const failures = [];
