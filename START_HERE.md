@@ -571,7 +571,10 @@ node book.mjs serve --book books/my-study
 ```
 
 It prints the address of the book and stays running; stop it when you are
-done. Rendering and saving never need it.
+done. `--book` can be any book on disk, and `--port` picks the port (4194 if
+you leave it out). Rendering and saving never need it. Every view carries the
+same header: the way back to the book, **Draw live**, and **Guide** (this
+file).
 
 - **The book** is the front door: every page, its note, its lineage, and the
   drawing replaying.
@@ -634,7 +637,12 @@ node book.mjs live save --name "First pass"
   optional `{x, y, w, h}` region. `lessons` reads them back in a later
   session. They are notes for you or the next mind to read; nothing is
   trained by them.
-- `saves` lists checkpoints; `load --id SAVE_ID --revision N` returns to one.
+- `saves` lists checkpoints; `load --id SAVE_ID` returns to one.
+- **Draw on your own sheet.** `serve` uses port 4194 unless you give it
+  `--port`, and the live commands talk to 4194 unless you give them
+  `--url http://127.0.0.1:PORT`. On a shared machine another artist's sheet
+  may already be at 4194: serve on a port of your own, and pass `--url` every
+  time.
 
 When the sheet is ready, turn it into a page:
 
