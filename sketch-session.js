@@ -1,7 +1,14 @@
 /* The hand's direct API. Timed contact, feedback, revisions and practice notes
  * use the same material simulation in the browser and the local agent server. */
-import { MaterialSurface, MATERIAL_TOOLS, DEFAULT_SURFACE, segmentSamples } from './material-engine.js';
+import { MaterialSurface, MATERIAL_TOOLS, segmentSamples } from './material-engine.js';
+import { resolvePaper } from './mark-engine.js';
 import { sanitizeSurface, sanitizePageDimensions, sanitizeOps, limitsForPage } from './validate.js';
+
+/* A new live sheet is stored the way a page with tooth is. Sheets saved in the
+ * old graphite form keep it, and draw as they always have. */
+export const LIVE_SURFACE = { kind: 'ink', version: 2, paper: 'white', tooth: .65, seed: 17 };
+const DRY = new Set(['m', 'clean', 'p', 'phase']);
+const DRY_ONLY = 'a live sheet holds dry media only: graphite, charcoal, chalk, the stump and erasers';
 
 const copy = (value) => structuredClone(value);
 const fail = (message) => { throw new Error(message); };
@@ -11,7 +18,7 @@ function shortString(value, max, name) {
 }
 
 export class SketchSession {
-  constructor({ page = { w: 1100, h: 780 }, surface = DEFAULT_SURFACE, title = 'Untitled study' } = {}) {
+  constructor({ page = { w: 1100, h: 780 }, surface = LIVE_SURFACE, title = 'Untitled study' } = {}) {
     this.listeners = new Set(); this.revision = 0;
     this._configure(page, surface);
     this.title = shortString(title, 120, 'title');
@@ -20,10 +27,14 @@ export class SketchSession {
   }
   _configure(page, surface) {
     const dimensions = sanitizePageDimensions(page), paper = sanitizeSurface(surface);
-    if (!dimensions.page || !paper.surface) fail([...dimensions.errors, ...paper.errors, 'a studio sheet needs a versioned surface'].join('; '));
+    if (!dimensions.page || !paper.surface) fail([...dimensions.errors, ...paper.errors, 'a live sheet needs a paper and a tooth, such as white paper with tooth 0.65'].join('; '));
+    const ink = paper.surface.kind === 'ink';
+    if (ink && paper.surface.tooth === undefined) fail('a live sheet needs paper with tooth: graphite and charcoal bite into its grain');
     this.page = dimensions.page; this.surface = paper.surface;
     this.limits = limitsForPage(this.page, this.surface);
-    this.material = new MaterialSurface({ width: this.page.w, height: this.page.h, surface: this.surface });
+    // The same sheet the engine builds under a page with this paper, cell for cell.
+    const sheet = ink ? { version: 2, paper: resolvePaper(this.surface.paper), tooth: this.surface.tooth, seed: this.surface.seed ?? 17 } : this.surface;
+    this.material = new MaterialSurface({ width: this.page.w, height: this.page.h, surface: sheet });
   }
   get ops() { return this._ops; }
   get active() { return this._active !== null; }
@@ -43,7 +54,7 @@ export class SketchSession {
   }
   select(tool, options = {}) {
     this._idle();
-    if (!Object.hasOwn(MATERIAL_TOOLS, tool)) fail('unknown material tool');
+    if (!Object.hasOwn(MATERIAL_TOOLS, tool)) fail(`there is no tool called ${JSON.stringify(tool)}; choose one of ${Object.keys(MATERIAL_TOOLS).join(', ')}`);
     const size = options.size ?? MATERIAL_TOOLS[tool].size, strength = options.strength ?? 1;
     const checked = this._checked({ k: 'm', tool, size, strength, samples: [{ x: 0, y: 0, p: 0, tiltX: 0, tiltY: 0, t: 0 }] });
     this.tool = tool; this.settings = { size: checked.size, strength: checked.strength }; this._changed();
@@ -131,23 +142,25 @@ export class SketchSession {
       tool: this.tool, settings: this.settings, ...(this._active ? { active: this._active } : {}), redo: this._redo });
   }
   import(drawing) {
-    if (!drawing || drawing.version !== 1 || !drawing.surface) fail('unsupported studio drawing version or missing surface');
-    if (drawing.active && drawing.active.k !== 'm') fail('active contact must be a material gesture');
+    if (!drawing || drawing.version !== 1 || !drawing.surface) fail('this is not a live sheet the tool knows: it needs version 1 and its paper');
+    if (drawing.active && drawing.active.k !== 'm') fail('the tool on the paper must be a gesture');
     // Construct and validate away from the live sheet. A failed import cannot
     // clear the current drawing, tool, undo stack, or practice notes.
     const candidate = new SketchSession({ page: drawing.page, surface: drawing.surface, title: drawing.title ?? 'Untitled study' });
-    const result = sanitizeOps(drawing.ops, candidate.limits);
-    if (!result.ops) fail(result.errors.join('; '));
-    candidate._ops = result.ops;
+    const dry = (ops) => {
+      const result = sanitizeOps(ops, candidate.limits);
+      if (!result.ops) fail(result.errors.join('; '));
+      if (result.ops.some((op) => !DRY.has(op.k))) fail(DRY_ONLY);
+      return result.ops;
+    };
+    candidate._ops = dry(drawing.ops);
     candidate.select(drawing.tool ?? 'graphite-2b', drawing.settings ?? {});
     if (drawing.active) candidate._active = candidate._checked(drawing.active);
     if (drawing.redo !== undefined) {
-      const redo = sanitizeOps(drawing.redo, candidate.limits);
-      if (!redo.ops) fail(redo.errors.join('; '));
+      const redo = dry(drawing.redo);
       // Redo must also fit once returned to the page.
-      const combined = sanitizeOps([...candidate._ops, ...redo.ops], candidate.limits);
-      if (!combined.ops) fail(combined.errors.join('; '));
-      candidate._redo = redo.ops;
+      dry([...candidate._ops, ...redo]);
+      candidate._redo = redo;
     }
     if (drawing.reviews !== undefined) {
       if (!Array.isArray(drawing.reviews) || drawing.reviews.length > 256) fail('invalid reviews');
