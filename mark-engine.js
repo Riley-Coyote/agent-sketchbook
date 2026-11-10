@@ -21,13 +21,14 @@
 import { MaterialSurface, gestureSamples } from './material-engine.js';
 
 export const INK = [236, 243, 255];
-/* The default ink on light paper in the second canvas: a cool near-black. */
+/* The default ink on light paper: a cool near-black. */
 export const INK_DARK = [26, 27, 33];
 
-/* ------------------------------------------------------------ canvas v2 */
-/* A page opts into the second canvas with `surface: { kind: 'ink', version: 2,
- * paper }`. Pages without a surface, and the graphite studio, are untouched:
- * they render exactly as they always have. For pages that ask:
+/* ------------------------------------------------------------ paper */
+/* A page names its paper (stored as `surface: { kind: 'ink', version: 2,
+ * paper }`). Pages without a surface, the original canvas, and the graphite
+ * studio's sheet are untouched: they render exactly as they always have. On
+ * paper:
  *
  *   - layers accumulate in half-float where the browser supports it. In 8-bit,
  *     sixty faint slate strokes came out nearly pure blue, because premultiplied
@@ -66,14 +67,14 @@ export function paperIsLight(paper) {
 }
 
 /** Whether a page's paper is light, for any surface: viewers use it to pick
- * cursor and caption colours. Legacy pages are on dark paper. */
+ * cursor and caption colours. The original canvas is dark. */
 export function surfaceIsLight(surface) {
   if (!surface) return false;
   if (surface.kind === 'ink') return paperIsLight(surface.paper);
   return surface.paper !== 'black';
 }
 
-/** Paint a v2 paper into a 2d context of the given pixel size. */
+/** Paint a page's paper into a 2d context of the given pixel size. */
 export function paintPaper(ctx, paper, w, h) {
   paper = resolvePaper(paper);
   ctx.save();
@@ -532,6 +533,12 @@ export class MarkEngine {
     this.paper = this.v2 ? resolvePaper(surface.paper) : null;
     this.ink = this.v2 && ink === INK && paperIsLight(this.paper) ? INK_DARK : ink;
     this.material = surface && !this.v2 ? new MaterialSurface({ width, height, surface }) : null;
+    /* Paper with tooth is a physical sheet under the layers: it holds the
+     * paper's visible grain and every dry pigment, and paint and type sit on
+     * top of it in their usual order, whenever they were drawn. */
+    this.dry = this.v2 && surface.tooth !== undefined
+      ? new MaterialSurface({ width, height, surface: { version: 2, paper: this.paper, tooth: surface.tooth, seed: surface.seed ?? 17 } })
+      : null;
     this.float = false;
     this.plans = new WeakMap();
     this.ops = [];
@@ -576,6 +583,7 @@ export class MarkEngine {
 
   clear() {
     if (this.material) this.material.clear();
+    if (this.dry) this.dry.clear();
     if (this._coat) { this._coat = null; const { cv, ctx } = this._sheet; ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height); ctx.restore(); }
     for (const l of LAYERS) {
       const L = this.layers[l.key];
@@ -754,7 +762,8 @@ export class MarkEngine {
     if (this.material) { this.material.composite(ctx, this.w * this.dpr, this.h * this.dpr); return; }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, this.w * this.dpr, this.h * this.dpr);
-    if (this.v2) paintPaper(ctx, this.paper, this.w * this.dpr, this.h * this.dpr);
+    if (this.dry) this.dry.composite(ctx, this.w * this.dpr, this.h * this.dpr);
+    else if (this.v2) paintPaper(ctx, this.paper, this.w * this.dpr, this.h * this.dpr);
     for (const l of LAYERS) {
       if (hidden[l.key]) continue;
       ctx.globalAlpha = l.op;
@@ -1185,14 +1194,15 @@ export class MarkEngine {
 
   run(op, from, to) {
     if (this._coat && !(op.k === 's' && op.overprint && this.coatKey(op) === this._coat.key)) this.endCoat();
-    if (this.material) {
+    const sheet = this.material || (this.dry && (op.k === 'm' || op.k === 'clean') ? this.dry : null);
+    if (sheet) {
       if (op.k === 'm') {
         let prepared = this.cache.get(op);
         if (!prepared) { prepared = gestureSamples(op); this.cache.set(op, prepared); }
-        this.material.run(op, from, to, prepared);
+        sheet.run(op, from, to, prepared);
         const tip = prepared.findLast((sample) => sample.progress <= to);
         if (tip) this.pen = { x: tip.x, y: tip.y };
-      } else this.material.run(op, from, to);
+      } else sheet.run(op, from, to);
       return;
     }
     if (op.k === 'clamp') { if (from === 0) this.clampLayer(op.layer, op.max); return; }
