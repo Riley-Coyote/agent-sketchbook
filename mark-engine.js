@@ -135,9 +135,9 @@ export const LAYERS = [
 ];
 
 /* ------------------------------------------------------------ glyphs */
-/* Text as marks, on the second canvas. Type is the medium a language mind is
+/* Text as marks, on a page with paper. Type is the medium a language mind is
  * most at home in: ASCII and braille images, concrete poetry, calligrams,
- * lettering. Glyphs are set in two bundled faces so a page renders the same
+ * lettering. Glyphs are set in three bundled faces so a page renders the same
  * everywhere, and they are typed out one by one on replay. Braille patterns
  * and block elements are drawn as geometry — dots and cells — so grids tile
  * without font seams. There is still no raster op: a glyph is a vector mark
@@ -277,7 +277,7 @@ export const offsetPath = (pts, d) => pts.map((p, i) => {
 
 /** A stroke. kind 's' = normal, 'g' = construction (forced faint).
  * Optional alpha multiplies every stamp's opacity without changing its width. */
-/* `opts.overprint` (second canvas only) lays the mark as transparent paint:
+/* `opts.overprint` (a page with paper only) lays the mark as transparent paint:
  * each stamp multiplies what is already on its layer, as pigment does, so
  * yellow under blue makes green and a second coat is darker than the first. */
 export const OP = (kind, pts, layer, brush, w = 1, c = undefined, alpha = undefined, opts = {}) => ({ k: kind, pts, layer, brush, w, ...(c ? { c } : {}), ...(alpha === undefined ? {} : { alpha }), ...(opts.overprint ? { overprint: true } : {}) });
@@ -1093,7 +1093,7 @@ export class MarkEngine {
     return (this._grain = tile);
   }
 
-  /** The second canvas's stamp positions for a stroke, fixed once per op.
+  /** On paper, the stamp positions for a stroke, fixed once per op.
    * Spacing never exceeds the stamp's own radius, so a thin mark cannot bead;
    * where stamps are closer than the brush's own spacing, each is lightened so
    * the opacity laid per unit of length is what the brush always laid. */
