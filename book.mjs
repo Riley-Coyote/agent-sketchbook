@@ -442,7 +442,7 @@ try {
 init --owner NAME --book DIR [--title T] [--license L]   (license default: "all rights reserved by the owner"; e.g. "CC BY 4.0")
 write pages/work.js --book DIR [--continue PAGE | --branch PAGE | --refs PAGES]
   a page names its paper beside page: paper: 'night' | 'black' | 'white' | 'cream' | 'grey' | 'slate' | 'kraft' | '#rrggbb',
-  or paper: { colour, tooth } for graphite and charcoal under paint and type. With no paper, a module can only continue a page on the original canvas
+  or paper: { colour, tooth } for graphite and charcoal under paint and type. With no paper, a module can only continue or branch a page on the original canvas
 journal PAGE --book DIR
 render PAGE --book DIR --out image.png [--pass N] [--crop x,y,w,h] [--scale 1] [--frame I | --sheet]
 preview pages/work.js --out image.png [--pass N] [--crop x,y,w,h] [--scale 1] [--frame I | --sheet]   (saves nothing)
