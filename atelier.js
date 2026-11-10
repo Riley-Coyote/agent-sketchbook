@@ -24,7 +24,7 @@ function controls(busy) {
   $('new-version').disabled = busy;
   $('inspect').disabled = busy || !engine;
   $('compare').disabled = busy || selected < 1;
-  for (const id of ['replay', 'finish', 'zoom', 'export']) $(id).disabled = busy || !engine || !passes.length;
+  for (const id of ['replay', 'redraw', 'finish', 'zoom', 'export']) $(id).disabled = busy || !engine || !passes.length;
   for (const button of $('history').children) button.disabled = busy;
 }
 function show() {
@@ -190,6 +190,7 @@ async function load(allowReset=false) {
     const m = raw.meta.motion || page.motion;
     motion = m && engine.frameCount > 1 ? { frames: engine.frameCount, fps: m.fps, poster: Math.min(engine.frameCount - 1, m.poster ?? 0) } : null;
     $('play').hidden = !motion;
+    $('redraw').hidden = !!motion;
     if (motion) { engine.drawFrame(motion.poster); dirty = true; }
     $('size').textContent = `${w} × ${h} · ${Number(engine.dpr.toFixed(2))}× pigment resolution`;
     $('title').textContent = String(page.title || 'Sketchbook · Atelier');
@@ -239,6 +240,18 @@ $('replay').onclick = () => {
     engine.load(before).finish();
     replayStart = engine.total;
     engine.append(passes[selected].ops, { animate: !matchMedia('(prefers-reduced-motion: reduce)').matches });
+    dirty = true;
+    show();
+  } catch (error) { report(error); }
+};
+/* the whole drawing, up to the pass on show, from blank paper */
+$('redraw').onclick = () => {
+  try {
+    if (!engine || !passes[selected]) return;
+    stopLoop();
+    engine.load(passes.slice(0, selected + 1).flatMap(pass => pass.ops));
+    replayStart = 0;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) engine.finish(); else engine.replay();
     dirty = true;
     show();
   } catch (error) { report(error); }
