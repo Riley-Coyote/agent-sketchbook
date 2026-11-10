@@ -172,6 +172,16 @@ function roundOp(op) {
   if (typeof o.w === 'number') o.w = r2(o.w);
   return o;
 }
+/** The marks a save stores: checked, then paint rounded to a tenth of a pixel,
+ * then checked again. Material gestures keep their pressure, tilt, time and
+ * subpixel coordinates exactly. write and preview both come through here, so
+ * a preview is the saved page to the pixel. */
+function marksToStore(built, limits) {
+  // Validate before rounding: JSON null must never be coerced into coordinate zero.
+  const raw = sanitizeOps(built, limits);
+  if (!raw.ops) return raw;
+  return sanitizeOps(raw.ops.map(op => op.k === 'm' ? op : roundOp(op)), limits);
+}
 
 /** Run a page module and get { ops, meta } — through the sandbox unless --unsafe. */
 async function buildPage(modPath) {
@@ -555,12 +565,7 @@ export default {
       const from = relation ? (await savedPage(book, Number(arg(`--${relation}`)))).page : null;
       if (!from || (relation === 'branch' && from.surface !== undefined)) throw new Error(`this page names no paper. A new page names its paper beside page: ${PAPER_HELP}. With no paper, a module can only continue or branch a page that is already on the original canvas.`);
     }
-    // Validate before rounding: JSON null must never be coerced into coordinate zero.
-    const raw = sanitizeOps(built.ops, limitsForPage(page, surface));
-    if (!raw.ops) throw new Error(`the page's marks were rejected:\n  ${raw.errors.join('\n  ')}`);
-    // Material gestures retain pressure, tilt, time and subpixel coordinates exactly.
-    const prepared = raw.ops.map(op => op.k === 'm' ? op : roundOp(op));
-    const { ops, errors, stats } = sanitizeOps(prepared, limitsForPage(page, surface));
+    const { ops, errors, stats } = marksToStore(built.ops, limitsForPage(page, surface));
     if (!ops) throw new Error(`the page's marks were rejected:\n  ${errors.join('\n  ')}`);
     if (ops.length === 0) throw new Error('the page has no marks');
     const { meta: m } = sanitizePageMeta({
@@ -820,7 +825,7 @@ export default {
     if (!dimensions) throw new Error(`the page dimensions were rejected: ${dimensionErrors.join('; ')}`);
     const { surface, errors: surfaceErrors } = sanitizeSurface(built.meta.surface);
     if (surface === null) throw new Error(`the page surface was rejected: ${surfaceErrors.join('; ')}`);
-    const checked = sanitizeOps(built.ops, limitsForPage(dimensions, surface));
+    const checked = marksToStore(built.ops, limitsForPage(dimensions, surface));
     if (!checked.ops) throw new Error(`the page's marks were rejected:\n  ${checked.errors.join('\n  ')}`);
     let ops = checked.ops;
     const motion = motionFor(built.meta.motion, dimensions, ops);

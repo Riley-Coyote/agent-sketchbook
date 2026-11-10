@@ -484,7 +484,8 @@ node book.mjs init --owner "Your name" --book books/my-study
 ```
 
 **2. Look before you save.** `preview` runs the same sealed box, the same
-checks and the same hand as saving, and spends no page:
+checks and the same hand as saving, and spends no page. What it draws is
+what a save would store, to the pixel:
 
 ```sh
 node book.mjs preview pages/my-study.js --out books/my-study/preview.png --scale 1

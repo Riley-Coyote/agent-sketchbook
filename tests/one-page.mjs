@@ -294,7 +294,7 @@ try {
 
   console.log('a toothed page through the book');
   {
-    const mixed = await module('mixed', { paper: { colour: 'cream', tooth: 0.7 } }, [gesture(40, 'graphite-6b'), gesture(43, 'graphite-6b'), stroke(70, [200, 30, 30]), { k: 't', text: 'type', x: 20, y: 100, size: 18, font: 'serif' }, { k: 'f', poly: [[100, 20], [150, 20], [150, 60], [100, 60]], c: [40, 90, 200] }]);
+    const mixed = await module('mixed', { paper: { colour: 'cream', tooth: 0.7 } }, [gesture(40, 'graphite-6b'), gesture(43, 'graphite-6b'), stroke(70, [200, 30, 30]), { ...stroke(84, [30, 60, 160]), pts: [[10.04, 84.06], [150.06, 84.04]] }, { k: 't', text: 'type', x: 20, y: 100, size: 18, font: 'serif' }, { k: 'f', poly: [[100, 20], [150, 20], [150, 60], [100, 60]], c: [40, 90, 200] }]);
     const look = cli('preview', mixed, '--out', join(scratch, 'mixed-preview.png'), '--scale', '1');
     const w = cli('write', mixed, '--book', book);
     const n = JSON.parse(await readFile(join(book, 'book.json'), 'utf8')).pages.length;
@@ -310,7 +310,7 @@ try {
       for (let y = 38; y < 50; y++) for (let x = 40; x < 90; x++) { const c = at(x, y); if (c[0] + c[1] + c[2] < graphite[0] + graphite[1] + graphite[2]) graphite = c; }
       return { size: [img.width, img.height], paper: at(150, 110), graphite, shape: at(125, 30) };
     }, a.toString('base64'));
-    ok(look.code === 0 && !/names no paper/.test(look.out) && w.code === 0 && r.code === 0 && a?.equals(b), 'preview, write and render draw a toothed page, and the saved render matches its preview');
+    ok(look.code === 0 && !/names no paper/.test(look.out) && w.code === 0 && r.code === 0 && a?.equals(b), 'preview, write and render draw a toothed page, and the saved render matches its preview, paint a save rounds included');
     ok(shown && shown.graphite.every((v, i) => v < shown.paper[i] - 30) && shown.shape.every((v, i) => Math.abs(v - [40, 90, 200][i]) <= 1), `the render holds paper, graphite and paint (${JSON.stringify(shown)})`);
   }
 
