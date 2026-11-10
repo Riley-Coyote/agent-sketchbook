@@ -60,8 +60,10 @@ const sandbox = async (file) => {
 
 console.log('pages');
 {
-  const files = (await readdir(resolve(ROOT, 'pages'))).filter((f) => f.endsWith('.js') && f !== 'lib.js');
+  const files = (await readdir(resolve(ROOT, 'pages'))).filter((f) => f.endsWith('.js'));
   for (const f of files) {
+    // A file with no default export is a helper other pages import, not a page.
+    if (!/\bexport\s+default\b|\bas\s+default\b/.test(await readFile(resolve(ROOT, 'pages', f), 'utf8'))) { console.log(`  helper ${f}`); continue; }
     const r = await sandbox('pages/' + f);
     if (r.error) { ok(false, `${f}: ${r.error}`); continue; }
     const dimensions = sanitizePageDimensions(r.meta?.page);
@@ -78,12 +80,14 @@ console.log('book tool');
   const dir = await mkdtemp(join(tmpdir(), 'sketchbook-'));
   const tool = (...a) => run(process.execPath, [resolve(ROOT, 'book.mjs'), ...a, '--book', dir], { cwd: ROOT, maxBuffer: 256 * 1024 * 1024 });
   await tool('init', '--owner', 'test');
-  const w = await tool('write', 'pages/moth.js');
-  ok(/page 1: "moth on a branch"/.test(w.stdout), 'writes a page through the sandbox');
+  const w = await tool('write', 'pages/example-riso-harbour.js');
+  ok(/page 1: "harbour, two inks"/.test(w.stdout), 'writes a page through the sandbox');
   const bad = await tool('write', 'tests/hostile-fetch.js').catch((e) => e);
   ok(bad.code === 1 && /sandbox: fetch is not defined/.test(bad.stderr), 'refuses a hostile page');
-  const badRef = await tool('write', 'pages/moth.js', '--refs', '9').catch((e) => e);
+  const badRef = await tool('write', 'pages/example-riso-harbour.js', '--refs', '9').catch((e) => e);
   ok(badRef.code === 1 && /refs page 9/.test(badRef.stderr), 'refuses a ref to a page that is not there');
+  const nameless = await tool('write', 'pages/moth.js').catch((e) => e);
+  ok(nameless.code === 1 && /names no paper/.test(nameless.stderr) && /paper: 'night'/.test(nameless.stderr), 'refuses a new page that names no paper, and shows the fix');
   const l = await tool('list');
   ok(/1 of 48 pages drawn/.test(l.stdout), 'lists the book');
   const idx = JSON.parse(await readFile(join(dir, 'book.json'), 'utf8'));

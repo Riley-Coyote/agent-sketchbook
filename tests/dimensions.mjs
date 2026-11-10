@@ -30,7 +30,7 @@ assert.ok(limitsForPage(large).maxOps > LIMITS.maxOps);
 const fixtures = await mkdtemp(join(ROOT, 'tests', 'dimension-fixtures-'));
 const book = await mkdtemp(join(tmpdir(), 'sketchbook-dimensions-'));
 const tool = (...args) => run(process.execPath, [join(ROOT, 'book.mjs'), ...args, '--book', book], { cwd: ROOT });
-const pageModule = (page, op) => `export default ${JSON.stringify({ title: 'dimension test', date: '2026-09-04', note: 'Testing page dimensions across the sandbox and persistence boundary.', ...(page === undefined ? {} : { page }) }).replace(/}$/, '')}, build() { return ${JSON.stringify([op])}; } };\n`;
+const pageModule = (page, op) => `export default ${JSON.stringify({ title: 'dimension test', date: '2026-09-04', note: 'Testing page dimensions across the sandbox and persistence boundary.', paper: 'night', ...(page === undefined ? {} : { page }) }).replace(/}$/, '')}, build() { return ${JSON.stringify([op])}; } };\n`;
 try {
   const legacySource = join(fixtures, 'legacy.js');
   const largeSource = join(fixtures, 'large.js');

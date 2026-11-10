@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile, mkdir } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,6 +42,21 @@ const writeSource = async (name, paper, ops = materialOps) => {
   const path = join(fixtures, name + '.js');
   await writeFile(path, moduleSource(paper, ops));
   return path;
+};
+
+/* A new page names its paper, so a page on the original canvas is one already
+ * in a book: page 1, written as the tool has always written it. Continuing it
+ * is how a module with no paper is saved now. */
+const ground = { k: 'phase', name: 'ground', ms: 0 };
+const originalCanvasPage = async () => {
+  const hash = (v) => createHash('sha256').update(typeof v === 'string' ? v : JSON.stringify(v)).digest('hex');
+  const index = JSON.parse(await readFile(join(book, 'book.json'), 'utf8'));
+  const source = 'export default { title: "ground", note: "an original-canvas page", page: { w: 240, h: 180 }, build: () => [{ k: "phase", name: "ground", ms: 0 }] };\n';
+  const meta = { index: 1, file: 'pages/001.json', title: 'ground', date: '2026-09-05', note: 'an original-canvas page', refs: [], seed: 1, page: dimensions, module: 'tests/ground.js', opCount: 1, points: 0, state: 'drawn', stage: 'study' };
+  await mkdir(join(book, 'pages'), { recursive: true });
+  await writeFile(join(book, meta.file), JSON.stringify({ ...meta, journal: { version: 1, sourceHash: hash(source), marksHash: hash([ground]), passes: [] }, source, ops: [ground] }));
+  index.pages.push(meta);
+  await writeFile(join(book, 'book.json'), JSON.stringify(index, null, 2) + '\n');
 };
 
 // Exercise the actual viewer controllers with inert canvases; rendering is tested by the engine suite.
@@ -132,11 +148,12 @@ async function checkViewerTransitions() {
 
 try {
   await tool('init', '--owner', 'material persistence test');
-  const legacy = await writeSource('legacy', undefined, [legacyOp]);
-  await tool('write', legacy);
-  const savedLegacy = JSON.parse(await readFile(join(book, 'pages', '001.json'), 'utf8'));
+  await originalCanvasPage();
+  const legacy = await writeSource('legacy', undefined, [ground, legacyOp]);
+  await tool('write', legacy, '--continue', '1');
+  const savedLegacy = JSON.parse(await readFile(join(book, 'pages', '002.json'), 'utf8'));
   assert.equal(Object.hasOwn(savedLegacy, 'surface'), false, 'old format remains free of surface metadata');
-  assert.deepEqual(savedLegacy.ops, [{ ...legacyOp, pts: [[10, 20], [221, 161]], w: 0.51 }], 'legacy precision behavior remains unchanged');
+  assert.deepEqual(savedLegacy.ops, [ground, { ...legacyOp, pts: [[10, 20], [221, 161]], w: 0.51 }], 'legacy precision behavior remains unchanged');
 
   for (const [i, paper] of ['white', 'toned', 'black'].entries()) {
     const inputSurface = { ...surface, paper, ignoredMetadata: 'discard me' };
@@ -148,7 +165,7 @@ try {
     assert.deepEqual(built.ops, materialOps, 'sandbox retains pressure, tilt, timing and coordinates');
     // Both supported build paths cross the same validation boundary.
     await tool('write', source, '--refs', '1', ...(paper === 'black' ? ['--unsafe'] : []));
-    const number = i + 2;
+    const number = i + 3;
     const saved = JSON.parse(await readFile(join(book, 'pages', String(number).padStart(3, '0') + '.json'), 'utf8'));
     assert.deepEqual(saved.surface, expectedSurface);
     assert.deepEqual(saved.ops, materialOps, 'book persistence does not round away fine motor control');
@@ -164,15 +181,15 @@ try {
     const source = await writeSource('invalid-surface-' + i, invalidSurface);
     await assert.rejects(tool('write', source), error => error.code === 1 && /surface.*rejected/.test(error.stderr));
   }
-  for (const [name, paper, ops] of [['material-on-legacy', undefined, materialOps], ['legacy-on-material', surface, [legacyOp]]]) {
+  for (const [name, paper, ops, relation] of [['material-on-legacy', undefined, materialOps, ['--continue', '1']], ['legacy-on-material', surface, [legacyOp], []]]) {
     const source = await writeSource(name, paper, ops);
-    await assert.rejects(tool('write', source), error => error.code === 1 && /marks were rejected/.test(error.stderr));
+    await assert.rejects(tool('write', source, ...relation), error => error.code === 1 && /marks were rejected/.test(error.stderr));
   }
   assert.equal(await readFile(join(book, 'book.json'), 'utf8'), before, 'rejected pages leave the index byte-for-byte intact');
-  assert.equal((await readdir(join(book, 'pages'))).length, 4, 'rejected pages do not leave orphaned page files');
+  assert.equal((await readdir(join(book, 'pages'))).length, 5, 'rejected pages do not leave orphaned page files');
   const index = JSON.parse(before);
-  assert.equal(Object.hasOwn(index.pages[0], 'surface'), false);
-  assert.deepEqual(index.pages.slice(1).map(page => page.surface.paper), ['white', 'toned', 'black']);
+  assert.equal(Object.hasOwn(index.pages[0], 'surface') || Object.hasOwn(index.pages[1], 'surface'), false);
+  assert.deepEqual(index.pages.slice(2).map(page => page.surface.paper), ['white', 'toned', 'black']);
   await checkViewerTransitions();
   console.log('Surface metadata, sandbox imports, exact gestures, safe/unsafe roundtrips, legacy preservation, rejected-write atomicity and viewer surface transitions passed.');
 } finally {

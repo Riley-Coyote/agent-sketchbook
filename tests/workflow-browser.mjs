@@ -10,7 +10,7 @@ const file=resolve(ROOT,'pages/workflow-browser-fixture.js');
 const bookPath=`books/workflow-browser-${process.pid}`;
 const book=resolve(ROOT,bookPath);
 const cli=(...args)=>run(process.execPath,[resolve(ROOT,'book.mjs'),...args,'--book',book],{cwd:ROOT});
-const moduleText=(n=1,x=50)=>`const passes=Array.from({length:${n}},(_,i)=>({name:'Layer '+(i+1),note:'Observed edge '+i,review:{observation:'A hard edge',change:'Added local marks',next:'Look at the join',region:[20,20,180,120]},build:()=>[{k:'s',pts:[[${x},50+i*40],[250,70+i*40]],brush:'soft',layer:'line',w:2,c:[230,230,230]}]}));export default {title:'Revision trial',note:'A native test',page:{w:320,h:260},passes,build:()=>passes.flatMap(p=>p.build())};`;
+const moduleText=(n=1,x=50,paper='')=>`const passes=Array.from({length:${n}},(_,i)=>({name:'Layer '+(i+1),note:'Observed edge '+i,review:{observation:'A hard edge',change:'Added local marks',next:'Look at the join',region:[20,20,180,120]},build:()=>[{k:'s',pts:[[${x},50+i*40],[250,70+i*40]],brush:'soft',layer:'line',w:2,c:[230,230,230]}]}));export default {title:'Revision trial',note:'A native test',page:{w:320,h:260},${paper&&paper+','}passes,build:()=>passes.flatMap(p=>p.build())};`;
 const browser=await chromium.launch();const page=await browser.newPage({viewport:{width:1440,height:1050}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
 const pixels=()=>page.locator('#canvas').evaluate(c=>c.toDataURL());
 const settled=()=>page.waitForFunction(()=>document.querySelector('#status').textContent.includes('paused to look'));
@@ -31,7 +31,7 @@ try {
  await page.locator('#crop-x').fill('999');await page.locator('#inspect').click();assert.match(await page.locator('#error').innerText(),/inside the drawing/);
  await page.emulateMedia({reducedMotion:'reduce'});await page.locator('#replay').click();await settled();
  // Desktop and narrow layouts, including comparison and inspection states.
- await writeFile(file,moduleText(4,90));await cli('init','--owner','Browser workflow');await cli('write',file);
+ await writeFile(file,moduleText(4,90,"paper:'night'"));await cli('init','--owner','Browser workflow');await cli('write',file);
  await page.goto(`${base}/atelier.html?book=${bookPath}&page=1`);await settled();assert.equal(await page.locator('#reload').isDisabled(),true);assert.equal(await page.locator('#stage-label').innerText(),'study');assert.equal(await page.locator('#history button').count(),4);
  await page.locator('#compare').click();await page.screenshot({path:resolve(ROOT,'review/workflow/desktop-comparison.png'),fullPage:true});
  await page.setViewportSize({width:375,height:850});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no horizontal page overflow');await page.screenshot({path:resolve(ROOT,'review/workflow/mobile-comparison.png'),fullPage:true});
