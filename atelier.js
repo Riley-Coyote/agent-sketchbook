@@ -152,7 +152,8 @@ async function load(allowReset=false) {
     }
     const dims = sanitizePageDimensions(page.page);
     if (!dims.page) throw Error(dims.errors.join('; '));
-    const { surface, errors: surfaceErrors } = sanitizeSurface(page.surface);
+    // A module's paper is what compilePage says it is, however the module declared it.
+    const { surface, errors: surfaceErrors } = sanitizeSurface(raw.meta.surface);
     if (surface === null) throw Error('Page surface rejected: ' + surfaceErrors.join('; '));
     const { w, h } = dims.page;
     // A failed edit must leave the last good painting, pass controls and replay intact.
