@@ -30,7 +30,7 @@
  */
 
 import { readFile, writeFile, mkdir, rename, rm } from 'node:fs/promises';
-import { compilePage } from './page-program.js';
+import { compilePage, paperLine } from './page-program.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -39,7 +39,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, sanitizeSurface, sanitizeMotion, countFrames, limitsForPage } from './validate.js';
-import { PAPERS_V2 } from './mark-engine.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PAGES = 48;
@@ -499,12 +498,6 @@ Saving defaults to a study. Selection records intent; it does not publish or gra
     const { page } = await savedPage(book, n);
     const target = arg('--out');
     if (!target || !target.endsWith('.js')) throw Error('resume needs --out pages/new-name.js');
-    /* A page with paper resumes as paper, by name where it has one; the old
-     * graphite form keeps its surface; the original canvas writes neither. */
-    const paperName = (paper) => Object.keys(PAPERS_V2).find((name) => PAPERS_V2[name] === paper) || paper;
-    const paperLine = (surface) => !surface ? ''
-      : surface.kind !== 'ink' ? `surface: ${JSON.stringify(surface)},`
-      : `paper: ${JSON.stringify(surface.tooth === undefined ? paperName(surface.paper) : { colour: paperName(surface.paper), tooth: surface.tooth, seed: surface.seed })},`;
     const restored = checkpoint(page);
     const passes = restored.passes.length ? restored.passes : [{ name: 'Saved marks', note: page.note, start: 0, end: restored.ops.length }];
     const data = passes.map(pass => ({ name: pass.name, note: pass.note, ...(pass.review ? { review: pass.review } : {}), ops: restored.ops.slice(pass.start, pass.end) }));

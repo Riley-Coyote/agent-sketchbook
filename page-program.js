@@ -1,5 +1,19 @@
 /* One compilation contract for the CLI, browser sandbox and trusted atelier.
- * Keep this function self-contained: sandboxes evaluate its source locally. */
+ * Keep compilePage self-contained: sandboxes evaluate its source locally. */
+import { PAPERS_V2 } from './mark-engine.js';
+
+/** A stored paper colour by its name, where it has one. */
+export const paperName = (paper) => Object.keys(PAPERS_V2).find((name) => PAPERS_V2[name] === paper) || paper;
+
+/** The line a written page module names its paper with: paper by name for a
+ * page with paper (resume and a live sheet both write this), the old graphite
+ * form as its surface, and nothing for the original canvas. */
+export function paperLine(surface) {
+  if (!surface) return '';
+  if (surface.kind !== 'ink') return `surface: ${JSON.stringify(surface)},`;
+  return `paper: ${JSON.stringify(surface.tooth === undefined ? paperName(surface.paper) : { colour: paperName(surface.paper), tooth: surface.tooth, seed: surface.seed })},`;
+}
+
 export function compilePage(page) {
   /* A page names its paper: a colour, or { colour, tooth, seed } for paper
    * graphite can bite into. It is stored as the surface it names. A module
