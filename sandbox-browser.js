@@ -18,7 +18,7 @@
  */
 
 import { compilePage } from './page-program.js';
-import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, sanitizeSurface, limitsForPage } from './validate.js';
+import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, sanitizeSurface, sanitizeMotion, countFrames, limitsForPage } from './validate.js';
 
 const FRAME_SRC = `<!doctype html>
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' data:; worker-src data:; child-src data:">
@@ -62,7 +62,8 @@ const FRAME_SRC = `<!doctype html>
       const code = 'for (const k of ["fetch", "XMLHttpRequest", "WebSocket", "EventSource", "importScripts", "caches", "indexedDB"]) { try { Object.defineProperty(self, k, { value: undefined, configurable: false, writable: false }); } catch (e) {} }' +
         'try { Object.defineProperty(self.navigator, "sendBeacon", { value: undefined }); } catch (e) {}' +
         'const m = await import(' + JSON.stringify(entry) + ');' +
-        'const p = m.default; if (!p || typeof p.build !== "function") throw new Error("page module must export default { title, date, note, build }");' +
+        /* compilePage decides what a page must export: build(), or frame(i, n) with motion */
+        'const p = m.default; if (!p || typeof p !== "object") throw new Error("page module must export default { title, date, note, build }");' +
         'postMessage(JSON.parse(JSON.stringify((' + ${JSON.stringify(compilePage.toString())} + ')(p))));';
       worker = new Worker(mk(code), { type: 'module' });
     } catch (err) { reply({ error: String(err && err.message || err) }); return; }
@@ -133,6 +134,11 @@ export async function runPageSource(source, { modules = {}, timeoutMs = 15000 } 
   if (surface === null) throw new Error('the page surface was rejected: ' + surfaceErrors.join('; '));
   const { ops, errors, stats } = sanitizeOps(result.ops, limitsForPage(page, surface));
   if (!ops) throw new Error('the marks were rejected: ' + errors.join('; '));
+  const { motion, errors: motionErrors } = sanitizeMotion(result.meta?.motion, page);
+  if (motion === null) throw new Error('the page motion was rejected: ' + motionErrors.join('; '));
+  const frames = countFrames(ops);
+  if (!motion && frames > 1) throw new Error('the marks hold frame breaks but the page declares no motion');
+  if (motion && motion.frames !== frames) throw new Error(`motion declares ${motion.frames} frames but the marks hold ${frames}`);
   const { meta } = sanitizePageMeta(result.meta || {});
-  return { ops, meta: { ...meta, ...(result.meta?.passes ? { passes: result.meta.passes } : {}), page, ...(surface === undefined ? {} : { surface }) }, stats };
+  return { ops, meta: { ...meta, ...(result.meta?.passes ? { passes: result.meta.passes } : {}), page, ...(surface === undefined ? {} : { surface }), ...(motion ? { motion } : {}) }, stats };
 }
