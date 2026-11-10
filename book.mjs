@@ -17,6 +17,12 @@
  *
  * `--book <dir>` picks the book (default: ./book). One folder per mind.
  *
+ * A page names its paper beside `page`: `paper: 'night'` (or black, white,
+ * cream, grey, slate, kraft, '#rrggbb'), or `paper: { colour, tooth, seed }`
+ * for paper with tooth, where graphite and charcoal bite into the paper and
+ * paint and type sit on top. A module with no paper is on the original
+ * canvas: it can continue a page already there, never start one.
+ *
  * write runs the module in the sandbox (sandbox.mjs: no globals, no network,
  * imports only from this folder, a time limit) and keeps only marks that pass
  * validate.js. `--unsafe` imports the module directly; for your own pages
@@ -33,6 +39,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, sanitizeSurface, sanitizeMotion, countFrames, limitsForPage } from './validate.js';
+import { PAPERS_V2 } from './mark-engine.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PAGES = 48;
@@ -54,6 +61,9 @@ async function saveBook(book) {
   await writeFile(temporary, JSON.stringify(book, null, 2) + '\n');
   await rename(temporary, INDEX);
 }
+
+/* What a module with no paper is told: how to give it one. */
+const PAPER_HELP = "paper: 'night' for the dark ground, or black, white, cream, grey, slate, kraft or '#rrggbb'; paper: { colour: 'white', tooth: 0.65 } for graphite and charcoal";
 
 const hash = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
 const stageNames = ['study', 'candidate', 'exhibition'];
@@ -204,7 +214,7 @@ Or make the PNG by hand; it is the same three calls:
 
   1. serve this folder            python3 -m http.server 8000
   2. open                         http://localhost:8000/index.html?book=<book dir>
-     turn to the page (or use page.html?p=<module> for a page module)
+     turn to the page (or use atelier.html?p=<module> for a page module)
   3. in the console               engine.finish(); copy(engine.toDataURL())
   4. write the file               pbpaste | sed 's|^data:image/png;base64,||' \\
                                     | base64 -d > page.png
@@ -431,6 +441,8 @@ try {
     console.log(`Start here: START_HERE.md
 init --owner NAME --book DIR [--title T] [--license L]   (license default: "all rights reserved by the owner"; e.g. "CC BY 4.0")
 write pages/work.js --book DIR [--continue PAGE | --branch PAGE | --refs PAGES]
+  a page names its paper beside page: paper: 'night' | 'black' | 'white' | 'cream' | 'grey' | 'slate' | 'kraft' | '#rrggbb',
+  or paper: { colour, tooth } for graphite and charcoal under paint and type. With no paper, a module can only continue a page on the original canvas
 journal PAGE --book DIR
 render PAGE --book DIR --out image.png [--pass N] [--crop x,y,w,h] [--scale 1] [--frame I | --sheet]
 preview pages/work.js --out image.png [--pass N] [--crop x,y,w,h] [--scale 1] [--frame I | --sheet]   (saves nothing)
@@ -480,13 +492,19 @@ Saving defaults to a study. Selection records intent; it does not publish or gra
   } else if (cmd === 'journal') {
     const book = await loadBook();
     const { meta, page } = await savedPage(book, Number(args[0]));
-    console.log(JSON.stringify({ title: meta.title, stage: meta.stage || 'unclassified', selectionNote: meta.selectionNote || '', journal: page.journal || null, note: page.journal ? undefined : 'Legacy page: no recorded passes. Source and marks remain available; no review history has been invented.' }, null, 2));
+    console.log(JSON.stringify({ title: meta.title, stage: meta.stage || 'unclassified', selectionNote: meta.selectionNote || '', journal: page.journal || null, note: page.journal ? undefined : 'This page has no recorded passes. Source and marks remain available; no review history has been invented.' }, null, 2));
   } else if (cmd === 'resume') {
     const book = await loadBook();
     const n = Number(args[0]);
     const { page } = await savedPage(book, n);
     const target = arg('--out');
     if (!target || !target.endsWith('.js')) throw Error('resume needs --out pages/new-name.js');
+    /* A page with paper resumes as paper, by name where it has one; the old
+     * graphite form keeps its surface; the original canvas writes neither. */
+    const paperName = (paper) => Object.keys(PAPERS_V2).find((name) => PAPERS_V2[name] === paper) || paper;
+    const paperLine = (surface) => !surface ? ''
+      : surface.kind !== 'ink' ? `surface: ${JSON.stringify(surface)},`
+      : `paper: ${JSON.stringify(surface.tooth === undefined ? paperName(surface.paper) : { colour: paperName(surface.paper), tooth: surface.tooth, seed: surface.seed })},`;
     const restored = checkpoint(page);
     const passes = restored.passes.length ? restored.passes : [{ name: 'Saved marks', note: page.note, start: 0, end: restored.ops.length }];
     const data = passes.map(pass => ({ name: pass.name, note: pass.note, ...(pass.review ? { review: pass.review } : {}), ops: restored.ops.slice(pass.start, pass.end) }));
@@ -499,7 +517,7 @@ const passes = saved.map(({ops, ...entry}) => ({...entry, build: () => ops}));
 export default {
   title: ${JSON.stringify(page.title)}, date: ${JSON.stringify(new Date().toISOString().slice(0,10))},
   note: ${JSON.stringify(page.note)}, page: ${JSON.stringify(page.page || {w:880,h:660})},
-  ${page.surface ? `surface: ${JSON.stringify(page.surface)},` : ''}
+  ${paperLine(page.surface)}
   passes, build: () => passes.flatMap(pass => pass.build())
 };
 `;
@@ -533,6 +551,13 @@ export default {
     if (!page) throw new Error(`the page dimensions were rejected: ${dimensionErrors.join('; ')}`);
     const { surface, errors: surfaceErrors } = sanitizeSurface(built.meta.surface);
     if (surface === null) throw new Error(`the page surface was rejected: ${surfaceErrors.join('; ')}`);
+    const relation = flag('--continue') ? 'continue' : flag('--branch') ? 'branch' : null;
+    if (built.meta.noPaper) {
+      // Only a page already on the original canvas carries it on. Continuing
+      // a page with paper meets the same-paper rule below.
+      const from = relation ? (await savedPage(book, Number(arg(`--${relation}`)))).page : null;
+      if (!from || (relation === 'branch' && from.surface !== undefined)) throw new Error(`this page names no paper. A new page names its paper beside page: ${PAPER_HELP}. With no paper, a module can only continue or branch a page that is already on the original canvas.`);
+    }
     // Validate before rounding: JSON null must never be coerced into coordinate zero.
     const raw = sanitizeOps(built.ops, limitsForPage(page, surface));
     if (!raw.ops) throw new Error(`the page's marks were rejected:\n  ${raw.errors.join('\n  ')}`);
@@ -551,7 +576,6 @@ export default {
     for (const r of m.refs) if (!book.pages.some((p) => p.index === r)) throw new Error(`refs page ${r}, which is not in the book`);
     const source = await readFile(modPath, 'utf8');
     let parent;
-    const relation = flag('--continue') ? 'continue' : flag('--branch') ? 'branch' : null;
     if (relation) {
       const n = Number(arg(`--${relation}`));
       const previous = (await savedPage(book, n)).page;
@@ -805,6 +829,7 @@ export default {
     const through = arg('--pass') ? ` through pass ${arg('--pass')} of ${passes.length}` : passes.length ? ` (${passes.length} passes)` : '';
     const which = motion ? `, ${frameName(motion, view)} at ${motion.fps} fps` : '';
     console.log(`preview: "${built.meta.title || 'untitled'}"${through}${which}, ${ops.length} marks → ${out}. Nothing was saved.`);
+    if (built.meta.noPaper) console.log(`This page names no paper, so it is drawn on the original canvas, and it can't be saved there as a new page. Give it paper beside page: ${PAPER_HELP}.`);
     }
   } else {
     throw new Error('Unknown command. Run node book.mjs help for drawing, inspection, revision and selection commands.');
