@@ -1,5 +1,5 @@
 /* tests/browser.mjs — node tests/browser.mjs [http://localhost:4192]
- * Drives embed.html in headless Chromium: the <sketch-page> element draws a
+ * Drives demos/embed.html in headless Chromium: the <sketch-page> element draws a
  * page from the book, and the browser sandbox runs a real page and refuses
  * hostile ones. Needs the folder served over HTTP and playwright on the
  * machine (PLAYWRIGHT env var points at its index.mjs if not the default).
@@ -16,7 +16,7 @@ const page = await (await browser.newContext({ viewport: { width: 1200, height: 
 const errors = [];
 page.on('pageerror', (e) => errors.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-await page.goto(`${base}/embed.html?t=${Date.now()}`);
+await page.goto(`${base}/demos/embed.html?t=${Date.now()}`);
 await page.waitForFunction(() => window.sandbox && document.getElementById('chat-2').ops.length > 0, null, { timeout: 30000 });
 
 console.log('sketch-page');
