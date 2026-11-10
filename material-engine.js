@@ -1,7 +1,9 @@
-/* Opt-in dry media. The legacy stamp engine never enters this renderer.
- * Pigment lives on a fixed sheet: bound and loose dark/light deposits, plus
- * the pigment carried by a blending stump. All state is derived from gestures.
- * No DOM is needed until a caller asks to composite onto a canvas. */
+/* Dry media: graphite, charcoal and chalk. The stamp engine never enters
+ * this renderer. Pigment lives on a fixed sheet: bound and loose dark/light
+ * deposits, plus the pigment carried by a blending stump. All state is
+ * derived from gestures. The sheet is the studio's paper, or a page's own
+ * paper with tooth, under its paint and type. No DOM is needed until a caller
+ * asks to composite onto a canvas. */
 export const MATERIAL_VERSION = 1;
 export const DEFAULT_SURFACE = { version: 1, paper: 'white', tooth: .65, seed: 17 };
 export const PAPERS = {
@@ -34,6 +36,24 @@ function smoothNoise(x, y, seed) {
   const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
   const a = noise(xi, yi, seed), b = noise(xi + 1, yi, seed), c = noise(xi, yi + 1, seed), d = noise(xi + 1, yi + 1, seed);
   return mix(mix(a, b, sx), mix(c, d, sx), sy);
+}
+
+/* The paper's own colour: a studio paper, a #rrggbb, or null for night,
+ * whose ground varies across the sheet. */
+function paperColour(paper) {
+  if (Object.hasOwn(PAPERS, paper)) return PAPERS[paper].rgb;
+  if (/^#[0-9a-f]{6}$/i.test(paper)) return [1, 3, 5].map((i) => parseInt(paper.slice(i, i + 2), 16));
+  return null;
+}
+/* Night, the original ground, as paintPaper draws it: a radial from
+ * (0.3 w, 0.12 h) out to 1.2 w, #14151a to #0b0b0f at 0.52 to #07070a. */
+const NIGHT = [[0, [20, 21, 26]], [.52, [11, 11, 15]], [1, [7, 7, 10]]];
+function nightAt(x, y, w, h, out) {
+  const t = Math.min(1, Math.hypot(x - .3 * w, y - .12 * h) / (1.2 * w));
+  const [a, b] = t < NIGHT[1][0] ? [NIGHT[0], NIGHT[1]] : [NIGHT[1], NIGHT[2]];
+  const u = (t - a[0]) / (b[0] - a[0]);
+  for (let c = 0; c < 3; c++) out[c] = mix(a[1][c], b[1][c], u);
+  return out;
 }
 
 /** Samples are timed contact measurements, not an imposed stroke envelope.
@@ -71,6 +91,7 @@ export function segmentSamples(op, a, b, start = a.t, end = b.t) {
 export class MaterialSurface {
   constructor({ width, height, surface = DEFAULT_SURFACE }) {
     this.w = width; this.h = height; this.surface = { ...surface };
+    this.paperRGB = paperColour(surface.paper);
     // Stable physical resolution: export/thumbnail scale cannot change the
     // paper or simulation. Bound to four million cells per sheet.
     this.scale = Math.min(2, Math.sqrt(4000000 / (width * height)));
@@ -211,11 +232,12 @@ export class MaterialSurface {
       || x + w > this.w || y + h > this.h) throw new RangeError('inspection must fit the page and contain at most 4000000 pixels');
     const width = Math.max(1, Math.round(w * scale)), height = Math.max(1, Math.round(h * scale));
     if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width * height > 4000000) throw new RangeError('inspection contains more than 4000000 pixels');
-    const data = new Uint8ClampedArray(width * height * 4), paper = PAPERS[this.surface.paper].rgb;
+    const data = new Uint8ClampedArray(width * height * 4), ground = [0, 0, 0];
     for (let py = 0; py < height; py++) for (let px = 0; px < width; px++) {
       const ix = Math.min(this.width - 1, Math.floor((x + (px + .5) * w / width) * this.scaleX));
       const iy = Math.min(this.height - 1, Math.floor((y + (py + .5) * h / height) * this.scaleY));
       const i = iy * this.width + ix, out = (py * width + px) * 4;
+      const paper = this.paperRGB || nightAt((ix + .5) / this.scaleX, (iy + .5) / this.scaleY, this.w, this.h, ground);
       const dark = this.dark[i] + this.darkLoose[i], light = this.light[i] + this.lightLoose[i];
       const total = dark + light, cover = 1 - Math.exp(-total * 1.7);
       const pigment = total > 0 ? (dark * 22 + light * 251) / total : 0;
@@ -234,11 +256,12 @@ export class MaterialSurface {
     if (this.dirty && this.dirtyBounds) {
       const { x0, y0, x1, y1 } = this.dirtyBounds, w = x1 - x0 + 1, h = y1 - y0 + 1;
       const paint = this.canvas.getContext('2d');
-      const image = paint.createImageData(w, h), paper = PAPERS[this.surface.paper].rgb;
+      const image = paint.createImageData(w, h), ground = [0, 0, 0];
       // Update only touched paper. Converting an entire multi-megapixel sheet
       // after every pen event would make the hand lag behind its own gesture.
       for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
         const i = y * this.width + x, out = ((y - y0) * w + x - x0) * 4;
+        const paper = this.paperRGB || nightAt((x + .5) / this.scaleX, (y + .5) / this.scaleY, this.w, this.h, ground);
         const dark = this.dark[i] + this.darkLoose[i], light = this.light[i] + this.lightLoose[i];
         const total = dark + light, cover = 1 - Math.exp(-total * 1.7);
         const pigment = total > 0 ? (dark * 22 + light * 251) / total : 0;
