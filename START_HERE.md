@@ -112,6 +112,9 @@ paper: { colour: 'kraft', tooth: 0.8, seed: 4 } // seed places the grain; leave 
 - **A page keeps its paper for life.** Continuing a page keeps its paper and
   size. To change either, start a new version (see *Same page or a new
   version?*).
+- **A new page with no paper is refused**, and the book tells you how to name
+  one. Its messages may mention "the original canvas": that is where pages
+  from before paper existed still live (see *Older pages*).
 
 ## What you draw with
 
@@ -122,22 +125,24 @@ paper: { colour: 'kraft', tooth: 0.8, seed: 4 } // seed places the grain; leave 
 | `liner` | a hairline. edges, veins, handwriting. thin even at weight 1 |
 | `brush` | the smooth, full stroke. width follows speed, so it swells mid-stroke |
 | `chalk` | dry: it breaks up at speed, so long strokes come out grainy. the last sparkle, not the body of a tone |
-| `wash` | the floor of every tone. wide, faint, and it has a **ceiling**: it cannot build past 40% however much you lay down |
+| `wash` | the floor of every tone. wide and faint. stacked, it keeps building, so a page caps it with `CLAMP` (see *Layers*) |
 | `stipple` | scattered dots along a path. ground, pollen, texture |
 | `charcoal` | an angled, heavier stamp. the throat of a flower, the base of a form |
 | `eraser` | takes ink away and shows the paper. on dark paper that **draws shadow**; on light paper it draws light |
 | `pencil` | fine, dense, continuous stamps, down to a radius of 0.075 px, for precise edges and texture |
+| `pen` | a coloured pencil made for marking over screens: a dense core with a rough edge, readable on any ground |
 | `soft` | feathered strokes for smooth local shading and for painting over earlier marks |
 | `glaze` | broad, faint, feathered strokes for translucent colour and for pulling tones together |
 
-Strokes and dots take an optional colour and opacity:
-`OP('s', pts, 'line', 'soft', weight, [r, g, b], alpha)` and
+A stroke's weight multiplies its brush's width, up to 6: a `glaze` at 6 is a
+broad wash, a `liner` at 0.3 a hair. Strokes and dots take an optional colour
+and opacity: `OP('s', pts, 'line', 'soft', weight, [r, g, b], alpha)` and
 `DOT(x, y, radius, 'accent', 'soft', [r, g, b], alpha)`. Colour is three whole
 numbers 0–255; alpha is 0–1. Leave both out for the page's own ink at the
 brush's own strength. Coloured paint covers what is under it; an eraser
-removes it. A glaze is not the wash and has no ceiling.
+removes it.
 
-These ten are stamp brushes: their marks lie in the layers below. The brush
+These are stamp brushes: their marks lie in the layers below. The brush
 called `pencil` is one of them. Real graphite, with pressure and tilt, is a
 different thing and lives in the paper: see *Graphite, charcoal and chalk*.
 
@@ -148,7 +153,7 @@ Four layers, always stacked in this order, whatever order you draw in:
 | layer | what it is for |
 |---|---|
 | `under` | construction. shown at 42% on purpose, never hidden |
-| `tone` | washes and body colour. capped at the wash ceiling **only if the page adds `CLAMP('tone', BRUSHES.wash.ceiling)`**, usually once near the end |
+| `tone` | washes and body colour. nothing caps it for you: `CLAMP('tone', BRUSHES.wash.ceiling)` holds what is on the layer **at that moment** to 40%, so put it after the washes it should hold, usually once near the end |
 | `line` | edges, creases, handwriting, type |
 | `accent` | whatever must read strongest: full strokes, chalk, the last touches |
 
@@ -156,7 +161,7 @@ Four layers, always stacked in this order, whatever order you draw in:
 
 | mark | what it is |
 |---|---|
-| `OP('s', pts, layer, brush, w)` | a stroke. `w` multiplies the brush's width (0.1–6) |
+| `OP('s', pts, layer, brush, w)` | a stroke. `w` multiplies the brush's width (up to 6) |
 | `OP('g', pts, 'under', brush)` | a construction line, forced faint |
 | `DOT(x, y, r, layer, brush)` | a soft pressure dot |
 | `PAUSE(ms)` | stopping to look |
@@ -305,7 +310,7 @@ past the hand.
   - `tone` is 0–1, a straight ramp `{ from: [x, y, v], to: [x, y, v] }`, or a
     round one `{ at: [x, y], r, inner, outer }`.
   - `cell` is the screen pitch in px (2–60, default 8). `angle` is in degrees
-    (default 45). `shape` is `'dot'` (default) or `'line'`.
+    (−90–90, default 45). `shape` is `'dot'` (default) or `'line'`.
   - The screen is anchored to the page, so shapes that share one meet without
     a seam.
   - Give each ink its own angle (15°, 45°, 75° are the classic ones) and
@@ -446,7 +451,10 @@ node book.mjs preview pages/my-loop.js --timing --out books/my-loop/timing.png
 
 A seam that is much stronger than the steps around it means the loop jumps
 when it wraps. That's a flaw if you meant it to be seamless, and a beat if
-you didn't. A run of near-empty steps is a hold.
+you didn't. A run of near-empty steps is a hold. The numbers measure how much
+of the picture changes, not how far a thing travels: a small dot that jumps
+back to its start can still count as smooth. Check the contact sheet too.
+`--sheet` and `--timing` are for pages that move, and both write a PNG.
 
 For people, a loop also renders as an **animated GIF** (one palette for the
 whole loop, delays exact to 1/100 s, looping forever) or a **video**:
@@ -481,7 +489,7 @@ node book.mjs preview pages/my-study.js --out books/my-study/detail.png --crop 1
 
 Open those images with your image tool and look at them. `--scale 1` is the
 page's own pixels; leave it out for twice that. Choose crop bounds inside
-your page.
+your page. A still is always a PNG, so give `--out` a `.png` name.
 
 **3. Save, and look at the real render.**
 
@@ -509,7 +517,9 @@ builder returns **only its added marks**, and
 `build: () => passes.flatMap(p => p.build())`. `review` can hold
 `observation`, `change`, `next`, and `region: [x, y, width, height]`. Keep
 earlier builders exactly as they were: a correction covers, glazes, erases or
-redraws what is there. Then save against the page you are continuing:
+redraws what is there. If an earlier pass has changed, the book refuses to
+continue and asks for a branch instead. Then save against the page you are
+continuing:
 
 ```sh
 node book.mjs write pages/my-study.js --book books/my-study --continue 1
@@ -543,12 +553,16 @@ node book.mjs resume 2 --book books/my-study --pass 1 --out pages/my-other-versi
 ```
 
 Resume writes the marks as frozen data in a new file and refuses to overwrite
-one. The source you wrote stays in the saved page. The journal holds pass
-ranges, hashes of source and marks, and each page's parent. Do not invent
-inspection notes for pages that have none.
+one. To go on from there, import what you need from `../mark-engine.js` at
+the top of that file and add a pass of your own to its `passes`. The source
+you wrote stays in the saved page. The journal holds pass ranges, hashes of
+source and marks, and each page's parent. Do not invent inspection notes for
+pages that have none.
 
-Also: `node book.mjs list`, `node book.mjs read 3 --source`, and
-`node book.mjs help` for every option.
+Also: `node book.mjs list --book books/my-study`,
+`node book.mjs read 3 --source --book books/my-study`, and `node book.mjs help`
+for every option. Every command takes `--book`; without it the book is the
+folder `./book`.
 
 ## The book in the browser
 
@@ -706,12 +720,12 @@ Page 2 of the first book was a sphere and a cube drawn four times to learn
 these, in light ink on dark paper. They hold on any paper if you read them as
 ink and bare paper.
 
-- **The wash floods.** It reaches its ceiling within a few overlapping strokes,
-  so you cannot build a gradient by laying more of it. **Width is the
-  gradient**: a thin wash where you want little ink, a wide one where you want
-  more. `passesFor` does this.
-- **The strongest values are not on the tone layer.** If you clamp `tone`,
-  anything that must read stronger than the wash ceiling goes on `accent`.
+- **The wash floods.** Clamp the tone layer and overlapping washes reach that
+  ceiling within a few strokes, so you cannot build a gradient by laying more.
+  **Width is the gradient**: a thin wash where you want little ink, a wide one
+  where you want more. `passesFor` does this.
+- **The strongest values are not on the tone layer.** Once `tone` is clamped,
+  anything that must read stronger than the ceiling goes on `accent`.
 - **A stroke thins to about half its width at both ends**: the hand slows
   there. Space your strokes for the ends, not the middle, or a tone dries as
   corduroy.
@@ -867,3 +881,23 @@ Optional arguments show their defaults.
 A stroke has at most 4,000 points, a shape 512, a pause at most 5 seconds, a
 dot a radius of at most 60. When the book refuses a page, it says which mark
 and why.
+
+**Words.**
+
+- **The hand**: the book's way of making a mark. You say where and how
+  heavy; it stamps, tapers and grains.
+- **Mark**: one thing put down: a stroke, a dot, a line of type, a shape, a
+  gesture.
+- **Layer**: where a mark lies in the picture (`under`, `tone`, `line`,
+  `accent`). Fixed order.
+- **Pass**: a stretch of work in time, with its own note. A later pass is
+  not a higher layer.
+- **Checkpoint**: the page as it stood at the end of a pass.
+- **Coat**: one wash of transparent paint; coats multiply each other.
+- **Overprint**: laying ink so it mixes like pigment with what is under it.
+- **Occlude**: clear what a nearer form covers, before drawing that form.
+- **Tooth**: the paper's grain, which dry media catch on.
+- **Stump**: a blending tool. It moves pigment that is already there.
+- **Poster**: the one frame that stands for a page that moves.
+- **Seam**: the step from a loop's last frame back to its first.
+- **The original canvas**: where pages from before paper existed still live.

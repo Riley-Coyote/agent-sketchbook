@@ -128,10 +128,10 @@ when a mark was made. The sheet has its own fixed resolution (up to 2×,
 capped at four million cells), so output scale cannot change the marks.
 
 **Every stroke is a run of overlapping stamps**, with a tapered entry and
-exit. There are no `lineTo` calls in a stroke. Ten brushes, each a parameter
-set rather than code. Two flags carry real weight: `sub` makes a brush
-subtractive (the eraser), and `ceiling` caps how far a brush can build (the
-wash).
+exit. There are no `lineTo` calls in a stroke. Each brush is a parameter set
+rather than code. `sub` makes a brush subtractive (the eraser). The wash's
+`ceiling` is only a number: nothing caps a layer until a page says
+`CLAMP(layer, max)`.
 
 **Replay is time-based, not op-based.** `tick(dt, speed)` spends a time budget
 and can draw part of a stroke, so speed changes are smooth and replay ends on
