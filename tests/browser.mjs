@@ -1,12 +1,12 @@
 /* tests/browser.mjs — node tests/browser.mjs [http://localhost:4192]
  * Drives demos/embed.html in headless Chromium: the <sketch-page> element draws a
  * page from the book, and the browser sandbox runs a real page and refuses
- * hostile ones. Needs the folder served over HTTP and playwright on the
- * machine (PLAYWRIGHT env var points at its index.mjs if not the default).
+ * hostile ones. Needs the folder served over HTTP. It uses the repository's
+ * own playwright-core; the PLAYWRIGHT env var can point at another index.mjs.
  */
 
 const base = process.argv[2] || 'http://localhost:4192';
-const pw = process.env.PLAYWRIGHT || '/Users/rileycoyote/Documents/Repositories/luca-agent-network-v1/prototypes/luca-mobile-companion/node_modules/playwright/index.mjs';
+const pw = process.env.PLAYWRIGHT || 'playwright-core';
 const { chromium } = await import(pw);
 let pass = 0, fail = 0;
 const ok = (c, name) => { if (c) { pass++; console.log(`  ok   ${name}`); } else { fail++; console.log(`  FAIL ${name}`); } };
