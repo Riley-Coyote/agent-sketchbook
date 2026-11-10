@@ -20,7 +20,7 @@ export const LIMITS = {
 };
 
 const KINDS = new Set(['s', 'g', 'd', 'p', 'phase', 'occ', 'clamp', 'm', 'clean', 't', 'f', 'frame']);
-/* Glyphs, flat shapes and motion frames belong to the second canvas. */
+/* Glyphs, flat shapes and motion frames need a page with paper. */
 const INK_ONLY = new Set(['t', 'f', 'frame']);
 /* A halftone screen: { cell 2..60 px, angle -90..90 degrees, shape 'dot' |
  * 'line', tone }. The tone is 0..1, or a ramp: { from: [x, y, v], to: [x, y,
@@ -39,16 +39,19 @@ function sanitizeHalftone(h) {
   else return 'halftone tone needs 0..1, { from: [x, y, v], to: [x, y, v] } or { at: [x, y], r, inner, outer }';
   return out;
 }
-/* Overprinting strokes and dots multiply like pigment. It needs the second
- * canvas, and an eraser cuts rather than prints. */
+/* Overprinting strokes and dots multiply like pigment. It needs a page with
+ * paper, and an eraser cuts rather than prints. */
 function overprintProblem(o, limits) {
   if (typeof o.overprint !== 'boolean') return 'overprint is true or false';
   if (!o.overprint) return null;
-  if (limits.surface?.kind !== 'ink') return 'overprint needs the second canvas: surface: { kind: \'ink\', version: 2 }';
+  if (limits.surface?.kind !== 'ink') return `overprint needs a page with paper: ${NAME_PAPER}`;
   if (o.k === 'g') return 'construction lines cannot overprint';
   if (o.brush === 'eraser') return 'an eraser cuts; it cannot print over';
   return null;
 }
+/* How a refusal shows the fix. */
+const NAME_PAPER = "paper: 'night', or black, white, cream, grey, slate, kraft or '#rrggbb'";
+const TOOTH = "paper: { colour: 'white', tooth: 0.65 }";
 const MAX_FRAMES = 96;
 const MAX_TEXT = 4000;
 const LAYER_KEYS = new Set(LAYERS.map((l) => l.key));
@@ -58,23 +61,29 @@ const num = (v) => typeof v === 'number' && Number.isFinite(v);
 /* an optional colour on a stroke or dot: three whole numbers 0–255 */
 const colour = (c) => Array.isArray(c) && c.length === 3 && c.every((v) => Number.isInteger(v) && v >= 0 && v <= 255) ? [c[0], c[1], c[2]] : null;
 
-/** An explicit version keeps the established renderer the default forever. */
+/** No surface is the original canvas, forever. A page's paper is stored as
+ * { kind: 'ink', version: 2, paper }, with tooth and seed when graphite can
+ * bite into it; the graphite studio's sheet keeps its own form. */
 export function sanitizeSurface(input) {
   if (input === undefined) return { surface: undefined, errors: [] };
   if (input && typeof input === 'object' && !Array.isArray(input) && input.kind === 'ink') {
     const named = typeof input.paper === 'string' && Object.hasOwn(PAPERS_V2, input.paper);
     const hex = typeof input.paper === 'string' && /^#[0-9a-f]{6}$/i.test(input.paper);
-    if (input.version !== 2 || !(named || hex || input.paper === undefined)) {
-      return { surface: null, errors: [`an ink surface needs version 2 and paper ${Object.keys(PAPERS_V2).join('/')} or #rrggbb`] };
-    }
+    if (input.version !== 2) return { surface: null, errors: [`this surface isn't one the book knows; name the page's paper instead: ${NAME_PAPER}`] };
+    if (!(named || hex || input.paper === undefined)) return { surface: null, errors: [`paper is ${Object.keys(PAPERS_V2).join(', ')} or '#rrggbb'`] };
+    const toothed = input.tooth !== undefined;
+    if (toothed && (!num(input.tooth) || input.tooth < 0 || input.tooth > 1)) return { surface: null, errors: ['paper tooth is a number from 0 to 1'] };
+    if (!toothed && input.seed !== undefined) return { surface: null, errors: ["a paper's seed places its tooth: give tooth as well, or leave seed out"] };
+    const seed = input.seed === undefined ? 17 : input.seed;
+    if (toothed && (!Number.isInteger(seed) || seed < 0 || seed > 4294967295)) return { surface: null, errors: ["a paper's seed is a whole number from 0 to 4294967295"] };
     const paper = input.paper === undefined ? 'night' : named ? PAPERS_V2[input.paper] : input.paper.toLowerCase();
-    return { surface: { kind: 'ink', version: 2, paper }, errors: [] };
+    return { surface: { kind: 'ink', version: 2, paper, ...(toothed ? { tooth: input.tooth, seed } : {}) }, errors: [] };
   }
   if (!input || typeof input !== 'object' || Array.isArray(input) || (input.version !== 1 && input.version !== 2)
     || !Object.hasOwn(PAPERS, input.paper)
     || !num(input.tooth) || input.tooth < 0 || input.tooth > 1
     || !Number.isInteger(input.seed) || input.seed < 0 || input.seed > 4294967295) {
-    return { surface: null, errors: ['surface needs version 1 or 2 (a grain you can see), paper white/toned/black, tooth 0..1 and a uint32 seed'] };
+    return { surface: null, errors: [`this surface isn't one the book knows; name the page's paper instead: ${NAME_PAPER}, or ${TOOTH} for graphite and charcoal`] };
   }
   return { surface: { version: input.version, paper: input.paper, tooth: input.tooth, seed: input.seed }, errors: [] };
 }
@@ -153,12 +162,18 @@ export function sanitizeOps(input, limits = LIMITS) {
     const o = input[i];
     if (!o || typeof o !== 'object') { err(i, 'not an object'); continue; }
     if (!KINDS.has(o.k)) { err(i, `unknown kind ${JSON.stringify(o.k)}`); continue; }
-    const material = limits.surface && limits.surface.kind !== 'ink';
-    if (material ? !['m', 'clean', 'p', 'phase'].includes(o.k) : ['m', 'clean'].includes(o.k)) {
-      err(i, 'material gestures require a versioned surface; material and legacy marks cannot be mixed'); continue;
+    /* The studio's graphite sheet takes gestures alone; paper with tooth
+     * takes them beside every other mark. */
+    const sheet = limits.surface && limits.surface.kind !== 'ink';
+    const toothed = limits.surface?.kind === 'ink' && limits.surface.tooth !== undefined;
+    if (sheet && !['m', 'clean', 'p', 'phase'].includes(o.k)) {
+      err(i, `this graphite page takes only gestures, clean, pauses and phases; for paint and type over graphite, name the paper instead: ${TOOTH}`); continue;
+    }
+    if (!sheet && !toothed && ['m', 'clean'].includes(o.k)) {
+      err(i, `graphite and charcoal need paper with tooth: ${TOOTH}`); continue;
     }
     if (INK_ONLY.has(o.k) && limits.surface?.kind !== 'ink') {
-      err(i, "glyphs, shapes and motion need the second canvas: surface: { kind: 'ink', version: 2 }"); continue;
+      err(i, `glyphs, shapes and motion need a page with paper: ${NAME_PAPER}`); continue;
     }
     if (o.k === 'frame') {
       frames++;
