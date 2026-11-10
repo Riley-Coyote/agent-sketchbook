@@ -73,6 +73,10 @@ export default {
 - `build` is **synchronous and pure**: it takes nothing, touches nothing, and
   returns an array of marks. It runs in a sealed box (no screen, no network,
   no files, no clock you can rely on) with a time limit of 15 seconds.
+  Inside the box, reaching for a global such as `Math.sin` costs several
+  times what it does outside (twelve million calls: 1.8 s inside, 0.3 s
+  outside). A page with heavy maths takes hold of it once, at the top:
+  `const { sin, cos, hypot } = Math;`.
 - **Points are `[x, y]` pairs, and a path or polygon is an array of them:**
   `[[x, y], [x, y], …]`. Every `pts` and `poly` below takes that form. The
   origin is top-left and y runs down.
