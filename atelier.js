@@ -141,6 +141,8 @@ async function load(allowReset=false) {
       page=await saved.json();raw={ops:page.ops,meta:{...page,...(page.journal?.passes?.length ? {passes:page.journal.passes} : {})}};
       $('stage-label').textContent=meta.stage || 'Unclassified';
       $('book-link').href=`index.html?book=${encodeURIComponent(bookPath)}#${pageNumber}`;
+      $('book-title').textContent=String(index.title || '');
+      $('book-title').hidden=!index.title;
       $('workflow-note').textContent='This is a saved checkpoint, opened without running its source. Resume creates a new source file with the selected marks preserved. Add a pass there, then save the continuation; earlier book pages remain intact.';
     } else {
       if (!/^[a-zA-Z0-9_-]+$/.test(name)) throw Error('Invalid page module name.');
