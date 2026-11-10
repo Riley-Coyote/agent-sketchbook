@@ -43,7 +43,7 @@
   .sep { width: 1px; height: 18px; background: var(--hair); margin: 0 4px; }
   @media (max-width: 800px) { .studio { grid-template-columns: 1fr; } }
 </style>
-<script type="module" src="./sketch-page.js"></script>
+<script type="module" src="../sketch-page.js"></script>
 </head>
 <body>
 <main>
@@ -66,7 +66,7 @@
         <div class="body">
           <div class="name">claude <time>11:53</time></div>
           <div class="text">like this — rings around the light, so every ring is one value. the dark band past the terminator is the core shadow; the light coming back up on the right is off the table.</div>
-          <sketch-page id="chat-1" src="./book/pages/002.json" autoplay controls speed="4"></sketch-page>
+          <sketch-page id="chat-1" src="../book/pages/002.json" autoplay controls speed="4"></sketch-page>
           <div class="cap">page 2 · sphere and cube, one light</div>
         </div>
       </div>
@@ -75,7 +75,7 @@
         <div class="body">
           <div class="name">claude <time>11:54</time></div>
           <div class="text">and the first thing I ever drew in the book, for the record.</div>
-          <sketch-page id="chat-2" src="./book/pages/001.json" hud="off"></sketch-page>
+          <sketch-page id="chat-2" src="../book/pages/001.json" hud="off"></sketch-page>
           <div class="cap">page 1 · moth on a branch</div>
         </div>
       </div>
@@ -107,10 +107,10 @@
 </main>
 
 <script type="module">
-  import { runPageSource, loadModules } from './sandbox-browser.js';
+  import { runPageSource, loadModules } from '../sandbox-browser.js';
   const $ = (id) => document.getElementById(id);
-  const modules = await loadModules(['./mark-engine.js', './pages/lib.js', './pages/hand.js']);
-  const mothSrc = await (await fetch('./pages/moth.js')).text();
+  const modules = await loadModules(['../mark-engine.js', '../pages/lib.js', '../pages/hand.js']);
+  const mothSrc = await (await fetch('../pages/moth.js')).text();
   $('src').value = mothSrc;
   const hostile = {
     fetch: `export default { title: 'x', date: '2026-09-02', note: 'x',\n  build: async () => { await fetch('https://example.com/'); return []; } };\n// (build must be synchronous; this one also tries the network)\nexport const sync = { build: () => { fetch('https://example.com/'); return []; } };`,

@@ -39,7 +39,7 @@
   .label { font-size: 9.5px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--t4); }
 
   /* ---- top bar */
-  #bar { grid-area: bar; display: flex; align-items: center; gap: 18px; padding: 0 22px; border-bottom: .5px solid var(--hair); }
+  #bar { grid-area: bar; display: flex; align-items: center; gap: 18px; padding: 0 22px; border-bottom: .5px solid var(--hair); overflow-x: auto; }
   #bar h1 { font-size: 15px; font-weight: 600; letter-spacing: -.02em; margin: 0; }
   #bar .meta { color: var(--t3); font-size: 11px; }
   #bar .spacer { flex: 1; }
@@ -99,9 +99,11 @@
 </head>
 <body>
   <div id="bar">
-    <h1 id="book-title">Sketchbook</h1>
+    <span class="label">Sketchbook</span>
+    <h1 id="book-title"></h1>
     <span class="meta" id="book-meta"></span>
     <span class="spacer"></span>
+    <a id="process-link" class="studio-link" href="atelier.html">Inspect saved process</a>
     <a class="studio-link" href="studio.html">Drawing studio</a>
     <span class="meta" id="book-license" title="the terms the owner set for the pages in this book"></span>
     <span class="label" id="owner"></span>
@@ -112,7 +114,7 @@
       <div>
         <div class="pn" id="pn"></div>
         <h2 id="title"></h2>
-        <div class="date" id="date"></div><div class="meta" id="selection"></div><a id="process-link" class="studio-link" href="atelier.html">Inspect saved process</a>
+        <div class="date" id="date"></div><div class="meta" id="selection"></div>
       </div>
       <div>
         <div class="label">note</div>

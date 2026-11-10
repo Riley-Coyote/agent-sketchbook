@@ -1,6 +1,6 @@
 import { compilePage } from './page-program.js';
 
-import { MarkEngine, Loop, loadFonts } from './mark-engine.js';
+import { MarkEngine, Loop, loadFonts, LAYERS } from './mark-engine.js';
 import { sanitizeOps, sanitizePageDimensions, sanitizeSurface, limitsForPage } from './validate.js';
 /* glyph pages need their faces before anything is drawn */
 await loadFonts();
@@ -14,6 +14,8 @@ let comparing = false;
 let engine = null, passes = [], selected = 0, allOps = [], lastTime = 0;
 let dirty = true, version = 0, replayStart = 0;
 let currentSurface;
+/* Layers switched off to find which one holds a mark; the comparison follows them. */
+let hidden = {}, compareEngine = null;
 /* A page that moves: its motion, and the loop while it plays. */
 let motion = null, loop = null, shown = null;
 const ctx = $('canvas').getContext('2d');
@@ -24,12 +26,12 @@ function controls(busy) {
   $('new-version').disabled = busy;
   $('inspect').disabled = busy || !engine;
   $('compare').disabled = busy || selected < 1;
-  for (const id of ['replay', 'finish', 'zoom', 'export']) $(id).disabled = busy || !engine || !passes.length;
+  for (const id of ['replay', 'redraw', 'finish', 'zoom', 'export']) $(id).disabled = busy || !engine || !passes.length;
   for (const button of $('history').children) button.disabled = busy;
 }
 function show() {
   if (loop) return;   // the loop paints its own frames and status
-  if (engine && dirty) { engine.composite(ctx); dirty = false; }
+  if (engine && dirty) { engine.composite(ctx, hidden); dirty = false; }
   if (!engine) return;
   const progress = engine.cursor
     ? Math.max(0, Math.min(1, (engine.cursor.elapsed - replayStart) / (engine.total - replayStart || 1)))
@@ -48,6 +50,7 @@ function stopLoop() {
   loop = null;
   $('play').textContent = 'Play loop';
   $('play').setAttribute('aria-pressed', 'false');
+  layerControls();
   engine.drawFrame(motion.poster);
   dirty = true;
   show();
@@ -58,7 +61,27 @@ function playLoop() {
   shown = null;
   $('play').textContent = 'Stop';
   $('play').setAttribute('aria-pressed', 'true');
+  layerControls();
 }
+/* The original canvas and the paper have four layers; graphite in its old form is one surface. */
+function layerControls() { $('layers').hidden = !engine || !!engine.material || !!loop; }
+function showAllLayers() {
+  hidden = {};
+  for (const button of $('layers').children) button.setAttribute('aria-pressed', 'true');
+}
+$('layers').replaceChildren(...LAYERS.map(layer => {
+  const button = document.createElement('button');
+  button.textContent = layer.name;
+  button.setAttribute('aria-pressed', 'true');
+  button.onclick = () => {
+    hidden[layer.key] = !hidden[layer.key];
+    button.setAttribute('aria-pressed', String(!hidden[layer.key]));
+    dirty = true;
+    show();
+    if (comparing && compareEngine) compareEngine.composite($('compare-canvas').getContext('2d'), hidden);
+  };
+  return button;
+}));
 function paint(ops, allowAppend = false) {
   const prefix = allowAppend && allOps.length <= ops.length
     && allOps.every((op, i) => JSON.stringify(op) === JSON.stringify(ops[i]));
@@ -75,6 +98,7 @@ function select(index) {
   if (!Number.isInteger(index) || !passes[index]) throw Error('That painting pass is unavailable.');
   paint(passes.slice(0, index + 1).flatMap(pass => pass.ops));
   selected = index;
+  showAllLayers();
   showReview();
   updateComparison();
   [...$('history').children].forEach((button, i) => button.setAttribute('aria-pressed', String(i === index)));
@@ -116,11 +140,11 @@ function updateComparison() {
   $('comparison').hidden=!comparing;
   $('current-label').hidden=!comparing;
   $('compare').setAttribute('aria-pressed',String(comparing));
-  if (!comparing) return;
-  const before = new MarkEngine({width:engine.w,height:engine.h,dpr:engine.dpr,surface:currentSurface});
-  before.load(passes.slice(0,selected).flatMap(p=>p.ops)).finish();
+  if (!comparing) { compareEngine = null; return; }
+  compareEngine = new MarkEngine({width:engine.w,height:engine.h,dpr:engine.dpr,surface:currentSurface});
+  compareEngine.load(passes.slice(0,selected).flatMap(p=>p.ops)).finish();
   const cv=$('compare-canvas');cv.width=$('canvas').width;cv.height=$('canvas').height;
-  before.composite(cv.getContext('2d'));
+  compareEngine.composite(cv.getContext('2d'), hidden);
   $('compare-label').textContent=`Before · ${passes[selected-1].name}`;
   $('current-label').textContent=`After · ${passes[selected].name}`;
 }
@@ -141,6 +165,8 @@ async function load(allowReset=false) {
       page=await saved.json();raw={ops:page.ops,meta:{...page,...(page.journal?.passes?.length ? {passes:page.journal.passes} : {})}};
       $('stage-label').textContent=meta.stage || 'Unclassified';
       $('book-link').href=`index.html?book=${encodeURIComponent(bookPath)}#${pageNumber}`;
+      $('book-title').textContent=String(index.title || '');
+      $('book-title').hidden=!index.title;
       $('workflow-note').textContent='This is a saved checkpoint, opened without running its source. Resume creates a new source file with the selected marks preserved. Add a pass there, then save the continuation; earlier book pages remain intact.';
     } else {
       if (!/^[a-zA-Z0-9_-]+$/.test(name)) throw Error('Invalid page module name.');
@@ -152,7 +178,8 @@ async function load(allowReset=false) {
     }
     const dims = sanitizePageDimensions(page.page);
     if (!dims.page) throw Error(dims.errors.join('; '));
-    const { surface, errors: surfaceErrors } = sanitizeSurface(page.surface);
+    // A module's paper is what compilePage says it is, however the module declared it.
+    const { surface, errors: surfaceErrors } = sanitizeSurface(raw.meta.surface);
     if (surface === null) throw Error('Page surface rejected: ' + surfaceErrors.join('; '));
     const { w, h } = dims.page;
     // A failed edit must leave the last good painting, pass controls and replay intact.
@@ -180,6 +207,10 @@ async function load(allowReset=false) {
       $('stage').style.setProperty('--page-width', `${w}px`);
       dirty = true;
     } else paint(candidate.ops, !allowReset);
+    /* for the console: engine.finish(); copy(engine.toDataURL()) */
+    window.engine = engine;
+    window.ops = candidate.ops;
+    showAllLayers();
     passes = candidate.passes;
     selected = passes.length - 1;
     // a moving page opens on its poster frame, still, until someone presses play
@@ -187,9 +218,14 @@ async function load(allowReset=false) {
     const m = raw.meta.motion || page.motion;
     motion = m && engine.frameCount > 1 ? { frames: engine.frameCount, fps: m.fps, poster: Math.min(engine.frameCount - 1, m.poster ?? 0) } : null;
     $('play').hidden = !motion;
+    $('redraw').hidden = !!motion;
+    $('replay').hidden = !!motion;
+    layerControls();
     if (motion) { engine.drawFrame(motion.poster); dirty = true; }
     $('size').textContent = `${w} × ${h} · ${Number(engine.dpr.toFixed(2))}× pigment resolution`;
     $('title').textContent = String(page.title || 'Sketchbook · Atelier');
+    $('date').textContent = savedMode ? '' : String(raw.meta.date || '');
+    $('date').hidden = !$('date').textContent;
     $('canvas').setAttribute('aria-label', String(page.title || 'The drawing'));
     $('history').replaceChildren(...passes.map((pass, i) => {
       const button = document.createElement('button');
@@ -240,6 +276,18 @@ $('replay').onclick = () => {
     show();
   } catch (error) { report(error); }
 };
+/* the whole drawing, up to the pass on show, from blank paper */
+$('redraw').onclick = () => {
+  try {
+    if (!engine || !passes[selected]) return;
+    stopLoop();
+    engine.load(passes.slice(0, selected + 1).flatMap(pass => pass.ops));
+    replayStart = 0;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) engine.finish(); else engine.replay();
+    dirty = true;
+    show();
+  } catch (error) { report(error); }
+};
 $('zoom').onclick = () => {
   const on = $('viewport').classList.toggle('zoom');
   $('zoom').setAttribute('aria-pressed', String(on));
@@ -260,7 +308,14 @@ $('export').onclick = async () => {
       c.fillStyle = getComputedStyle($('stage')).backgroundColor;
       c.fillRect(0, 0, cv.width, cv.height);
     }
-    c.drawImage($('canvas'), 0, 0);
+    // An export is the whole drawing, whatever layers are switched off on screen.
+    if (Object.values(hidden).some(Boolean)) {
+      const whole = document.createElement('canvas');
+      whole.width = cv.width;
+      whole.height = cv.height;
+      engine.composite(whole.getContext('2d'));
+      c.drawImage(whole, 0, 0);
+    } else c.drawImage($('canvas'), 0, 0);
     const blob = await new Promise(resolve => cv.toBlob(resolve, 'image/png'));
     if (!blob) throw Error('The browser could not export this drawing.');
     const url = URL.createObjectURL(blob);
