@@ -182,10 +182,10 @@ export function sanitizeOps(input, limits = LIMITS) {
       continue;
     }
     if (o.k === 'm') {
-      if (!Object.hasOwn(MATERIAL_TOOLS, o.tool)) { err(i, 'unknown material tool'); continue; }
+      if (!Object.hasOwn(MATERIAL_TOOLS, o.tool)) { err(i, `there is no dry tool called ${JSON.stringify(o.tool)}; choose one of ${Object.keys(MATERIAL_TOOLS).join(', ')}`); continue; }
       const size = o.size ?? MATERIAL_TOOLS[o.tool].size, strength = o.strength ?? 1;
-      if (!num(size) || size < .2 || size > 80 || !num(strength) || strength < 0 || strength > 1) { err(i, 'material size or strength out of range'); continue; }
-      if (!Array.isArray(o.samples) || !o.samples.length || o.samples.length > limits.maxStrokePoints) { err(i, 'material gesture needs 1..4000 samples'); continue; }
+      if (!num(size) || size < .2 || size > 80 || !num(strength) || strength < 0 || strength > 1) { err(i, 'a gesture needs a size from 0.2 to 80 and a strength from 0 to 1'); continue; }
+      if (!Array.isArray(o.samples) || !o.samples.length || o.samples.length > limits.maxStrokePoints) { err(i, 'a gesture needs 1 to 4000 samples'); continue; }
       const samples = [];
       for (const s of o.samples) {
         if (!s || typeof s !== 'object' || !inRange([s.x, s.y]) || !num(s.p) || s.p < 0 || s.p > 1
@@ -199,7 +199,7 @@ export function sanitizeOps(input, limits = LIMITS) {
         materialWork += stamps * Math.max(1, size * size * (1 + Math.min(1, Math.hypot(clean.tiltX, clean.tiltY) / 85) * 3.4));
         samples.push(clean);
       }
-      if (materialWork > 200000000) { err(i, 'material contact budget exceeded; use shorter or narrower gestures'); break; }
+      if (materialWork > 200000000) { err(i, "the page's contact budget is spent; use shorter or narrower gestures"); break; }
       if (samples.length !== o.samples.length) continue;
       points += samples.length;
       out.push({ k: 'm', tool: o.tool, size, strength, samples });

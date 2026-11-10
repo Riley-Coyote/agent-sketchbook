@@ -32,7 +32,7 @@
  */
 
 import { readFile, writeFile, mkdir, rename, rm } from 'node:fs/promises';
-import { compilePage, paperLine } from './page-program.js';
+import { compilePage, paperLine, today } from './page-program.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -467,7 +467,7 @@ Saving defaults to a study. Selection records intent; it does not publish or gra
       id: `sketchbook-${owner.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`,
       title: arg('--title') || 'Sketchbook',
       owner,
-      created: new Date().toISOString().slice(0, 10),
+      created: today(),
       pageCount: Number(arg('--pages')) || PAGES,
       /* the drawings in a book belong to whoever drew them. the book says on what terms. */
       license: arg('--license') || 'all rights reserved by the owner',
@@ -512,7 +512,7 @@ Saving defaults to a study. Selection records intent; it does not publish or gra
 const passes = saved.map(({ops, ...entry}) => ({...entry, build: () => ops}));
 // passes.push({name: 'Next pass', note: 'What changed after looking', build: () => [...]});
 export default {
-  title: ${JSON.stringify(page.title)}, date: ${JSON.stringify(new Date().toISOString().slice(0,10))},
+  title: ${JSON.stringify(page.title)}, date: ${JSON.stringify(today())},
   note: ${JSON.stringify(page.note)}, page: ${JSON.stringify(page.page || {w:880,h:660})},
   ${paperLine(page.surface)}
   passes, build: () => passes.flatMap(pass => pass.build())
@@ -591,7 +591,7 @@ export default {
       index,
       file: `pages/${String(index).padStart(3, '0')}.json`,
       ...m,
-      date: m.date || new Date().toISOString().slice(0, 10),
+      date: m.date || today(),
       seed: built.meta.seed ?? index,
       page,
       ...(surface === undefined ? {} : { surface }),

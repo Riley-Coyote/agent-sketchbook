@@ -2,6 +2,9 @@
  * Keep compilePage self-contained: sandboxes evaluate its source locally. */
 import { PAPERS_V2 } from './mark-engine.js';
 
+/** Today's date where the artist is, for a module the tool writes. */
+export const today = () => { const d = new Date(); return [d.getFullYear(), d.getMonth() + 1, d.getDate()].map((n) => String(n).padStart(2, '0')).join('-'); };
+
 /** A stored paper colour by its name, where it has one. */
 export const paperName = (paper) => Object.keys(PAPERS_V2).find((name) => PAPERS_V2[name] === paper) || paper;
 

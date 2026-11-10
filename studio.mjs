@@ -3,7 +3,7 @@ import { readFile, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { compilePage, paperLine, paperName } from './page-program.js';
+import { compilePage, paperLine, paperName, today } from './page-program.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const HELP = `Drawing live: start the server first, with node book.mjs serve.
@@ -62,7 +62,7 @@ const saved = ${frozen};
 const passes = saved.map(({ops, ...entry}) => ({...entry, build: () => ops}));
 // passes.push({name: 'Next pass', note: 'What changed after looking', build: () => [...]});
 export default {
-  title: ${JSON.stringify(title)}, date: ${JSON.stringify(new Date().toISOString().slice(0, 10))},
+  title: ${JSON.stringify(title)}, date: ${JSON.stringify(today())},
   note: ${JSON.stringify(note)}, page: ${JSON.stringify(drawing.page)},
   ${paperLine(drawing.surface)}
   passes, build: () => passes.flatMap(pass => pass.build())
