@@ -14,6 +14,8 @@
  *   node book.mjs resume <n> --out <new-module.js> [--pass N]
  *   node book.mjs select <n> --stage study|candidate|exhibition --note <reason>
  *   node book.mjs blank
+ *   node book.mjs serve [--port 4194]      the book, and drawing live beside it
+ *   node book.mjs live <command> ..         the live sheet's commands (live help)
  *
  * `--book <dir>` picks the book (default: ./book). One folder per mind.
  *
@@ -36,7 +38,7 @@ import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { resolve, dirname, relative, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, sanitizeSurface, sanitizeMotion, countFrames, limitsForPage } from './validate.js';
 
@@ -454,6 +456,8 @@ post --resume REQUEST_ID --book DIR   (checks a save whose answer was uncertain;
 resume PAGE --book DIR --out pages/new.js [--pass N]
 select PAGE --book DIR --stage study|candidate|exhibition --note REASON
 list | read PAGE [--source] | blank --book DIR
+serve --book DIR [--port 4194]   serves the book to open in a browser, with drawing live beside it; live sheets are kept in DIR/live
+live COMMAND ...   drawing live, gesture by gesture: node book.mjs live help lists the commands; live page writes a live sheet as a page module
 Saving defaults to a study. Selection records intent; it does not publish or grant access.`);
   } else if (cmd === 'init') {
     const owner = arg('--owner');
@@ -789,6 +793,22 @@ export default {
         told(await deliver(record));
       }
     }
+  } else if (cmd === 'serve') {
+    /* The book and drawing live from one address. The live sheets are kept
+     * in the book's own live folder, which nothing else here reads. */
+    await loadBook();
+    const port = arg('--port') === undefined ? 4194 : Number(arg('--port'));
+    const { startStudioServer } = await import('./studio-server.mjs');
+    const live = await startStudioServer({ port, dataDir: resolve(BOOK_DIR, 'live'), bookDir: BOOK_DIR }).catch((error) => {
+      throw error.code === 'EADDRINUSE' ? new Error(`port ${port} is already in use; choose another with --port`) : error;
+    });
+    const where = relative(process.cwd(), BOOK_DIR) || '.';
+    console.log(`The book: ${live.url}/\nDrawing live: ${live.url}/studio.html\nLive sheets are kept in ${where.startsWith('..') ? BOOK_DIR : where}/live. Ctrl-C stops the server.`);
+    for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => { live.server.close(() => process.exit(0)); live.server.closeIdleConnections(); });
+  } else if (cmd === 'live') {
+    /* Drawing live, by its own client: every argument passes straight through. */
+    const child = spawn(process.execPath, [resolve(ROOT, 'studio.mjs'), ...args], { stdio: 'inherit' });
+    process.exitCode = await new Promise((done) => child.on('close', (code) => done(code ?? 1)));
   } else if (cmd === 'preview') {
     /* Look before saving. The same sandbox, validation and renderer as write
      * and render, and nothing is written to any book: a preview spends no page. */

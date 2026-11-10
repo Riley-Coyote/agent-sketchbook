@@ -1,4 +1,5 @@
-/** Local, durable drawing bridge. Run: node studio-server.mjs [--port 4194] [--data DIR]. */
+/** Local, durable drawing bridge for drawing live. Run: node studio-server.mjs [--port 4194] [--data DIR] [--book DIR],
+ * or node book.mjs serve, which keeps the live sheets in the book's own live folder. */
 import http from 'node:http';
 import { createReadStream } from 'node:fs';
 import { mkdir, open, readFile, readdir, realpath, rename, rm, stat } from 'node:fs/promises';
@@ -11,7 +12,7 @@ import { SketchSession } from './sketch-session.js';
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const MAX_BODY = 32 * 1024 * 1024;
 const MAX_OUTPUT_PIXELS = 4_000_000;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.woff': 'font/woff' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.woff': 'font/woff', '.md': 'text/plain; charset=utf-8' };
 const inside = (file, folder) => file === folder || file.startsWith(folder + sep);
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const loopback = host => ['127.0.0.1', 'localhost', '[::1]'].includes(host);
@@ -98,9 +99,11 @@ function inspectRegion(search, page) {
   return { region, scale };
 }
 
-export async function startStudioServer({ port = 4194, dataDir = resolve(ROOT, '../codex-sketchbook/studio') } = {}) {
+/* `/book/…` is answered from bookDir, wherever it is on disk, so `/` opens
+ * that book; everything else comes from this folder. */
+export async function startStudioServer({ port = 4194, dataDir = resolve(ROOT, '../codex-sketchbook/studio'), bookDir = join(ROOT, 'book') } = {}) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Port must be an integer between 0 and 65535');
-  dataDir = resolve(dataDir);
+  dataDir = resolve(dataDir); bookDir = resolve(bookDir);
   const savesDir = join(dataDir, 'saves'), activePath = join(dataDir, 'active.json');
   await mkdir(savesDir, { recursive: true });
   let session = new SketchSession();
@@ -113,14 +116,13 @@ export async function startStudioServer({ port = 4194, dataDir = resolve(ROOT, '
     revision = active.revision;
     if (Array.isArray(active.lessons)) lessons = active.lessons;
   } catch (error) {
-    if (error.code !== 'ENOENT') throw new Error(`Cannot restore studio active.json: ${error.message}. Original file has been preserved.`);
+    if (error.code !== 'ENOENT') throw new Error(`Cannot restore the live sheet from active.json: ${error.message}. The file has been kept as it was.`);
     await atomicJSON(activePath, { version: 1, revision, drawing: session.export(), lessons });
   }
   const snapshot = () => ({ revision, drawing: session.export() });
-  const staticRoots = [await realpath(ROOT)];
-  for (const name of ['book', 'codex-book']) {
-    try { staticRoots.push(await realpath(join(ROOT, name))); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  }
+  const real = async (path) => { try { return await realpath(path); } catch (error) { if (error.code !== 'ENOENT') throw error; return null; } };
+  const staticRoots = [await realpath(ROOT), await real(join(ROOT, 'codex-book'))].filter(Boolean);
+  const bookRoot = await real(bookDir), liveRoot = await realpath(dataDir);
   async function saveDrawing(name = session.export().title || 'Untitled study') {
     if (typeof name !== 'string' || !name.trim() || name.length > 160) throw fail(400, 'Save name must contain 1–160 characters');
     const id = `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`;
@@ -193,7 +195,7 @@ export async function startStudioServer({ port = 4194, dataDir = resolve(ROOT, '
             res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': png.length, 'X-Sketchbook-Revision': revision, 'X-Sketchbook-Region': JSON.stringify(region) });
             return res.end(png);
           }
-          throw fail(404, 'Unknown studio API route');
+          throw fail(404, 'Unknown API route');
         }
         const allowed = (req.method === 'PUT' && url.pathname === '/api/session') || (req.method === 'POST' && ['/api/actions', '/api/new', '/api/save', '/api/load'].includes(url.pathname));
         if (!allowed) throw fail(405, 'Method or route is not supported');
@@ -209,7 +211,7 @@ export async function startStudioServer({ port = 4194, dataDir = resolve(ROOT, '
             if (typeof body.id !== 'string' || !/^[a-zA-Z0-9-]+$/.test(body.id)) throw fail(400, 'Invalid save id');
             let saved;
             try { saved = JSON.parse(await readFile(join(savesDir, `${body.id}.json`), 'utf8')); }
-            catch (error) { if (error.code === 'ENOENT') throw fail(404, 'Saved study not found'); throw error; }
+            catch (error) { if (error.code === 'ENOENT') throw fail(404, 'That saved sheet was not found'); throw error; }
             const candidate = new SketchSession();
             candidate.import(saved.drawing);
             await saveDrawing();
@@ -233,12 +235,16 @@ export async function startStudioServer({ port = 4194, dataDir = resolve(ROOT, '
       let decoded;
       try { decoded = decodeURIComponent(url.pathname); } catch { throw fail(400, 'Malformed path'); }
       if (decoded.includes('\0') || decoded.includes('\\') || decoded.split('/').some(part => part.startsWith('.'))) throw fail(403, 'Path is not served');
-      const path = resolve(ROOT, '.' + (decoded === '/' ? '/studio.html' : decoded));
-      if (!inside(path, ROOT) || !MIME[extname(path).toLowerCase()]) throw fail(404, 'File not found');
+      const mounted = decoded === '/book' || decoded.startsWith('/book/');
+      const base = mounted ? bookDir : ROOT;
+      const path = resolve(base, '.' + (mounted ? decoded.slice(5) : decoded === '/' ? '/index.html' : decoded));
+      if (!inside(path, base) || !MIME[extname(path).toLowerCase()]) throw fail(404, 'File not found');
       let actual, info;
       try { actual = await realpath(path); info = await stat(actual); }
       catch (error) { if (['ENOENT', 'ENOTDIR'].includes(error.code)) throw fail(404, 'File not found'); throw error; }
-      if (!staticRoots.some(root => inside(actual, root)) || !info.isFile()) throw fail(403, 'Path is not served');
+      // The live sheets are reached through the API, never as files.
+      const roots = mounted ? [bookRoot] : staticRoots;
+      if (!roots.some(root => root && inside(actual, root)) || inside(actual, liveRoot) || !info.isFile()) throw fail(403, 'Path is not served');
       res.writeHead(200, { 'Content-Type': MIME[extname(path).toLowerCase()], 'Content-Length': info.size });
       if (req.method === 'HEAD') return res.end();
       const stream = createReadStream(actual);
@@ -257,7 +263,7 @@ export async function startStudioServer({ port = 4194, dataDir = resolve(ROOT, '
     server.listen(port, '127.0.0.1', () => { server.off('error', reject); resolveListen(); });
   });
   boundPort = server.address().port;
-  return { server, port: boundPort, dataDir, url: `http://127.0.0.1:${boundPort}`, close: () => new Promise((done, reject) => server.close(error => error ? reject(error) : done())) };
+  return { server, port: boundPort, dataDir, bookDir, url: `http://127.0.0.1:${boundPort}`, close: () => new Promise((done, reject) => server.close(error => error ? reject(error) : done())) };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
@@ -266,13 +272,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     for (let i = 0; i < args.length; i++) {
       if (args[i] === '--port' && args[i + 1] !== undefined) options.port = Number(args[++i]);
       else if (args[i] === '--data' && args[i + 1]) options.dataDir = args[++i];
-      else throw new Error('Usage: node studio-server.mjs [--port 4194] [--data DIR]');
+      else if (args[i] === '--book' && args[i + 1]) options.bookDir = args[++i];
+      else throw new Error('Usage: node studio-server.mjs [--port 4194] [--data DIR] [--book DIR]');
     }
     const studio = await startStudioServer(options);
     process.stdout.write(JSON.stringify({ ready: true, url: studio.url, port: studio.port, dataDir: studio.dataDir }) + '\n');
     for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => { studio.server.close(() => process.exit(0)); studio.server.closeIdleConnections(); });
   } catch (error) {
-    process.stderr.write(`Studio server: ${error.message}\n`);
+    process.stderr.write(`Drawing live: ${error.message}\n`);
     process.exitCode = 1;
   }
 }
