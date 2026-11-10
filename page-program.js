@@ -1,6 +1,26 @@
 /* One compilation contract for the CLI, browser sandbox and trusted atelier.
  * Keep this function self-contained: sandboxes evaluate its source locally. */
 export function compilePage(page) {
+  /* A page names its paper: a colour, or { colour, tooth, seed } for paper
+   * graphite can bite into. It is stored as the surface it names. A module
+   * with neither paper nor surface is flagged (noPaper, never saved): it can
+   * continue a page on the original canvas, never start one. */
+  const named = page && typeof page === 'object' && page.paper !== undefined;
+  if (named && page.surface !== undefined) throw Error('a page names its paper or spells out its surface, not both');
+  let surface = page && typeof page === 'object' ? page.surface : undefined;
+  if (named) {
+    const p = page.paper;
+    if (typeof p === 'string') surface = { kind: 'ink', version: 2, paper: p };
+    else {
+      if (!p || typeof p !== 'object' || Array.isArray(p)) throw Error("paper is a name or a colour, such as paper: 'cream', or { colour, tooth, seed } for paper with tooth");
+      const other = Object.keys(p).find((key) => key !== 'colour' && key !== 'tooth' && key !== 'seed');
+      if (other !== undefined) throw Error(`paper takes colour, tooth and seed, not ${other}`);
+      surface = { kind: 'ink', version: 2, paper: p.colour === undefined ? 'night' : p.colour };
+      if (p.tooth !== undefined) { surface.tooth = p.tooth; surface.seed = p.seed === undefined ? 17 : p.seed; }
+      else if (p.seed !== undefined) surface.seed = p.seed;
+    }
+  }
+  const noPaper = !!page && typeof page === 'object' && !named && page.surface === undefined;
   if (page && page.motion !== undefined) {
     /* A motion page is a loop of frames: frame(i, n) draws frame i of n, and
      * the frames are kept as one list of marks with a { k: 'frame' } break
@@ -18,7 +38,7 @@ export function compilePage(page) {
       if (i) ops.push({ k: 'frame' });
       for (const op of marks) ops.push(op);
     }
-    return { ops, meta: { title: page.title, date: page.date, note: page.note, refs: page.refs, seed: page.seed, page: page.page, surface: page.surface, motion: { frames: m.frames, fps, ...(m.poster !== undefined ? { poster: m.poster } : {}) } } };
+    return { ops, meta: { title: page.title, date: page.date, note: page.note, refs: page.refs, seed: page.seed, page: page.page, surface, ...(noPaper ? { noPaper } : {}), motion: { frames: m.frames, fps, ...(m.poster !== undefined ? { poster: m.poster } : {}) } } };
   }
   if (!page || typeof page.build !== 'function') throw Error('page module must export default { title, date, note, build }');
   const ops = page.build();
@@ -49,5 +69,5 @@ export function compilePage(page) {
     });
     if (JSON.stringify(ops) !== JSON.stringify(flattened)) throw Error('build() must exactly equal the concatenated pass builders; preserve earlier passes and use seeded marks');
   }
-  return { ops, meta: { title: page.title, date: page.date, note: page.note, refs: page.refs, seed: page.seed, page: page.page, surface: page.surface, ...(passes ? { passes } : {}) } };
+  return { ops, meta: { title: page.title, date: page.date, note: page.note, refs: page.refs, seed: page.seed, page: page.page, surface, ...(noPaper ? { noPaper } : {}), ...(passes ? { passes } : {}) } };
 }
