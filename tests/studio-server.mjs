@@ -157,7 +157,7 @@ try {
   await stop();
   const damaged = '{"incomplete":';
   await writeFile(join(work, 'data/active.json'), damaged);
-  await assert.rejects(run(process.execPath, [join(ROOT, 'studio-server.mjs'), '--port', '0', '--data', join(work, 'data')]), error => /Cannot restore studio active.json/.test(error.stderr));
+  await assert.rejects(run(process.execPath, [join(ROOT, 'studio-server.mjs'), '--port', '0', '--data', join(work, 'data')]), error => /Cannot restore the live sheet from active.json/.test(error.stderr));
   assert.equal(await readFile(join(work, 'data/active.json'), 'utf8'), damaged, 'startup never replaces an unreadable drawing with a blank sheet');
   console.log('Studio API: transactional actions, revision conflicts, safe loopback/static access, PNG crops, durable saves/lessons, restart recovery, and CLI passed.');
 } finally {

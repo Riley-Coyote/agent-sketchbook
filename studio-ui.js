@@ -2,6 +2,7 @@ import { SketchSession } from './sketch-session.js';
 import { MATERIAL_TOOLS } from './material-engine.js';
 import { createPracticeDrawing } from './practice.js';
 import { MarkEngine } from './mark-engine.js';
+import { paperName } from './page-program.js';
 
 const $ = id => document.getElementById(id);
 const ACTIVE_KEY = 'agent-sketchbook.material-studio.active.v1';
@@ -9,7 +10,19 @@ const DRAFTS_KEY = 'agent-sketchbook.material-studio.drafts.v1';
 const LESSONS_KEY = 'agent-sketchbook.material-studio.lessons.v1';
 let SERVER = false;
 const ctx = $('drawing-canvas').getContext('2d');
+/* A sheet in the old graphite form names its paper by these; a live sheet
+ * stores the colour a page would, and is named the way a page names it. */
 const paperNames = { white: 'Warm white', toned: 'Toned paper', black: 'Black paper' };
+const oldForm = () => session.surface.kind !== 'ink';
+function paperLabel() {
+  if (oldForm()) return paperNames[session.surface.paper] || session.surface.paper;
+  const name = paperName(session.surface.paper);
+  return name.startsWith('#') ? `${name} paper` : `${name[0].toUpperCase()}${name.slice(1)} paper`;
+}
+function paperColour() {
+  if (oldForm()) return ({ white: '#f6f3e9', toned: '#b5a68e', black: '#17191d' })[session.surface.paper] || '#f6f3e9';
+  return session.surface.paper === 'night' ? '#0b0b0f' : session.surface.paper;
+}
 const symbols = { 'graphite-hb': 'HB', 'graphite-2b': '2B', 'graphite-6b': '6B', 'vine-charcoal': 'V', 'compressed-charcoal': 'C', 'white-chalk': 'W', stump: 'S', 'kneaded-eraser': 'K', 'precision-eraser': 'E' };
 const toolOrder = Object.keys(symbols);
 let session = new SketchSession({ title: 'Untitled study' });
@@ -55,8 +68,8 @@ function updateSize() {
   }
   $('paper-stage').style.setProperty('--page-width', `${w}px`);
   $('paper-stage').style.setProperty('--page-ratio', `${w}/${h}`);
-  $('paper-stage').style.setProperty('--paper', ({ white: '#f6f3e9', toned: '#b5a68e', black: '#17191d' })[session.surface.paper] || '#f6f3e9');
-  $('drawing-canvas').setAttribute('aria-label', `${session.title || 'Untitled study'} on ${(paperNames[session.surface.paper] || 'paper').toLowerCase()}`);
+  $('paper-stage').style.setProperty('--paper', paperColour());
+  $('drawing-canvas').setAttribute('aria-label', `${session.title || 'Untitled study'} on ${paperLabel().toLowerCase()}`);
 }
 function updateControls() {
   $('undo-button').disabled = appBusy || session.active || !!replayEngine || !session.ops.length;
@@ -64,7 +77,7 @@ function updateControls() {
   $('replay-button').disabled = appBusy || session.active || !session.ops.length;
   $('replay-button').textContent = replayEngine ? 'Finish replay' : 'Replay';
   $('drawing-info').textContent = `${session.page.w} × ${session.page.h} · ${session.ops.length.toLocaleString()} marks`;
-  $('paper-description').textContent = `${paperNames[session.surface.paper] || session.surface.paper} · ${Math.round(session.surface.tooth * 100)}% tooth`;
+  $('paper-description').textContent = `${paperLabel()} · ${Math.round(session.surface.tooth * 100)}% tooth`;
   $('review-count').textContent = session.reviews?.length ? `(${session.reviews.length})` : '';
   for (const button of $('material-tools').children) {
     button.setAttribute('aria-pressed', String(button.dataset.tool === session.tool));
@@ -243,7 +256,7 @@ $('review-form').onsubmit = event => {
 async function request(path, options) {
   const response = await fetch(path, { ...options, headers: { 'Content-Type': 'application/json', ...options?.headers } });
   const data = await response.json();
-  if (!response.ok) { const error = Error(data.error || `Studio request failed (${response.status}).`); error.status = response.status; error.payload = data; throw error; }
+  if (!response.ok) { const error = Error(data.error || `The request failed (${response.status}).`); error.status = response.status; error.payload = data; throw error; }
   return data;
 }
 async function probeBridge() {
@@ -309,7 +322,7 @@ async function archiveCurrent(name) {
     serverRevision = result.revision; durable = true;
   }
   try { return localArchive(session.export(), name); }
-  catch (error) { if (!durable) throw error; notice('The drawing is saved by the studio server. Browser storage is full; the library will use the saved server copy.'); return null; }
+  catch (error) { if (!durable) throw error; notice('The drawing is saved on the server. Browser storage is full; the library will use the saved server copy.'); return null; }
 }
 $('save-button').onclick = safeAction(async () => {
   setBusy(true);
@@ -318,7 +331,9 @@ $('save-button').onclick = safeAction(async () => {
 });
 $('new-button').onclick = safeAction(() => {
   $('new-width').value = session.page.w; $('new-height').value = session.page.h;
-  $('new-paper').value = session.surface.paper; $('new-tooth').value = session.surface.tooth;
+  const paper = oldForm() ? session.surface.paper : paperName(session.surface.paper);
+  $('new-paper').value = [...$('new-paper').options].some((option) => option.value === paper) ? paper : 'white';
+  $('new-tooth').value = session.surface.tooth;
   updateSliderLabels(); $('new-dialog').showModal();
 });
 $('new-form').onsubmit = async event => {
@@ -326,7 +341,7 @@ $('new-form').onsubmit = async event => {
   setBusy(true); clearError();
   try {
     const page = { w: Number($('new-width').value), h: Number($('new-height').value) };
-    const surface = { version: 1, paper: $('new-paper').value, tooth: Number($('new-tooth').value), seed: crypto.getRandomValues(new Uint32Array(1))[0] % 1000000 };
+    const surface = { kind: 'ink', version: 2, paper: $('new-paper').value, tooth: Number($('new-tooth').value), seed: crypto.getRandomValues(new Uint32Array(1))[0] % 1000000 };
     const candidate = new SketchSession({ title: $('new-title').value.trim() || 'Untitled study', page, surface });
     await archiveCurrent(); await replaceDrawing(candidate.export()); $('new-dialog').close(); notice('Previous work is saved in the library. The new sheet is ready.');
   } catch (error) { report(error); }
@@ -334,7 +349,7 @@ $('new-form').onsubmit = async event => {
 };
 $('practice-button').onclick = safeAction(async () => {
   setBusy(true);
-  try { const drawing = createPracticeDrawing(); await archiveCurrent(); await replaceDrawing(drawing); notesOpen(false); notice('Material study ready. Observations are in Notes.'); }
+  try { const drawing = createPracticeDrawing(); await archiveCurrent(); await replaceDrawing(drawing); notesOpen(false); notice('Practice sheet ready. Observations are in Notes.'); }
   finally { setBusy(false); }
 });
 for (const button of document.querySelectorAll('[data-close-dialog]')) button.onclick = () => button.closest('dialog').close();
@@ -346,7 +361,7 @@ function renderLibrary() {
   for (const saved of serverDrafts) {
     const row = document.createElement('div'); row.className = 'saved-row'; const text = document.createElement('div');
     const title = document.createElement('strong'); title.textContent = saved.name || saved.title; text.append(title);
-    const meta = document.createElement('small'); meta.textContent = `${dateLabel(saved.savedAt)} · ${Number(saved.marks).toLocaleString()} marks · studio`; text.append(meta);
+    const meta = document.createElement('small'); meta.textContent = `${dateLabel(saved.savedAt)} · ${Number(saved.marks).toLocaleString()} marks · kept by the server`; text.append(meta);
     const load = document.createElement('button'); load.textContent = 'Open'; load.onclick = safeAction(async () => {
       setBusy(true);
       try {
