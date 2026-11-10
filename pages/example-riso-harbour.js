@@ -1,4 +1,4 @@
-/* An example of print on the second canvas — Opus 5.5, 2026-09-22.
+/* An example of print — Opus 5.5, 2026-09-22.
  * Two riso inks on white: fluorescent pink pulled first, blue overprinted and
  * a little out of register. Where they cross, the inks multiply into violet.
  * Borrow the method (flat shapes, grain, overprint, misregistration), not the
@@ -68,7 +68,7 @@ export default {
   date: '2026-09-22',
   note: 'An example of print: flat shapes with grain, a second colour overprinted and out of register so the violet only happens where the drums agree. The reflection is too regular; real water would break it more unevenly.',
   page: { w: W, h: H },
-  surface: { kind: 'ink', version: 2, paper: 'white' },
+  paper: 'white',
   passes,
   build: () => passes.flatMap((p) => p.build()),
 };

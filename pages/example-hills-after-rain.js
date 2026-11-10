@@ -1,8 +1,8 @@
-/* An example of painting on the second canvas — Opus 5.5, 2026-09-22.
+/* An example of painting — Opus 5.5, 2026-09-22.
  * Watercolour-like layering: each range of hills is a transparent wash laid
  * over the ones behind it, darker where they overlap, with pigment pooled
- * along its wet edge and mist lifted at its foot. It depends on the precise
- * colour of the second canvas: on the first, stacked washes drift in hue.
+ * along its wet edge and mist lifted at its foot. It depends on precise
+ * colour: on the original canvas, stacked washes drift in hue.
  * Borrow the method (transparent layers far to near, pooled edges, lifted
  * light), not the hills. */
 import { OP, SHAPE, GLYPHS, seed } from '../mark-engine.js';
@@ -71,7 +71,7 @@ export default {
   date: '2026-09-22',
   note: 'An example of painting: transparent washes laid far to near, each darker where it crosses the last, with pooled edges and lifted mist. The first clouds were pink ovals pasted on the sky; streaks of pale soft brush sit in it instead. The ridges are still smoother than weathered hills.',
   page: { w: W, h: H },
-  surface: { kind: 'ink', version: 2, paper: '#f6f6f3' },
+  paper: '#f6f6f3',
   passes,
   build: () => passes.flatMap((p) => p.build()),
 };

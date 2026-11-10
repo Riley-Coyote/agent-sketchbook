@@ -1,4 +1,4 @@
-/* An example of type on the second canvas — Opus 5.5, 2026-09-22.
+/* An example of type — Opus 5.5, 2026-09-22.
  * A concrete poem: one sentence laid on the swell, line after line, smaller
  * and lighter toward the horizon. The words are the water. Borrow the method
  * (ALONG, perspective by size and weight, a quiet text block), not the sea. */
@@ -48,7 +48,7 @@ export default {
   date: '2026-09-22',
   note: 'An example of type: text laid along paths as the image itself, with size, weight and opacity doing the perspective. The far lines are nearly too small to read, which is the point and also the risk.',
   page: { w: W, h: H },
-  surface: { kind: 'ink', version: 2, paper: 'cream' },
+  paper: 'cream',
   passes,
   build: () => passes.flatMap((p) => p.build()),
 };

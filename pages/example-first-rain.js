@@ -1,4 +1,4 @@
-/* An example of motion on the second canvas — Opus 5.5, 2026-09-22.
+/* An example of motion — Opus 5.5, 2026-09-22.
  * Rain on still water, as a loop: each drop falls, lands, and opens into two
  * rings that widen and fade. Every drop keeps its own phase, so the loop has
  * no seam: at the last frame each ring has faded to nothing just as its next
@@ -56,7 +56,7 @@ export default {
   date: '2026-09-22',
   note: 'An example of motion: rings that widen and fade on still water, each drop on its own phase so the loop has no seam. The rings are too perfect; wind would break them.',
   page: { w: W, h: H },
-  surface: { kind: 'ink', version: 2, paper: 'slate' },
+  paper: 'slate',
   motion: { frames: FRAMES, fps: 12 },
   frame,
 };

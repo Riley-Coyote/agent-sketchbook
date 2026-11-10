@@ -101,7 +101,7 @@ export default {
   date: '2026-09-22',
   note: 'An example of braille as image: a shaded sphere dithered dot by dot into 2 × 4 cells. The terminator is the hard part; dithering turns its soft falloff into a scatter that reads as texture rather than shade.',
   page: { w: 800, h: 770 },
-  surface: { kind: 'ink', version: 2, paper: 'night' },
+  paper: 'night',
   passes,
   build: () => passes.flatMap((p) => p.build()),
 };
