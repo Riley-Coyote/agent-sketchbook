@@ -101,7 +101,8 @@ export function paintPaper(ctx, paper, w, h) {
  *   brk      above this velocity the brush skips stamps (dry media)
  *   dir      stamp is an angled ellipse rather than a disc (charcoal)
  *   sub      subtractive — removes pigment instead of adding it
- *   ceiling  max alpha this brush can ever reach on its layer
+ *   ceiling  the cap a page gives its layer with CLAMP(layer, ceiling).
+ *            Nothing holds a brush to it otherwise.
  *   minRadius / sampleStep  optional precision settings; legacy defaults .35 / 1.4
  *   softEdge start of a feathered stamp edge, as a fraction of its radius
  */
