@@ -527,7 +527,7 @@ serve --book DIR [--port 4194]   serves the book to open in a browser, with draw
 live COMMAND ...   drawing live, gesture by gesture: node book.mjs live help lists the commands; live page writes a live sheet as a page module
 snapshot --book DIR [--drawing ID] [--protocol sketchbook.drawing/1] [--inline-max BYTES] --json   a drawing's latest state for a host; reads only (docs/host-seam.md)
 write ... --reference   also draws the page's poster (pages/NNN.png) and prints its page reference as JSON; a save that already landed as the newest page answers with the same reference
-renderer --json | --check   the renderer a host pins (<sketch-page> and the files it loads): prints renderer.manifest.json, or recomputes every file's size and sha256 against it; reads only
+renderer --json | --check   the renderer a host pins (<sketch-page> and the files it loads): prints renderer.manifest.json, or recomputes every file's size and sha256 against it, the fonts' licence texts included; reads only
 Saving defaults to a study. Selection records intent; it does not publish or grant access.`);
   } else if (cmd === 'init') {
     const owner = arg('--owner');
@@ -724,7 +724,7 @@ export default {
       const { files, problems } = await checkRenderer(ROOT, manifest);
       for (const f of files.filter((f) => f.state === 'ok')) console.log(`ok  ${f.path}  ${f.bytes} bytes  sha256 ${f.sha256}`);
       if (problems.length) throw new Error(`the renderer does not match ${RENDERER_MANIFEST}:\n  ${problems.join('\n  ')}`);
-      console.log(`renderer ${manifest.rendererVersion}: all ${files.length} files match ${RENDERER_MANIFEST}`);
+      console.log(`renderer ${manifest.rendererVersion}: all ${manifest.files.length} files and ${(manifest.licenses || []).length} licence texts match ${RENDERER_MANIFEST}`);
     } else console.log(`renderer ${manifest.rendererVersion} (${manifest.protocol}): ${manifest.entry} defines <${manifest.element}>, fed marks through its ${manifest.feed} property; ${manifest.files.length} files. Add --json for the manifest, or --check to check every file against it.`);
   } else if (cmd === 'render') {
     const book = await loadBook();

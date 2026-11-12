@@ -238,12 +238,20 @@ export const RENDERER_MANIFEST = 'renderer.manifest.json';
 
 export const rendererManifest = async (root) => JSON.parse(await readFile(resolve(root, RENDERER_MANIFEST), 'utf8'));
 
-/** Every file the manifest names, read from `root` and recomputed. `problems`
- * names each file that differs or is missing; empty when all match. */
+/** Every file the manifest names, read from `root` and recomputed: the eight
+ * renderer files, then the fonts' licence texts (`licenses`), which travel
+ * with the fonts. `problems` names each file that differs, is missing or is
+ * empty, and each font whose licence text the manifest does not list; it is
+ * empty when all match. */
 export async function checkRenderer(root, manifest) {
   const files = [], problems = [];
   if (manifest.protocol !== RENDERER_PROTOCOL) problems.push(`the manifest's protocol is ${JSON.stringify(manifest.protocol)}, not ${RENDERER_PROTOCOL}`);
+  const licenses = manifest.licenses || [];
+  const listed = new Set(licenses.map((l) => l.path));
   for (const f of manifest.files) {
+    if (f.kind === 'font' && !listed.has(f.licenseFile)) problems.push(`no licence: ${f.path} names ${JSON.stringify(f.licenseFile)}, which the manifest's licenses do not list`);
+  }
+  for (const f of [...manifest.files, ...licenses]) {
     let bytes;
     try { bytes = await readFile(resolve(root, f.path)); } catch {
       files.push({ path: f.path, state: 'missing' });
@@ -251,19 +259,22 @@ export async function checkRenderer(root, manifest) {
       continue;
     }
     const sha256 = createHash('sha256').update(bytes).digest('hex');
-    const same = bytes.length === f.bytes && sha256 === f.sha256;
-    files.push({ path: f.path, state: same ? 'ok' : 'differs', bytes: bytes.length, sha256 });
-    if (!same) problems.push(`differs: ${f.path} (${bytes.length} bytes, sha256 ${sha256}; the manifest has ${f.bytes} bytes, sha256 ${f.sha256})`);
+    const same = bytes.length === f.bytes && sha256 === f.sha256 && bytes.length > 0;
+    files.push({ path: f.path, state: same ? 'ok' : bytes.length ? 'differs' : 'empty', bytes: bytes.length, sha256 });
+    if (!bytes.length) problems.push(`empty: ${f.path}`);
+    else if (!same) problems.push(`differs: ${f.path} (${bytes.length} bytes, sha256 ${sha256}; the manifest has ${f.bytes} bytes, sha256 ${f.sha256})`);
   }
   return { files, problems };
 }
 
-/** The version rule, between an earlier manifest and a later one: when any
- * script changed (its digest, or a script added or taken away), existing
- * marks could draw differently, so rendererVersion must be higher. */
+/** The version rule, between an earlier manifest and a later one: when any of
+ * the renderer's files changed (its digest, or a file added or taken away),
+ * scripts and fonts alike, existing marks could draw differently, so
+ * rendererVersion must be higher. The licence texts don't draw, so they are
+ * outside the rule. */
 export function rendererVersionRule(before, after) {
-  const scripts = (m) => new Map(m.files.filter((f) => f.kind === 'script').map((f) => [f.path, f.sha256]));
-  const was = scripts(before), now = scripts(after);
+  const digests = (m) => new Map(m.files.map((f) => [f.path, f.sha256]));
+  const was = digests(before), now = digests(after);
   const changed = [...new Set([...was.keys(), ...now.keys()])].filter((path) => was.get(path) !== now.get(path));
   return { changed, ok: !changed.length || after.rendererVersion > before.rendererVersion };
 }

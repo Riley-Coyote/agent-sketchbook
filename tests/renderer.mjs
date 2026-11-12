@@ -1,11 +1,13 @@
 /* tests/renderer.mjs — node tests/renderer.mjs
  * The renderer a host pins (docs/host-seam.md, "Pinning the renderer"):
  * renderer.manifest.json names exactly the files <sketch-page> loads, with
- * sizes and digests that match them; a script that changes without the
- * rendererVersion going up is caught; `book.mjs renderer` prints and checks
+ * sizes and digests that match them, and the fonts' licence texts that go
+ * with them; any of the eight that changes without the rendererVersion going
+ * up is caught; `book.mjs renderer` prints and checks
  * the manifest; and the host's checker, examples/host-seam/verify-renderer.mjs,
  * passes on the renderer laid out as a host keeps it and fails on one changed
- * byte, a missing file or an extra script. No browser. Throwaway copies live in
+ * byte, a missing file, a missing, empty or altered licence text, or an
+ * extra script. No browser. Throwaway copies live in
  * a temp folder; nothing in this folder is changed.
  */
 
@@ -31,17 +33,19 @@ const tmp = await mkdtemp(join(tmpdir(), 'renderer-test-'));
 async function hostFolder(name, manifest) {
   const dir = join(tmp, name);
   await mkdir(join(dir, 'fonts'), { recursive: true });
-  for (const f of manifest.files) await cp(resolve(ROOT, f.path), join(dir, f.path));
+  for (const f of [...manifest.files, ...manifest.licenses]) await cp(resolve(ROOT, f.path), join(dir, f.path));
   await cp(resolve(ROOT, RENDERER_MANIFEST), join(dir, RENDERER_MANIFEST));
   return dir;
 }
-/* One byte changed, inside the file's opening comment, so the script still runs. */
-async function changeOneByte(file) {
+/* One byte changed, the first letter of `text` swapping case: inside the
+ * engine's opening comment, so the script still runs. */
+async function changeOneByteAt(file, text) {
   const bytes = await readFile(file);
-  const at = bytes.indexOf('the hand');
-  bytes[at] = bytes[at] === 0x74 ? 0x54 : 0x74;   // t <-> T
+  const at = bytes.indexOf(text);
+  bytes[at] ^= 0x20;
   await writeFile(file, bytes);
 }
+const changeOneByte = (file) => changeOneByteAt(file, 'the hand');
 
 try {
   const manifest = await rendererManifest(ROOT);
@@ -59,6 +63,10 @@ try {
     const texts = await Promise.all(fonts.map((f) => readFile(resolve(ROOT, f.licenseFile ?? 'none'), 'utf8').catch(() => '')));
     ok(fonts.every((f, i) => f.license === 'OFL-1.1' && /SIL OPEN FONT LICENSE Version 1\.1/i.test(texts[i])), 'fonts are OFL-1.1, each naming its licence text, which is there');
     ok(manifest.files.every((f) => Object.keys(f).every((k) => ['path', 'bytes', 'sha256', 'kind', 'license', 'licenseFile'].includes(k))), 'every entry holds only path, bytes, sha256, kind, license (and a font its licenseFile)');
+    const licensePaths = manifest.licenses.map((l) => l.path);
+    ok(manifest.licenses.length === 3 && JSON.stringify([...new Set(fonts.map((f) => f.licenseFile))].sort()) === JSON.stringify([...licensePaths].sort())
+      && manifest.licenses.every((l) => l.license === 'OFL-1.1' && l.bytes > 0 && /^[0-9a-f]{64}$/.test(l.sha256) && Object.keys(l).sort().join() === 'bytes,license,path,sha256'),
+      `licenses lists exactly the three licence texts the fonts name, each with its size and sha256 (${licensePaths.join(', ')})`);
     const { files, problems } = await checkRenderer(ROOT, manifest);
     ok(!problems.length && files.every((f) => f.state === 'ok'), `every file matches its size and sha256${problems.length ? `: ${problems.join('; ')}` : ''}`);
   }
@@ -106,7 +114,12 @@ try {
     ok(!silent.ok && silent.changed.join() === 'mark-engine.js', 'a script changed without the version going up is caught, by name');
     ok(rendererVersionRule(manifest, bumped(manifest, { 'mark-engine.js': other }, manifest.rendererVersion + 1)).ok, 'the same change with the version up passes');
     ok(!rendererVersionRule(manifest, { ...manifest, files: manifest.files.filter((f) => f.path !== 'validate.js') }).ok, 'a script taken away without the version going up is caught');
-    ok(rendererVersionRule(manifest, bumped(manifest, { 'fonts/inter.woff': other })).ok, 'the rule is about scripts: a font alone does not require it');
+    const font = rendererVersionRule(manifest, bumped(manifest, { 'fonts/inter.woff': other }));
+    ok(!font.ok && font.changed.join() === 'fonts/inter.woff', 'a font changed without the version going up is caught, by name');
+    ok(rendererVersionRule(manifest, bumped(manifest, { 'fonts/inter.woff': other }, manifest.rendererVersion + 1)).ok, 'the same font change with the version up passes');
+    ok(!rendererVersionRule(manifest, { ...manifest, files: manifest.files.filter((f) => f.path !== 'fonts/cormorant-garamond-italic.woff') }).ok, 'a font taken away without the version going up is caught');
+    const textOnly = { ...manifest, licenses: manifest.licenses.map((l, i) => (i ? l : { ...l, sha256: other })) };
+    ok(rendererVersionRule(manifest, textOnly).ok, 'a licence text alone does not draw, so it is outside the rule');
     /* Against the manifest where this branch left the main line, if it has one. */
     let base = null, why = '';
     try {
@@ -116,7 +129,7 @@ try {
     } catch { why = 'no merge base with origin/main here'; }
     if (base) {
       const r = rendererVersionRule(base.manifest, manifest);
-      ok(r.ok, `against ${base.at} (merge base with origin/main): ${r.changed.length ? `${r.changed.join(', ')} changed and the version went ${base.manifest.rendererVersion} → ${manifest.rendererVersion}` : 'no script changed'}`);
+      ok(r.ok, `against ${base.at} (merge base with origin/main): ${r.changed.length ? `${r.changed.join(', ')} changed and the version went ${base.manifest.rendererVersion} → ${manifest.rendererVersion}` : 'none of the eight changed'}`);
     } else console.log(`  skip against the main line: ${why}`);
   }
 
@@ -124,7 +137,7 @@ try {
   {
     const book = resolve(ROOT, 'book.mjs');
     const check = await node(book, ['renderer', '--check']);
-    ok(check.code === 0 && /^renderer \d+: all 8 files match renderer\.manifest\.json$/m.test(check.stdout) && check.stdout.trim().split('\n').length === 9, '--check passes: one line per file and the verdict');
+    ok(check.code === 0 && /^renderer \d+: all 8 files and 3 licence texts match renderer\.manifest\.json$/m.test(check.stdout) && check.stdout.trim().split('\n').length === 12, '--check passes: one line per file and licence text, and the verdict');
     const json = await node(book, ['renderer', '--json']);
     ok(json.code === 0 && JSON.stringify(JSON.parse(json.stdout)) === JSON.stringify(manifest), '--json prints the manifest');
     const unknown = await node(book, ['renderer', '--check', '--strict']);
@@ -138,13 +151,16 @@ try {
     for (const [name, spoil, expect] of [
       ['changed', (d) => changeOneByte(join(d, 'mark-engine.js')), /differs: mark-engine\.js \(60476 bytes, sha256 [0-9a-f]{64}; the manifest has 60476 bytes, sha256 3862c4b7/],
       ['missing', (d) => rm(join(d, 'fonts/inter.woff')), /missing: fonts\/inter\.woff/],
+      ['licence-removed', (d) => rm(join(d, 'fonts/OFL-Inter.txt')), /missing: fonts\/OFL-Inter\.txt/],
+      ['licence-emptied', (d) => writeFile(join(d, 'fonts/OFL-JetBrainsMono.txt'), ''), /empty: fonts\/OFL-JetBrainsMono\.txt/],
+      ['licence-altered', (d) => changeOneByteAt(join(d, 'fonts/OFL-CormorantGaramond.txt'), 'Copyright'), /differs: fonts\/OFL-CormorantGaramond\.txt/],
     ]) {
       const dir = join(tmp, `tool-${name}`);
       await mkdir(dir);
       for (const e of await readdir(ROOT)) if (/\.(m?js)$/.test(e) || e === 'fonts' || e === RENDERER_MANIFEST) await cp(resolve(ROOT, e), join(dir, e), { recursive: true });
       await spoil(dir);
       const r = await node(join(dir, 'book.mjs'), ['renderer', '--check'], dir);
-      ok(r.code === 1 && expect.test(r.stderr) && r.stderr.trim().split('\n').length === 2, `--check fails, naming the one ${name} file`);
+      ok(r.code === 1 && expect.test(r.stderr) && r.stderr.trim().split('\n').length === 2, `--check fails, naming the one file (${name})`);
     }
   }
 
@@ -152,7 +168,7 @@ try {
   {
     const good = await hostFolder('host', manifest);
     const pass1 = await node(VERIFY, [good]);
-    ok(pass1.code === 0 && /^verdict: pass — all 8 files match renderer \d+/m.test(pass1.stdout) && (pass1.stdout.match(/^ok {7}/gm) || []).length === 8, 'passes on the renderer laid out as a host keeps it');
+    ok(pass1.code === 0 && /^verdict: pass — all 8 files of renderer \d+ and their 3 licence texts match/m.test(pass1.stdout) && (pass1.stdout.match(/^ok {7}/gm) || []).length === 11, 'passes on the renderer and its licence texts laid out as a host keeps them');
     const kept = join(tmp, 'kept.manifest.json');
     await cp(resolve(ROOT, RENDERER_MANIFEST), kept);
     await rm(join(good, RENDERER_MANIFEST));
@@ -160,7 +176,7 @@ try {
     const changed = await hostFolder('host-changed', manifest);
     await changeOneByte(join(changed, 'mark-engine.js'));
     const r1 = await node(VERIFY, [changed]);
-    ok(r1.code === 1 && /^DIFFERS  mark-engine\.js /m.test(r1.stdout) && /^verdict: FAIL — 7 of 8/m.test(r1.stdout), 'fails on one changed byte, naming the file');
+    ok(r1.code === 1 && /^DIFFERS  mark-engine\.js /m.test(r1.stdout) && /^verdict: FAIL — 1 problem in 11 files/m.test(r1.stdout), 'fails on one changed byte, naming the file');
     const fontChanged = await hostFolder('host-font', manifest);
     const fontBytes = await readFile(join(fontChanged, 'fonts/inter.woff'));
     fontBytes[fontBytes.length - 1] ^= 1;
@@ -170,12 +186,26 @@ try {
     await rm(join(missing, 'validate.js'));
     const r2 = await node(VERIFY, [missing]);
     ok(r2.code === 1 && /^MISSING  validate\.js$/m.test(r2.stdout), 'fails on a missing file');
+    for (const [name, spoil, expect] of [
+      ['removed', (d) => rm(join(d, 'fonts/OFL-Inter.txt')), /^MISSING  fonts\/OFL-Inter\.txt$/m],
+      ['emptied', (d) => writeFile(join(d, 'fonts/OFL-Inter.txt'), ''), /^EMPTY    fonts\/OFL-Inter\.txt$/m],
+      ['altered', (d) => changeOneByteAt(join(d, 'fonts/OFL-Inter.txt'), 'Copyright'), /^DIFFERS  fonts\/OFL-Inter\.txt /m],
+    ]) {
+      const dir = await hostFolder(`host-licence-${name}`, manifest);
+      await spoil(dir);
+      const r = await node(VERIFY, [dir]);
+      ok(r.code === 1 && expect.test(r.stdout) && /^verdict: FAIL — 1 problem/m.test(r.stdout), `fails on a licence text ${name}, naming it`);
+    }
+    const unlisted = join(tmp, 'unlisted.manifest.json');
+    await writeFile(unlisted, JSON.stringify({ ...manifest, licenses: manifest.licenses.filter((l) => l.path !== 'fonts/OFL-CormorantGaramond.txt') }));
+    const r4 = await node(VERIFY, [good, '--manifest', unlisted]);
+    ok(r4.code === 1 && (r4.stdout.match(/^NO LICENCE  fonts\/cormorant-garamond/gm) || []).length === 2, 'fails when the manifest lists no licence text for a font, naming both fonts');
     const extra = await hostFolder('host-extra', manifest);
     await writeFile(join(extra, 'helper.js'), 'export {};\n');
     const r3 = await node(VERIFY, [extra]);
-    ok(r3.code === 1 && /^EXTRA    helper\.js/m.test(r3.stdout) && /8 of 8 files match.*1 extra script/.test(r3.stdout), 'fails on an extra script beside the renderer');
+    ok(r3.code === 1 && /^EXTRA    helper\.js/m.test(r3.stdout) && /all 11 files .* match; 1 extra script/.test(r3.stdout), 'fails on an extra script beside the renderer');
     const whole = await node(VERIFY, [ROOT]);
-    ok(whole.code === 1 && (whole.stdout.match(/^ok {7}/gm) || []).length === 8 && /^EXTRA    page-program\.js/m.test(whole.stdout), 'on this whole folder: all 8 match, and the other scripts here are refused as extra');
+    ok(whole.code === 1 && (whole.stdout.match(/^ok {7}/gm) || []).length === 11 && /^EXTRA    page-program\.js/m.test(whole.stdout), 'on this whole folder: all 11 match, and the other scripts here are refused as extra');
     const strayManifest = join(tmp, 'outside.manifest.json');
     await writeFile(strayManifest, JSON.stringify({ ...manifest, files: [...manifest.files, { path: '../secret.js', bytes: 1, sha256: '0'.repeat(64), kind: 'script', license: 'private' }] }));
     ok((await node(VERIFY, [good, '--manifest', strayManifest])).code === 2, 'a manifest naming a file outside the folder is refused');

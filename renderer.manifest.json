@@ -13,5 +13,10 @@
     { "path": "fonts/inter.woff", "bytes": 128436, "sha256": "c0fa3021d11ee93ad5b4ca9d919bd8edd4b740b1fa4748392daab33bec59f164", "kind": "font", "license": "OFL-1.1", "licenseFile": "fonts/OFL-Inter.txt" },
     { "path": "fonts/cormorant-garamond.woff", "bytes": 46712, "sha256": "77095874828ef44784a81429b80d0c4aeec8b86a9335d16fca2ed7619b79088c", "kind": "font", "license": "OFL-1.1", "licenseFile": "fonts/OFL-CormorantGaramond.txt" },
     { "path": "fonts/cormorant-garamond-italic.woff", "bytes": 47756, "sha256": "5237f37ede66ae21f79caa4621bf41beca141cb9e4edc611ad0626270a0986e6", "kind": "font", "license": "OFL-1.1", "licenseFile": "fonts/OFL-CormorantGaramond.txt" }
+  ],
+  "licenses": [
+    { "path": "fonts/OFL-JetBrainsMono.txt", "bytes": 4398, "sha256": "102a0db84dc6b456966d59a520c4c223721b65d1094c080420fb56fbf4dce273", "license": "OFL-1.1" },
+    { "path": "fonts/OFL-Inter.txt", "bytes": 4380, "sha256": "262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a", "license": "OFL-1.1" },
+    { "path": "fonts/OFL-CormorantGaramond.txt", "bytes": 4387, "sha256": "60700d351cac4650c51f3f9db318d2a420f8b45052dba2715eb5fec41f0f6956", "license": "OFL-1.1" }
   ]
 }

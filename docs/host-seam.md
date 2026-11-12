@@ -216,7 +216,8 @@ source.
 **The scripts are private**: all rights reserved, under the repository's
 `LICENSE`; a host needs written permission to ship them. **The fonts are SIL
 Open Font License 1.1**; each font's entry names its licence text
-(`fonts/OFL-*.txt`), which goes with the font wherever the font goes.
+(`fonts/OFL-*.txt`), which goes with the font wherever the font goes. Both
+checkers below fail when a font's licence text is missing, empty or altered.
 
 **Feed it marks through `ops`.** Set the element's `ops` property to
 `{ page, surface, motion, ops }` from a snapshot (or to an array of marks), as
@@ -224,9 +225,26 @@ Open Font License 1.1**; each font's entry names its licence text
 `src`, the element fetches that URL itself.
 
 **Folder layout.** Keep the four scripts side by side in one folder, and the
-fonts in `fonts/` inside it. The scripts import each other as
-`./mark-engine.js` and so on, and the engine finds each font from its own
-address (`./fonts/inter.woff` beside `mark-engine.js`).
+fonts with their three licence texts in `fonts/` inside it:
+
+```
+sketch-page.js
+mark-engine.js
+material-engine.js
+validate.js
+renderer.manifest.json            (or kept apart; see below)
+fonts/jetbrains-mono-nl.woff
+fonts/inter.woff
+fonts/cormorant-garamond.woff
+fonts/cormorant-garamond-italic.woff
+fonts/OFL-JetBrainsMono.txt
+fonts/OFL-Inter.txt
+fonts/OFL-CormorantGaramond.txt   (both Cormorant Garamond fonts)
+```
+
+The scripts import each other as `./mark-engine.js` and so on, and the engine
+finds each font from its own address (`./fonts/inter.woff` beside
+`mark-engine.js`).
 
 **The manifest**, protocol `sketchbook.renderer/1`:
 
@@ -236,19 +254,20 @@ address (`./fonts/inter.woff` beside `mark-engine.js`).
 | `rendererVersion` | a whole number, starting at 1 (below) |
 | `entry`, `element` | `sketch-page.js`, which defines `sketch-page` |
 | `feed` | `ops`: how marks reach the element |
-| `files` | each file's `path` (relative to the folder), `bytes`, `sha256` (lowercase hex), `kind` (`script` or `font`) and `license` (`private`, or `OFL-1.1` with its `licenseFile`) |
+| `files` | the eight: each file's `path` (relative to the folder), `bytes`, `sha256` (lowercase hex), `kind` (`script` or `font`) and `license` (`private`, or `OFL-1.1` with its `licenseFile`) |
+| `licenses` | the fonts' three licence texts: each one's `path`, `bytes`, `sha256` and `license` (`OFL-1.1`). Every font's `licenseFile` is one of them |
 
 **`rendererVersion`** goes up when marks that already exist could draw
-differently. `tests/renderer.mjs` holds the scripts to it: when a script's
-digest changes (or a script is added or taken away) and the version has not
-gone up since the manifest where this branch left the main line, the test
-fails. While the main line has no manifest yet, that comparison is skipped and
-the test says so. A font change alone does not trip the test; it can still
-change how type marks draw, and then the version goes up too.
+differently. `tests/renderer.mjs` holds all eight files to it, scripts and
+fonts alike: when any one's digest changes (or a file is added or taken away)
+and the version has not gone up since the manifest where this branch left the
+main line, the test fails. While the main line has no manifest yet, that
+comparison is skipped and the test says so. The licence texts don't draw, so
+a change to one alone needs no new version.
 
 **Checking it here.** `node book.mjs renderer --check` recomputes every file
-in this folder against the manifest; it exits non-zero, naming each file that
-differs or is missing. `node book.mjs renderer --json` prints the manifest.
+in this folder against the manifest, the licence texts included; it exits
+non-zero, naming each file that differs, is missing or is empty. `node book.mjs renderer --json` prints the manifest.
 Both only read, and take no other flag.
 
 **Checking it in a host.**
@@ -258,9 +277,10 @@ node examples/host-seam/verify-renderer.mjs <folder> [--manifest <file>]
 ```
 
 One file, Node's own modules only, for a host to copy. It reads each file the
-manifest names from the folder, prints one line per file and a verdict, and
-exits 1 if any file differs or is missing, or if the folder's top level holds
-a `.js` file the manifest does not name. By default it reads the manifest in
+manifest names from the folder, licence texts included, prints one line per
+file and a verdict, and exits 1 if any file differs, is missing or is empty,
+if a font names a licence text the manifest does not list, or if the folder's
+top level holds a `.js` file the manifest does not name. By default it reads the manifest in
 the folder; a host that keeps the manifest it reviewed somewhere else passes
 it with `--manifest`, so a changed folder can't vouch for itself. It is for
 the folder a host keeps the renderer in: run on this repository's own folder
@@ -307,7 +327,7 @@ is the same save; a previewed text's file is removed when the preview is done.
 | `write …` | the module, the book, `live/active.json` | the page, `book.json` | yes | no |
 | `preview …` | the module | the `--out` picture only | yes | yes |
 | `list`, `read`, `journal` | the book | nothing | no | no |
-| `renderer --json`, `renderer --check` | `renderer.manifest.json` and, for `--check`, the eight files it names | nothing | no | no |
+| `renderer --json`, `renderer --check` | `renderer.manifest.json` and, for `--check`, the eight files and three licence texts it names | nothing | no | no |
 | `serve`, `live …` | the book, its live folder | the live folder (`live page`: the module it names) | `live page` only: the module it has just written from the sheet's gestures, to check it builds to them | no |
 
 A flag that takes a value, given with none (last, or followed by another
@@ -365,8 +385,9 @@ node tests/renderer.mjs    # the renderer manifest, what the renderer loads, the
   marked as not read-only, since it writes a temporary picture.
 - A value flag given with no value is refused everywhere the seam reads one.
 - `renderer.manifest.json` (protocol `sketchbook.renderer/1`, renderer 1):
-  the eight files of the renderer a host loads, with sizes and SHA-256.
-  `book.mjs renderer --json` prints it and `book.mjs renderer --check` checks
-  every file against it; `tests/renderer.mjs` keeps it current and holds
-  script changes to a higher `rendererVersion`.
+  the eight files of the renderer a host loads, and the fonts' three licence
+  texts, with sizes and SHA-256. `book.mjs renderer --json` prints it and
+  `book.mjs renderer --check` checks every file against it;
+  `tests/renderer.mjs` keeps it current and holds any change to the eight
+  files, fonts included, to a higher `rendererVersion`.
 - `examples/host-seam/verify-renderer.mjs`: a checker a host can copy.
