@@ -4,6 +4,7 @@ import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { compilePage, paperLine, paperName, today } from './page-program.js';
+import { sheetLine } from './host-seam.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const HELP = `Drawing live: start the server first, with node book.mjs serve.
@@ -16,9 +17,13 @@ Through the book these are node book.mjs live <command>; directly, node studio.m
   new --title "Study" [--width 1100 --height 780] [--paper white --tooth 0.65 --seed 17]
     a new live sheet: any paper a page names (night, black, white, cream, grey, slate, kraft or '#rrggbb'),
     with tooth from 0 to 1. A live sheet holds dry media only: graphite, charcoal, chalk, the stump and erasers.
+  new --continue PAGE | --branch PAGE [--title T]
+    a live sheet that carries on a page of the book (its paper, size and marks): continue keeps its drawing,
+    branch starts a new drawing that names it. The page must hold dry media only, on paper with tooth.
   page --out pages/name.js [--title T] [--note N] [--book DIR]
     writes the live sheet as a page module, a pass for each review, and prints how to save it to the book
   save [--name "Checkpoint"]
+    a checkpoint: the sheet's pass is complete, and its drawing's revision goes up by one
   saves
   load --id SAVE_ID
   lessons
@@ -31,30 +36,36 @@ The server rejects stale revisions instead of overwriting another drawing.
 /* A sheet's gestures as a page module: one pass for the marks before each
  * review (reviews with nothing new between them share a pass), and the marks
  * after the last review as a final pass. A review written before any mark is
- * the first pass's note. Gestures are frozen data, one per line, as resume
- * writes them. */
-function pageModule(drawing, { title, note }) {
-  const ops = drawing.ops, groups = [];
+ * the first pass's note. A sheet that carries on a page starts with that
+ * page's own passes, as they were saved. Gestures are frozen data, one per
+ * line, as resume writes them. The header names the sheet's drawing, so the
+ * page keeps the id the sheet had while live. */
+function pageModule(drawing, { title, note }, sheet) {
+  const ops = drawing.ops, groups = [], base = sheet.base;
+  const first = base ? Math.min(base.end, ops.length) : 0;
   for (const review of [...drawing.reviews || []].sort((a, b) => a.at - b.at)) {
-    const at = Math.min(review.at, ops.length);
+    const at = Math.max(first, Math.min(review.at, ops.length));
     if (groups.at(-1)?.at === at) groups.at(-1).reviews.push(review); else groups.push({ at, reviews: [review] });
   }
   const joined = (reviews, key) => reviews.map((review) => review[key].trim()).filter(Boolean).join('\n\n');
-  const before = groups[0]?.at === 0 ? groups.shift().reviews : [];
-  const passes = [];
-  let start = 0;
+  const before = groups[0]?.at === first ? groups.shift().reviews : [];
+  const passes = base ? base.passes.filter((pass) => pass.end <= first).map(({ name, note, review, end }) => ({ end, name, note, ...(review ? { review } : {}), carried: true })) : [];
   for (const { at, reviews } of groups) {
     const region = reviews.findLast((review) => review.region)?.region;
     passes.push({ end: at, review: { observation: joined(reviews, 'observation'), change: joined(reviews, 'lesson'), next: joined(reviews, 'next'), ...(region ? { region: [region.x, region.y, region.w, region.h] } : {}) } });
   }
   if (!passes.length || passes.at(-1).end < ops.length) passes.push({ end: ops.length });
+  const carried = passes.filter((pass) => pass.carried).length;
+  let start = 0;
   const data = passes.map((pass, i) => {
-    const entry = { name: `Pass ${i + 1}`, note: i === 0 ? before.flatMap((review) => [review.observation, review.lesson, review.next]).map((text) => text.trim()).filter(Boolean).join('\n\n') : '', ...(pass.review ? { review: pass.review } : {}), ops: ops.slice(start, pass.end) };
+    const entry = pass.carried ? { name: pass.name, note: pass.note, ...(pass.review ? { review: pass.review } : {}), ops: ops.slice(start, pass.end) }
+      : { name: `Pass ${i + 1}`, note: i === carried ? before.flatMap((review) => [review.observation, review.lesson, review.next]).map((text) => text.trim()).filter(Boolean).join('\n\n') : '', ...(pass.review ? { review: pass.review } : {}), ops: ops.slice(start, pass.end) };
     start = pass.end;
     return entry;
   });
   const frozen = '[\n' + data.map(({ ops, ...entry }) => `${JSON.stringify(entry).slice(0, -1)},"ops":[\n${ops.map((op) => JSON.stringify(op)).join(',\n')}\n]}`).join(',\n') + '\n]';
   return `// Drawn live, gesture by gesture: "${drawing.title.replace(/[\r\n]+/g, ' ')}". Earlier marks are frozen data.
+${sheetLine(sheet.notice, sheet.from)}
 // Add a new pass; do not change these checkpoints when continuing.
 // BEGIN FROZEN MARKS (one operation per line; fold this block while editing)
 const saved = ${frozen};
@@ -94,7 +105,7 @@ try {
   else {
     const accepted = {
       status: ['full'], actions: ['file', 'revision'], inspect: ['out', 'x', 'y', 'w', 'h', 'scale'],
-      export: ['out', 'scale'], new: ['title', 'width', 'height', 'paper', 'tooth', 'seed', 'revision'], page: ['out', 'title', 'note', 'book'],
+      export: ['out', 'scale'], new: ['title', 'width', 'height', 'paper', 'tooth', 'seed', 'revision', 'continue', 'branch'], page: ['out', 'title', 'note', 'book'],
       save: ['name', 'revision'], load: ['id', 'revision'], saves: [], lessons: [],
     };
     for (const key of Object.keys(options)) if (key !== 'url' && !accepted[command]?.includes(key)) throw new Error(`Unsupported option for ${command}: --${key}`);
@@ -117,7 +128,7 @@ try {
       if (!Number.isSafeInteger(value) || value < 0) throw new Error('Revision must be a non-negative integer');
       return value;
     };
-    const summary = state => ({ url: base.origin, revision: state.revision, title: state.drawing.title, page: state.drawing.page, surface: state.drawing.surface, marks: state.drawing.ops.length, reviews: state.drawing.reviews?.length || 0, ...(state.save ? { save: state.save } : {}) });
+    const summary = state => ({ url: base.origin, revision: state.revision, title: state.drawing.title, page: state.drawing.page, surface: state.drawing.surface, marks: state.drawing.ops.length, reviews: state.drawing.reviews?.length || 0, ...(state.notice ? { notice: state.notice } : {}), ...(state.from ? { from: state.from } : {}), ...(state.save ? { save: state.save } : {}) });
     let result;
     if (command === 'status') { const state = await getSession(); result = options.full ? state : summary(state); }
     else if (command === 'actions') {
@@ -133,6 +144,12 @@ try {
       const response = await request(`/api/inspect?${search}`), path = resolve(options.out);
       await atomicOutput(path, Buffer.from(await response.arrayBuffer()));
       result = { path, revision: Number(response.headers.get('x-sketchbook-revision')), region: JSON.parse(response.headers.get('x-sketchbook-region')) };
+    } else if (command === 'new' && (options.continue !== undefined || options.branch !== undefined)) {
+      if (options.continue !== undefined && options.branch !== undefined) throw new Error('choose --continue or --branch');
+      const relation = options.continue !== undefined ? 'continue' : 'branch';
+      const other = ['width', 'height', 'paper', 'tooth', 'seed'].find((key) => options[key] !== undefined);
+      if (other) throw new Error(`a sheet that carries on a page keeps its paper and size: drop --${other}`);
+      result = summary(await (await request('/api/new', { revision: await revision(), [relation]: Number(options[relation]), ...(options.title ? { title: options.title } : {}) })).json());
     } else if (command === 'new') {
       if ((options.width === undefined) !== (options.height === undefined)) throw new Error('Provide both --width and --height');
       const surface = { kind: 'ink', version: 2, paper: options.paper ?? 'white', tooth: options.tooth === undefined ? 0.65 : Number(options.tooth), seed: options.seed === undefined ? 17 : Number(options.seed) };
@@ -142,13 +159,14 @@ try {
       const out = resolve(options.out);
       // book.mjs write runs only modules inside the sketchbook's folder.
       if (!out.startsWith(ROOT + sep) || relative(ROOT, out).split(sep)[0] === 'book') throw new Error(`a page module lives inside the sketchbook's folder, ${ROOT}, outside book/: book.mjs write runs only those`);
-      const { drawing } = await getSession();
+      const { drawing, notice, from, base } = await getSession();
+      if (!notice) throw new Error('this live server names no drawing for its sheet; restart it with node book.mjs serve');
       if (drawing.active) throw new Error('the tool is still on the paper; lift it before making the sheet a page');
       if (!drawing.ops.length) throw new Error('this live sheet has no marks yet; draw before making it a page');
       const note = (options.note ?? drawing.reviews?.at(-1)?.observation ?? '').trim();
       if (!note) throw new Error('a page needs a note: give --note, or record a review with an observation first');
       await mkdir(dirname(out), { recursive: true });
-      try { await writeFile(out, pageModule(drawing, { title: options.title ?? drawing.title, note }), { flag: 'wx' }); }
+      try { await writeFile(out, pageModule(drawing, { title: options.title ?? drawing.title, note }, { notice, from, base }), { flag: 'wx' }); }
       catch (error) { if (error.code === 'EEXIST') throw new Error(`${options.out} already exists; nothing was overwritten. Choose another name.`); throw error; }
       // The module must build to exactly this sheet's gestures, op by op, or it is not kept.
       let built, differs;
@@ -160,7 +178,7 @@ try {
       const book = options.book ? resolve(options.book) : resolve(ROOT, 'book');
       // Paths as book.mjs prints them: relative here, absolute when they climb out.
       const where = (path) => { const near = relative(process.cwd(), path); return !near ? '.' : near.startsWith('..') ? path : near; };
-      const write = ['node', where(resolve(ROOT, 'book.mjs')), 'write', where(out), '--book', where(book)].map(shell).join(' ');
+      const write = ['node', where(resolve(ROOT, 'book.mjs')), 'write', where(out), '--book', where(book), ...(from ? [`--${from.relation}`, String(from.page)] : [])].map(shell).join(' ');
       process.stdout.write(`${where(out)}: "${built.meta.title}", ${built.ops.length} marks in ${built.meta.passes.length} pass${built.meta.passes.length === 1 ? '' : 'es'} on ${paperWords(drawing.surface)}. Nothing is in the book yet; to save it as a page:\n  ${write}\n`);
     } else if (command === 'save') result = summary(await (await request('/api/save', { revision: await revision(), ...(options.name ? { name: options.name } : {}) })).json());
     else if (command === 'load') {

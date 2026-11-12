@@ -45,7 +45,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, sanitizeSurface, sanitizeMotion, countFrames, limitsForPage } from './validate.js';
-import { lineage, drawingForNewPage, marksHash, posterScale, posterFile, reference, snapshot, checkedPage, INLINE_MAX } from './host-seam.mjs';
+import { lineage, drawingForNewPage, marksHash, posterScale, posterFile, reference, snapshot, checkedPage, INLINE_MAX, openSheet, sheetOf, isLiveDrawingId } from './host-seam.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PAGES = 48;
@@ -54,6 +54,13 @@ const WALL_MS = 30000;
 const [cmd, ...args] = process.argv.slice(2);
 const arg = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
 const flag = (name) => args.includes(name);
+/* Every flag that takes a value. Given with none (last, or followed by
+ * another flag), it is refused: --book with no value never falls back to
+ * ./book or anything else. */
+const VALUE_FLAGS = ['--book', '--owner', '--title', '--license', '--pages', '--refs', '--continue', '--branch', '--note', '--date', '--stage', '--selection-note',
+  '--out', '--pass', '--scale', '--crop', '--frame', '--loops', '--drawing', '--protocol', '--inline-max', '--port',
+  '--alt', '--caption', '--handoff', '--draft', '--as', '--origin', '--credential-env', '--resume', '--image-max'];
+const valueless = cmd === 'live' ? undefined : VALUE_FLAGS.find((name) => { const i = args.indexOf(name); return i >= 0 && (args[i + 1] === undefined || args[i + 1].startsWith('--')); });
 const BOOK_DIR = resolve(process.cwd(), arg('--book') || resolve(ROOT, 'book'));
 const INDEX = resolve(BOOK_DIR, 'book.json');
 
@@ -495,6 +502,7 @@ async function alreadyLanded(book, save) {
 }
 
 try {
+  if (valueless) throw new Error(`${valueless} needs a value; nothing was done`);
   if (['init', 'write', 'select'].includes(cmd)) await acquireLock();
   if (cmd === 'help' || cmd === '--help') {
     console.log(`Start here: START_HERE.md
@@ -632,6 +640,17 @@ export default {
     if (!m.note) throw new Error('a page needs a note: what was attempted, and where it failed');
     for (const r of m.refs) if (!book.pages.some((p) => p.index === r)) throw new Error(`refs page ${r}, which is not in the book`);
     const source = await readFile(modPath, 'utf8');
+    /* A module made from a live sheet names the sheet's drawing: its first
+     * page keeps that id, and a page continuing or branching the page the
+     * sheet carried on must say so. */
+    let live = sheetOf(source);
+    if (live && !isLiveDrawingId(live.drawingId, book.id)) {
+      console.error(`this module's live sheet (${live.drawingId}) was not this book's, so its page is numbered as any other.`);
+      live = null;
+    }
+    if (live?.relation && (relation !== live.relation || Number(arg(`--${relation}`)) !== live.page)) throw new Error(`this module was drawn on a live sheet that carries on page ${live.page} (${live.relation}); save it with --${live.relation} ${live.page}`);
+    const sheet = await openSheet(BOOK_DIR);
+    const liveRevision = (id) => sheet ? sheet.spent(id) : 0;
     let parent;
     if (relation) {
       const n = Number(arg(`--${relation}`));
@@ -671,7 +690,7 @@ export default {
       ...(selectionNote ? { selectionNote } : {}),
       /* the drawing this page belongs to; book.json carries it too, so a
        * host watching the index sees { drawingId, revision } and nothing more */
-      ...drawingForNewPage(book, known, index, relation, relation ? Number(arg(`--${relation}`)) : null),
+      ...drawingForNewPage(book, known, index, relation, relation ? Number(arg(`--${relation}`)) : null, { live, liveRevision }),
     };
     await mkdir(resolve(BOOK_DIR, 'pages'), { recursive: true });
     await writeFile(resolve(BOOK_DIR, meta.file), JSON.stringify({ ...meta, journal, source, ops }), { flag: 'wx' });

@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
 import { SketchSession } from './sketch-session.js';
+import { lineage, liveDrawingId, savedRevision } from './host-seam.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const MAX_BODY = 32 * 1024 * 1024;
@@ -99,6 +100,33 @@ function inspectRegion(search, page) {
   return { region, scale };
 }
 
+/* A live sheet is a drawing from the moment it opens (docs/host-seam.md).
+ * Beside the sheet, active.json keeps its notice, { drawingId, revision }: the
+ * drawing and its last completed pass, which goes up only when the sheet is
+ * checkpointed (/api/save), never per gesture. With the notice: the page the
+ * sheet continues or branches (from), the drawing a branch came from
+ * (parent), that page's passes (base), and the marks of the last completed
+ * pass (pass). The top-level `revision` is the sheet's edit counter, which
+ * keeps two hands from drawing over each other; it is not a drawing's
+ * revision. */
+function keptSheet(active) {
+  const n = active?.notice;
+  if (!n || typeof n.drawingId !== 'string' || n.drawingId.length > 300 || !Number.isSafeInteger(n.revision) || n.revision < 0) return null;
+  const kept = { notice: { drawingId: n.drawingId, revision: n.revision } };
+  for (const key of ['from', 'parent', 'base', 'pass']) if (active[key] && typeof active[key] === 'object') kept[key] = active[key];
+  return kept;
+}
+const sheetFields = (sheet) => ({ notice: sheet.notice, ...['from', 'parent', 'base', 'pass'].reduce((o, key) => sheet[key] ? { ...o, [key]: sheet[key] } : o, {}) });
+/* `spent` remembers the highest revision each drawing's sheets reached here,
+ * so a pass set aside unsaved (live new, live load) never has its revision
+ * given again, by a later sheet or by a page. */
+function keptSpent(active) {
+  const out = {};
+  if (active?.spent && typeof active.spent === 'object') for (const [id, n] of Object.entries(active.spent)) if (Number.isSafeInteger(n) && n > 0) out[id] = n;
+  return out;
+}
+const spending = (spent, notice) => notice.revision > (spent[notice.drawingId] || 0) ? { ...spent, [notice.drawingId]: notice.revision } : spent;
+
 /* `/book/…` is answered from bookDir, wherever it is on disk, so `/` opens
  * that book; everything else comes from this folder. */
 export async function startStudioServer({ port = 4194, dataDir = resolve(ROOT, '../codex-sketchbook/studio'), bookDir = join(ROOT, 'book') } = {}) {
@@ -106,20 +134,35 @@ export async function startStudioServer({ port = 4194, dataDir = resolve(ROOT, '
   dataDir = resolve(dataDir); bookDir = resolve(bookDir);
   const savesDir = join(dataDir, 'saves'), activePath = join(dataDir, 'active.json');
   await mkdir(savesDir, { recursive: true });
+  /* The book the sheets belong to, read fresh each time: null when there is none. */
+  const readBook = async () => {
+    try { return JSON.parse(await readFile(join(bookDir, 'book.json'), 'utf8')); }
+    catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  };
+  const drawingsOf = (book) => lineage(book, async (meta) => JSON.parse(await readFile(join(bookDir, meta.file), 'utf8')));
+  const freshSheet = async () => ({ notice: { drawingId: liveDrawingId((await readBook())?.id, randomUUID().slice(0, 8)), revision: 0 } });
   let session = new SketchSession();
   let revision = 0;
   let lessons = [];
+  let sheet = null;
+  let spent = {};
   try {
     const active = JSON.parse(await readFile(activePath, 'utf8'));
     if (!Number.isSafeInteger(active.revision) || active.revision < 0) throw new Error('Invalid saved revision');
     session.import(active.drawing);
     revision = active.revision;
     if (Array.isArray(active.lessons)) lessons = active.lessons;
+    sheet = keptSheet(active);
+    spent = keptSpent(active);
   } catch (error) {
     if (error.code !== 'ENOENT') throw new Error(`Cannot restore the live sheet from active.json: ${error.message}. The file has been kept as it was.`);
-    await atomicJSON(activePath, { version: 1, revision, drawing: session.export(), lessons });
   }
-  const snapshot = () => ({ revision, drawing: session.export() });
+  // A new sheet, or one kept before sheets had ids, is named now and kept so.
+  if (!sheet) {
+    sheet = await freshSheet();
+    await atomicJSON(activePath, { version: 1, revision, drawing: session.export(), lessons, ...sheetFields(sheet), spent });
+  }
+  const snapshot = () => ({ revision, drawing: session.export(), ...sheetFields({ ...sheet, pass: null }) });
   const real = async (path) => { try { return await realpath(path); } catch (error) { if (error.code !== 'ENOENT') throw error; return null; } };
   const staticRoots = [await realpath(ROOT), await real(join(ROOT, 'codex-book'))].filter(Boolean);
   const bookRoot = await real(bookDir), liveRoot = await realpath(dataDir);
@@ -135,7 +178,7 @@ export async function startStudioServer({ port = 4194, dataDir = resolve(ROOT, '
     const saves = await Promise.all(files.map(async file => JSON.parse(await readFile(join(savesDir, file), 'utf8'))));
     return saves.sort((a, b) => b.savedAt.localeCompare(a.savedAt));
   }
-  async function commit(candidate) {
+  async function commit(candidate, nextSheet = sheet) {
     const drawing = candidate.export();
     const combined = new Map(lessons.map(lesson => [lessonKey(lesson), lesson]));
     for (const review of drawing.reviews || []) {
@@ -143,12 +186,49 @@ export async function startStudioServer({ port = 4194, dataDir = resolve(ROOT, '
       const key = lessonKey(lesson);
       if (!combined.has(key)) combined.set(key, lesson);
     }
-    const next = { version: 1, revision: revision + 1, drawing, lessons: [...combined.values()] };
+    const nextSpent = spending(spent, nextSheet.notice);
+    const next = { version: 1, revision: revision + 1, drawing, lessons: [...combined.values()], ...sheetFields(nextSheet), spent: nextSpent };
     await atomicJSON(activePath, next);
     session = candidate;
     revision = next.revision;
     lessons = next.lessons;
+    sheet = nextSheet;
+    spent = nextSpent;
     return snapshot();
+  }
+  /* A checkpoint completes a pass: the drawing's next revision, after its own
+   * passes and any page of it already in the book. */
+  async function completedPass() {
+    const book = await readBook();
+    const saved = book ? savedRevision(await drawingsOf(book), sheet.notice.drawingId) : 0;
+    const { title, page, surface, ops } = session.export();
+    return { ...sheet, notice: { drawingId: sheet.notice.drawingId, revision: Math.max(sheet.notice.revision, saved, spent[sheet.notice.drawingId] || 0) + 1 }, pass: { title, page, surface, ops } };
+  }
+  /* A new sheet: blank, or a page of the book carried on (continue: the same
+   * drawing) or taken somewhere new (branch: a new drawing naming its parent). */
+  async function openSheet(body) {
+    if (body.continue !== undefined && body.branch !== undefined) throw fail(400, 'Choose continue or branch, not both');
+    const relation = body.continue !== undefined ? 'continue' : body.branch !== undefined ? 'branch' : null;
+    if (!relation) return { candidate: new SketchSession({ ...(body.title === undefined ? {} : { title: body.title }), ...(body.page === undefined ? {} : { page: body.page }), ...(body.surface === undefined ? {} : { surface: body.surface }) }), opened: await freshSheet() };
+    const n = body[relation];
+    if (!Number.isSafeInteger(n) || n < 1) throw fail(400, `${relation} needs a page number`);
+    if (body.page !== undefined || body.surface !== undefined) throw fail(400, `A sheet that carries on page ${n} keeps its paper and size`);
+    const book = await readBook();
+    if (!book) throw fail(400, 'There is no book here to carry a page from; serve one with node book.mjs serve --book DIR');
+    const meta = book.pages.find(p => p.index === n);
+    if (!meta) throw fail(404, `No page ${n} in this book`);
+    const page = JSON.parse(await readFile(join(bookDir, meta.file), 'utf8'));
+    if (!page.surface) throw fail(400, `Page ${n} is on the original canvas; a live sheet needs paper with tooth`);
+    if (page.motion) throw fail(400, `Page ${n} moves; a live sheet is one still drawing`);
+    const candidate = new SketchSession();
+    candidate.import({ version: 1, title: body.title ?? page.title, page: page.page, surface: page.surface, ops: page.ops, reviews: [], redo: [] });
+    const known = await drawingsOf(book), drawing = known.get(n);
+    const passes = page.journal?.passes?.length ? page.journal.passes.map(({ name, note, review, start, end }) => ({ name, note, ...(review ? { review } : {}), start, end })) : [{ name: `Page ${n}`, note: '', start: 0, end: page.ops.length }];
+    const carried = { from: { relation, page: n }, base: { end: page.ops.length, passes } };
+    if (relation === 'branch') return { candidate, opened: { ...await freshSheet(), ...carried, parent: { drawingId: drawing.drawingId, revision: drawing.revision, pageIndex: n } } };
+    // The same drawing: a pass this sheet's drawing already completed live stays its latest.
+    const kept = sheet.notice.drawingId === drawing.drawingId && sheet.notice.revision > savedRevision(known, drawing.drawingId) && sheet.pass;
+    return { candidate, opened: { notice: { drawingId: drawing.drawingId, revision: kept ? sheet.notice.revision : savedRevision(known, drawing.drawingId) }, ...carried, ...(kept ? { pass: sheet.pass } : {}) } };
   }
   let queue = Promise.resolve();
   const exclusive = operation => {
@@ -203,9 +283,9 @@ export async function startStudioServer({ port = 4194, dataDir = resolve(ROOT, '
         const result = await exclusive(async () => {
           if (!Number.isSafeInteger(body.revision) || body.revision !== revision) throw Object.assign(fail(409, 'Revision conflict'), { revision });
           if (url.pathname === '/api/new') {
-            const candidate = new SketchSession({ ...(body.title === undefined ? {} : { title: body.title }), ...(body.page === undefined ? {} : { page: body.page }), ...(body.surface === undefined ? {} : { surface: body.surface }) });
+            const { candidate, opened } = await openSheet(body);
             await saveDrawing();
-            return commit(candidate);
+            return commit(candidate, opened);
           }
           if (url.pathname === '/api/load') {
             if (typeof body.id !== 'string' || !/^[a-zA-Z0-9-]+$/.test(body.id)) throw fail(400, 'Invalid save id');
@@ -215,11 +295,13 @@ export async function startStudioServer({ port = 4194, dataDir = resolve(ROOT, '
             const candidate = new SketchSession();
             candidate.import(saved.drawing);
             await saveDrawing();
-            return commit(candidate);
+            // A checkpoint taken up again is a new drawing, as a return to an earlier checkpoint is a branch.
+            return commit(candidate, await freshSheet());
           }
           if (url.pathname === '/api/save') {
+            const passed = await completedPass();
             const save = await saveDrawing(body.name);
-            return { ...await commit(session), save };
+            return { ...await commit(session, passed), save };
           }
           const candidate = session.clone();
           if (url.pathname === '/api/session') candidate.import(body.drawing);
@@ -270,9 +352,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   try {
     const args = process.argv.slice(2), options = {};
     for (let i = 0; i < args.length; i++) {
-      if (args[i] === '--port' && args[i + 1] !== undefined) options.port = Number(args[++i]);
-      else if (args[i] === '--data' && args[i + 1]) options.dataDir = args[++i];
-      else if (args[i] === '--book' && args[i + 1]) options.bookDir = args[++i];
+      // A flag with no value is refused, never passed over.
+      const given = args[i + 1] !== undefined && args[i + 1] !== '' && !args[i + 1].startsWith('--');
+      if (args[i] === '--port' && given) options.port = Number(args[++i]);
+      else if (args[i] === '--data' && given) options.dataDir = args[++i];
+      else if (args[i] === '--book' && given) options.bookDir = args[++i];
       else throw new Error('Usage: node studio-server.mjs [--port 4194] [--data DIR] [--book DIR]');
     }
     const studio = await startStudioServer(options);
