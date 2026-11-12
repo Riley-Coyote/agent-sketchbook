@@ -16,6 +16,10 @@
  *   node book.mjs blank
  *   node book.mjs serve [--port 4194]      the book, and drawing live beside it
  *   node book.mjs live <command> ..         the live sheet's commands (live help)
+ *   node book.mjs snapshot [--drawing ID] --json   a drawing's latest state, for a host (reads only)
+ *
+ * For an app that shows the book: `write --reference` also draws the page's
+ * poster and prints one immutable page reference; docs/host-seam.md.
  *
  * `--book <dir>` picks the book (default: ./book). One folder per mind.
  *
@@ -31,7 +35,7 @@
  * while developing, never for someone else's.
  */
 
-import { readFile, writeFile, mkdir, rename, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename, rm, link } from 'node:fs/promises';
 import { compilePage, paperLine, today } from './page-program.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -41,6 +45,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, sanitizeSurface, sanitizeMotion, countFrames, limitsForPage } from './validate.js';
+import { lineage, drawingForNewPage, marksHash, posterScale, posterFile, reference, snapshot, checkedPage, INLINE_MAX } from './host-seam.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PAGES = 48;
@@ -446,6 +451,49 @@ async function renderPage({ ops, w, h, scale, surface, transparent, crop, frame,
   }
 }
 
+/* ---------------------------------------------------------------- a save for a host
+ *
+ * `write --reference` (and mcp.mjs's save) end here: the page's poster, drawn
+ * once at save time and never replaced, and the page's one reference. */
+
+/** pages/NNN.png beside pages/NNN.json: the page finished (a moving page's
+ * poster frame), at the scale <sketch-page> draws it. */
+async function writePoster(meta, { dimensions, surface, motion, ops }) {
+  const file = resolve(BOOK_DIR, posterFile(meta));
+  if (existsSync(file)) return posterFile(meta);
+  const temporary = `${file}.${process.pid}.tmp`;
+  try {
+    await renderPage({ ops, w: dimensions.w, h: dimensions.h, surface, scale: posterScale(dimensions), ...(motion ? { frame: motion.poster ?? 0 } : {}), out: temporary });
+    await link(temporary, file);   // never over a poster that is already there
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+  } finally {
+    await rm(temporary, { force: true });
+  }
+  return posterFile(meta);
+}
+
+async function answerHost(book, meta, page, drawing) {
+  const checked = checkedPage(page);
+  const poster = await writePoster(meta, checked);
+  console.log(JSON.stringify(reference(book, meta, drawing, marksHash(checked.ops), poster)));
+}
+
+/** The newest page, when it already holds exactly this save: a retry whose
+ * first answer was lost. Nothing else counts as the same save. */
+async function alreadyLanded(book, save) {
+  const last = book.pages.at(-1);
+  if (!last) return null;
+  const { page: stored } = await savedPage(book, last.index);
+  const parent = stored.journal?.parent;
+  const same = (parent?.relation ?? null) === save.relation && (parent?.page ?? null) === save.from
+    && stored.journal?.sourceHash === save.journal.sourceHash
+    && marksHash(stored.ops) === marksHash(save.ops)
+    && JSON.stringify(stored.page) === JSON.stringify(save.page) && JSON.stringify(stored.surface) === JSON.stringify(save.surface)
+    && stored.title === save.m.title && stored.note === save.m.note && JSON.stringify(stored.refs) === JSON.stringify(save.m.refs);
+  return same ? { meta: last, page: stored } : null;
+}
+
 try {
   if (['init', 'write', 'select'].includes(cmd)) await acquireLock();
   if (cmd === 'help' || cmd === '--help') {
@@ -468,6 +516,8 @@ select PAGE --book DIR --stage study|candidate|exhibition --note REASON
 list | read PAGE [--source] | blank --book DIR
 serve --book DIR [--port 4194]   serves the book to open in a browser, with drawing live beside it; live sheets are kept in DIR/live
 live COMMAND ...   drawing live, gesture by gesture: node book.mjs live help lists the commands; live page writes a live sheet as a page module
+snapshot --book DIR [--drawing ID] [--protocol sketchbook.drawing/1] [--inline-max BYTES] --json   a drawing's latest state for a host; reads only (docs/host-seam.md)
+write ... --reference   also draws the page's poster (pages/NNN.png) and prints its page reference as JSON; a save that already landed as the newest page answers with the same reference
 Saving defaults to a study. Selection records intent; it does not publish or grant access.`);
   } else if (cmd === 'init') {
     const owner = arg('--owner');
@@ -552,7 +602,12 @@ export default {
     if (stage !== 'study' && !selectionNote) throw Error('candidate/exhibition needs --selection-note: why this work is selected');
     if (!args[0] || args[0].startsWith('--')) throw new Error('write needs a page module');
     const modPath = resolve(process.cwd(), args[0]);
-    if (book.pages.length >= book.pageCount) throw new Error('the book is full');
+    /* --reference: a save for a host. It checks for the browser that draws
+     * the poster before anything is saved, and a full book can still answer
+     * a retry of the save that filled it. */
+    const forHost = flag('--reference');
+    if (forHost && !(await playwright())) throw new Error('--reference draws the page\'s poster in a real browser, and playwright is not installed here (npm i playwright-core). Nothing was saved.');
+    if (!forHost && book.pages.length >= book.pageCount) throw new Error('the book is full');
     const built = await buildPage(modPath);
     const { page, errors: dimensionErrors } = sanitizePageDimensions(built.meta.page);
     if (!page) throw new Error(`the page dimensions were rejected: ${dimensionErrors.join('; ')}`);
@@ -591,6 +646,13 @@ export default {
     }
     const motion = motionFor(built.meta.motion, page, ops);
     const journal = { version: 1, sourceHash: hash(source), marksHash: hash(ops), ...(parent ? { parent } : {}), passes: (built.meta.passes || []).map(pass => ({ ...pass, checkpointHash: hash({ page, surface, ops: ops.slice(0, pass.end) }) })) };
+    const known = await lineage(book, async (p) => (await savedPage(book, p.index)).page);
+    const landed = forHost ? await alreadyLanded(book, { relation, from: relation ? Number(arg(`--${relation}`)) : null, journal, page, surface, ops, m }) : null;
+    if (landed) {
+      console.error(`page ${landed.meta.index} already holds this save, so nothing was saved twice.`);
+      await answerHost(book, landed.meta, landed.page, known.get(landed.meta.index));
+    } else {
+    if (book.pages.length >= book.pageCount) throw new Error('the book is full');
     const index = book.pages.length + 1;
     const meta = {
       index,
@@ -607,12 +669,28 @@ export default {
       state: 'drawn',
       stage,
       ...(selectionNote ? { selectionNote } : {}),
+      /* the drawing this page belongs to; book.json carries it too, so a
+       * host watching the index sees { drawingId, revision } and nothing more */
+      ...drawingForNewPage(book, known, index, relation, relation ? Number(arg(`--${relation}`)) : null),
     };
     await mkdir(resolve(BOOK_DIR, 'pages'), { recursive: true });
     await writeFile(resolve(BOOK_DIR, meta.file), JSON.stringify({ ...meta, journal, source, ops }), { flag: 'wx' });
     book.pages.push(meta);
     await saveBook(book);
-    console.log(`page ${index}: "${meta.title}" — ${ops.length} marks${meta.refs.length ? `, reworks ${meta.refs.join(', ')}` : ''}`);
+    if (forHost) {
+      known.set(index, { drawingId: meta.drawingId, revision: meta.revision, ...(meta.parentDrawing ? { parent: meta.parentDrawing } : {}) });
+      await answerHost(book, meta, { ...meta, ops }, known.get(index)).catch((error) => {
+        throw new Error(`page ${index} was saved, but its poster could not be drawn (${error.message}). Run the same save again: it draws the poster for page ${index} and saves nothing twice.`);
+      });
+    } else console.log(`page ${index}: "${meta.title}" — ${ops.length} marks${meta.refs.length ? `, reworks ${meta.refs.join(', ')}` : ''}`);
+    }
+  } else if (cmd === 'snapshot') {
+    /* A drawing's latest state, for a host. It only reads. */
+    const inlineMax = arg('--inline-max') === undefined ? INLINE_MAX : Number(arg('--inline-max'));
+    if (!Number.isInteger(inlineMax) || inlineMax < 0) throw new Error('--inline-max takes a number of bytes');
+    const snap = await snapshot({ bookDir: BOOK_DIR, drawingId: arg('--drawing'), protocol: arg('--protocol'), inlineMax });
+    if (flag('--json')) console.log(JSON.stringify(snap));
+    else console.log(`drawing ${snap.drawingId}: revision ${snap.revision}, ${snap.state} as page ${snap.pageIndex}, ${snap.marksBytes} bytes of marks, hash ${snap.marksHash.slice(0, 12)}…, poster ${snap.poster || 'none'}. Add --json for all of it.`);
   } else if (cmd === 'render') {
     const book = await loadBook();
     const n = Number(args[0]);

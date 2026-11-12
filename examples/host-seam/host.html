@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Host seam</title>
+<style>
+  :root { color-scheme: light dark; --ground: #f4f4f2; --ink: #1d1d1f; --quiet: #6e6e73; --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; --mono: ui-monospace, 'SF Mono', Menlo, monospace; }
+  @media (prefers-color-scheme: dark) { :root { --ground: #0b0b0d; --ink: #f5f5f7; --quiet: #98989d; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 13px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 48px; display: grid; gap: 12px; }
+  #status { margin: 0; color: var(--quiet); font: 11px/1.5 var(--mono); overflow-wrap: anywhere; }
+</style>
+<!-- The host's whole renderer: the book's own element. Nothing here imports,
+     evaluates or fetches a page's source; it is handed validated marks only. -->
+<script type="module" src="../../sketch-page.js"></script>
+</head>
+<body>
+<main>
+  <sketch-page id="drawing" hud="off"></sketch-page>
+  <p id="status" role="status">waiting for marks</p>
+</main>
+<script type="module">
+/* ?marks=URL names a marks file: { drawingId, revision, page, paper, marks },
+ * the fields a drawing's snapshot carries. */
+const status = document.getElementById('status');
+const el = document.getElementById('drawing');
+const url = new URLSearchParams(location.search).get('marks') || 'marks.json';
+window.__drawn = (async () => {
+  const data = await (await fetch(url, { cache: 'no-store' })).json();
+  await customElements.whenDefined('sketch-page');
+  const loaded = new Promise((done, fail) => {
+    el.addEventListener('sketch-load', done, { once: true });
+    el.addEventListener('sketch-error', (e) => fail(new Error(e.detail.message)), { once: true });
+  });
+  el.ops = { page: data.page, surface: data.paper ?? undefined, motion: data.motion, ops: data.marks };
+  await loaded;
+  status.textContent = `${data.drawingId} · revision ${data.revision} · ${data.marks.length} marks`;
+  return true;
+})().catch((error) => { status.textContent = error.message; throw error; });
+</script>
+</body>
+</html>

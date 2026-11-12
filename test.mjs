@@ -92,7 +92,19 @@ console.log('book tool');
   ok(/1 of 48 pages drawn/.test(l.stdout), 'lists the book');
   const idx = JSON.parse(await readFile(join(dir, 'book.json'), 'utf8'));
   ok(idx.owner === 'test' && idx.pages.length === 1, 'the index is right');
+  ok(idx.pages[0].drawingId === `${idx.id}:1` && idx.pages[0].revision === 1, 'a new page starts a drawing, at revision 1');
   await rm(dir, { recursive: true, force: true });
+}
+
+console.log('host seam');
+{
+  /* The seam an app follows a drawing through (docs/host-seam.md), and the
+   * agents' tool, each in its own suite. Both draw in a headless browser. */
+  for (const suite of ['tests/host-seam.mjs', 'tests/mcp.mjs']) {
+    const r = await run(process.execPath, [resolve(ROOT, suite)], { cwd: ROOT, maxBuffer: 64 * 1024 * 1024 }).catch((e) => e);
+    const last = (r.stdout || '').trim().split('\n').pop();
+    ok(!r.code && / 0 failed$/.test(last), `${suite}: ${last || r.message}`);
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
