@@ -17,6 +17,7 @@
  *   node book.mjs serve [--port 4194]      the book, and drawing live beside it
  *   node book.mjs live <command> ..         the live sheet's commands (live help)
  *   node book.mjs snapshot [--drawing ID] --json   a drawing's latest state, for a host (reads only)
+ *   node book.mjs renderer --json | --check        the renderer a host pins: its manifest, or every file checked (reads only)
  *
  * For an app that shows the book: `write --reference` also draws the page's
  * poster and prints one immutable page reference; docs/host-seam.md.
@@ -45,7 +46,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { sanitizeOps, sanitizePageMeta, sanitizePageDimensions, sanitizeSurface, sanitizeMotion, countFrames, limitsForPage } from './validate.js';
-import { lineage, drawingForNewPage, marksHash, posterScale, posterFile, reference, snapshot, checkedPage, INLINE_MAX, openSheet, sheetOf, isLiveDrawingId } from './host-seam.mjs';
+import { lineage, drawingForNewPage, marksHash, posterScale, posterFile, reference, snapshot, checkedPage, INLINE_MAX, openSheet, sheetOf, isLiveDrawingId, rendererManifest, checkRenderer, RENDERER_MANIFEST } from './host-seam.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PAGES = 48;
@@ -526,6 +527,7 @@ serve --book DIR [--port 4194]   serves the book to open in a browser, with draw
 live COMMAND ...   drawing live, gesture by gesture: node book.mjs live help lists the commands; live page writes a live sheet as a page module
 snapshot --book DIR [--drawing ID] [--protocol sketchbook.drawing/1] [--inline-max BYTES] --json   a drawing's latest state for a host; reads only (docs/host-seam.md)
 write ... --reference   also draws the page's poster (pages/NNN.png) and prints its page reference as JSON; a save that already landed as the newest page answers with the same reference
+renderer --json | --check   the renderer a host pins (<sketch-page> and the files it loads): prints renderer.manifest.json, or recomputes every file's size and sha256 against it; reads only
 Saving defaults to a study. Selection records intent; it does not publish or grant access.`);
   } else if (cmd === 'init') {
     const owner = arg('--owner');
@@ -710,6 +712,20 @@ export default {
     const snap = await snapshot({ bookDir: BOOK_DIR, drawingId: arg('--drawing'), protocol: arg('--protocol'), inlineMax });
     if (flag('--json')) console.log(JSON.stringify(snap));
     else console.log(`drawing ${snap.drawingId}: revision ${snap.revision}, ${snap.state} as page ${snap.pageIndex}, ${snap.marksBytes} bytes of marks, hash ${snap.marksHash.slice(0, 12)}…, poster ${snap.poster || 'none'}. Add --json for all of it.`);
+  } else if (cmd === 'renderer') {
+    /* The renderer a host pins: <sketch-page> and the files it loads. It only
+     * reads, and only this folder's own files; it takes no book. */
+    const other = args.filter((a) => a !== '--json' && a !== '--check');
+    if (other.length) throw new Error(`renderer takes --json or --check and nothing else, not ${other.join(' ')}; nothing was done`);
+    if (flag('--json') && flag('--check')) throw new Error('choose one of --json or --check');
+    const manifest = await rendererManifest(ROOT);
+    if (flag('--json')) console.log(JSON.stringify(manifest));
+    else if (flag('--check')) {
+      const { files, problems } = await checkRenderer(ROOT, manifest);
+      for (const f of files.filter((f) => f.state === 'ok')) console.log(`ok  ${f.path}  ${f.bytes} bytes  sha256 ${f.sha256}`);
+      if (problems.length) throw new Error(`the renderer does not match ${RENDERER_MANIFEST}:\n  ${problems.join('\n  ')}`);
+      console.log(`renderer ${manifest.rendererVersion}: all ${files.length} files match ${RENDERER_MANIFEST}`);
+    } else console.log(`renderer ${manifest.rendererVersion} (${manifest.protocol}): ${manifest.entry} defines <${manifest.element}>, fed marks through its ${manifest.feed} property; ${manifest.files.length} files. Add --json for the manifest, or --check to check every file against it.`);
   } else if (cmd === 'render') {
     const book = await loadBook();
     const n = Number(args[0]);

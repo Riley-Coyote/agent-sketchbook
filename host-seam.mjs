@@ -5,7 +5,8 @@
  * writing anything, and a page saved for a host is one immutable reference.
  * A live sheet is a drawing from the moment it opens, and its completed
  * passes are revisions too. docs/host-seam.md is the contract in plain words;
- * book.mjs uses this file for `snapshot` and `write`, studio-server.mjs for a
+ * book.mjs uses this file for `snapshot`, `write` and `renderer` (the
+ * renderer a host pins, renderer.manifest.json), studio-server.mjs for a
  * live sheet's id and passes, and mcp.mjs reaches it through book.mjs.
  * Nothing here runs a page's source.
  */
@@ -227,4 +228,42 @@ export async function snapshot({ bookDir, drawingId, protocol, inlineMax = INLIN
     poster,
     reference: reference(book, latest, drawing, marks.marksHash, poster),
   };
+}
+
+/* The renderer a host loads (`<sketch-page>` and what it imports), pinned by
+ * renderer.manifest.json: each file's size and SHA-256. `book.mjs renderer`
+ * prints and checks it; tests/renderer.mjs keeps it from going stale. */
+export const RENDERER_PROTOCOL = 'sketchbook.renderer/1';
+export const RENDERER_MANIFEST = 'renderer.manifest.json';
+
+export const rendererManifest = async (root) => JSON.parse(await readFile(resolve(root, RENDERER_MANIFEST), 'utf8'));
+
+/** Every file the manifest names, read from `root` and recomputed. `problems`
+ * names each file that differs or is missing; empty when all match. */
+export async function checkRenderer(root, manifest) {
+  const files = [], problems = [];
+  if (manifest.protocol !== RENDERER_PROTOCOL) problems.push(`the manifest's protocol is ${JSON.stringify(manifest.protocol)}, not ${RENDERER_PROTOCOL}`);
+  for (const f of manifest.files) {
+    let bytes;
+    try { bytes = await readFile(resolve(root, f.path)); } catch {
+      files.push({ path: f.path, state: 'missing' });
+      problems.push(`missing: ${f.path}`);
+      continue;
+    }
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const same = bytes.length === f.bytes && sha256 === f.sha256;
+    files.push({ path: f.path, state: same ? 'ok' : 'differs', bytes: bytes.length, sha256 });
+    if (!same) problems.push(`differs: ${f.path} (${bytes.length} bytes, sha256 ${sha256}; the manifest has ${f.bytes} bytes, sha256 ${f.sha256})`);
+  }
+  return { files, problems };
+}
+
+/** The version rule, between an earlier manifest and a later one: when any
+ * script changed (its digest, or a script added or taken away), existing
+ * marks could draw differently, so rendererVersion must be higher. */
+export function rendererVersionRule(before, after) {
+  const scripts = (m) => new Map(m.files.filter((f) => f.kind === 'script').map((f) => [f.path, f.sha256]));
+  const was = scripts(before), now = scripts(after);
+  const changed = [...new Set([...was.keys(), ...now.keys()])].filter((path) => was.get(path) !== now.get(path));
+  return { changed, ok: !changed.length || after.rendererVersion > before.rendererVersion };
 }

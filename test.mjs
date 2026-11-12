@@ -99,9 +99,9 @@ console.log('book tool');
 console.log('host seam');
 {
   /* The seam an app follows a drawing through (docs/host-seam.md), its live
-   * sheet, and the agents' tool, each in its own suite. Each draws in a
-   * headless browser. */
-  for (const suite of ['tests/host-seam.mjs', 'tests/live-seam.mjs', 'tests/mcp.mjs']) {
+   * sheet, the agents' tool, and the renderer a host pins, each in its own
+   * suite. The first three draw in a headless browser. */
+  for (const suite of ['tests/host-seam.mjs', 'tests/live-seam.mjs', 'tests/mcp.mjs', 'tests/renderer.mjs']) {
     const r = await run(process.execPath, [resolve(ROOT, suite)], { cwd: ROOT, maxBuffer: 64 * 1024 * 1024 }).catch((e) => e);
     const last = (r.stdout || '').trim().split('\n').pop();
     ok(!r.code && / 0 failed$/.test(last), `${suite}: ${last || r.message}`);

@@ -1,0 +1,17 @@
+{
+  "protocol": "sketchbook.renderer/1",
+  "rendererVersion": 1,
+  "entry": "sketch-page.js",
+  "element": "sketch-page",
+  "feed": "ops",
+  "files": [
+    { "path": "sketch-page.js", "bytes": 11505, "sha256": "0e60a37075e8596885a6ec7757ae122478eaa20cb392ff96392d6956b560506c", "kind": "script", "license": "private" },
+    { "path": "mark-engine.js", "bytes": 60476, "sha256": "3862c4b7b6c9ce8e1405167447b82bf475d22248affb3ef29e3697630fd69e9a", "kind": "script", "license": "private" },
+    { "path": "material-engine.js", "bytes": 16158, "sha256": "93f14fee2a4958ab72f6c62ca944edc45f7679095aa2bb5f9812bc608feef36b", "kind": "script", "license": "private" },
+    { "path": "validate.js", "bytes": 21270, "sha256": "e98b4ace9db29f3433309d18da6f83ac65e133b08a75ab13b996b9d011d8a633", "kind": "script", "license": "private" },
+    { "path": "fonts/jetbrains-mono-nl.woff", "bytes": 53204, "sha256": "bb82ce629311d27ffefa841c21f5cd1bacbeea91d142ee9d934659cc55acdea4", "kind": "font", "license": "OFL-1.1", "licenseFile": "fonts/OFL-JetBrainsMono.txt" },
+    { "path": "fonts/inter.woff", "bytes": 128436, "sha256": "c0fa3021d11ee93ad5b4ca9d919bd8edd4b740b1fa4748392daab33bec59f164", "kind": "font", "license": "OFL-1.1", "licenseFile": "fonts/OFL-Inter.txt" },
+    { "path": "fonts/cormorant-garamond.woff", "bytes": 46712, "sha256": "77095874828ef44784a81429b80d0c4aeec8b86a9335d16fca2ed7619b79088c", "kind": "font", "license": "OFL-1.1", "licenseFile": "fonts/OFL-CormorantGaramond.txt" },
+    { "path": "fonts/cormorant-garamond-italic.woff", "bytes": 47756, "sha256": "5237f37ede66ae21f79caa4621bf41beca141cb9e4edc611ad0626270a0986e6", "kind": "font", "license": "OFL-1.1", "licenseFile": "fonts/OFL-CormorantGaramond.txt" }
+  ]
+}

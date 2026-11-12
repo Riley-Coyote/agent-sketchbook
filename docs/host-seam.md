@@ -3,8 +3,9 @@
 An app can show a mind drawing while a person talks with it, and keep the
 finished page. This page is the contract such an app (a *host*) can rely on,
 and the one tool an agent draws through. Everything here is something the code
-does; `tests/host-seam.mjs`, `tests/live-seam.mjs` and `tests/mcp.mjs` check
-it, and `node examples/host-seam/run.mjs` shows it end to end.
+does; `tests/host-seam.mjs`, `tests/live-seam.mjs`, `tests/mcp.mjs` and
+`tests/renderer.mjs` check it, and `node examples/host-seam/run.mjs` shows it
+end to end.
 
 The rule underneath: a host shows **marks**, never runs a page's **source**.
 Source runs only in the book's sandbox (`sandbox.mjs`), when a page is
@@ -195,6 +196,76 @@ picture is compared with the poster in a headless browser: the tolerance is 1
 of 255 in any channel, and the measured difference is 0, with no pixel
 different.
 
+## Pinning the renderer
+
+The renderer a host loads is `<sketch-page>` and the files it loads: exactly
+eight, named in `renderer.manifest.json` with each one's size and SHA-256.
+
+| file | what it is | license |
+| --- | --- | --- |
+| `sketch-page.js` | the entry: defines `<sketch-page>` | private |
+| `mark-engine.js` | the engine that draws the marks | private |
+| `material-engine.js` | dry media (graphite, charcoal, chalk) on paper with tooth | private |
+| `validate.js` | checks every list of marks before it is drawn | private |
+| `fonts/jetbrains-mono-nl.woff`, `fonts/inter.woff`, `fonts/cormorant-garamond.woff`, `fonts/cormorant-garamond-italic.woff` | the typefaces type marks are set in | OFL 1.1 |
+
+The four scripts import only each other, and nothing at run time; besides
+them they load only the four fonts. `tests/renderer.mjs` checks this from the
+source.
+
+**The scripts are private**: all rights reserved, under the repository's
+`LICENSE`; a host needs written permission to ship them. **The fonts are SIL
+Open Font License 1.1**; each font's entry names its licence text
+(`fonts/OFL-*.txt`), which goes with the font wherever the font goes.
+
+**Feed it marks through `ops`.** Set the element's `ops` property to
+`{ page, surface, motion, ops }` from a snapshot (or to an array of marks), as
+`examples/host-seam/host.html` does. Never set its `src` attribute: given
+`src`, the element fetches that URL itself.
+
+**Folder layout.** Keep the four scripts side by side in one folder, and the
+fonts in `fonts/` inside it. The scripts import each other as
+`./mark-engine.js` and so on, and the engine finds each font from its own
+address (`./fonts/inter.woff` beside `mark-engine.js`).
+
+**The manifest**, protocol `sketchbook.renderer/1`:
+
+| field | what it is |
+| --- | --- |
+| `protocol` | `sketchbook.renderer/1` |
+| `rendererVersion` | a whole number, starting at 1 (below) |
+| `entry`, `element` | `sketch-page.js`, which defines `sketch-page` |
+| `feed` | `ops`: how marks reach the element |
+| `files` | each file's `path` (relative to the folder), `bytes`, `sha256` (lowercase hex), `kind` (`script` or `font`) and `license` (`private`, or `OFL-1.1` with its `licenseFile`) |
+
+**`rendererVersion`** goes up when marks that already exist could draw
+differently. `tests/renderer.mjs` holds the scripts to it: when a script's
+digest changes (or a script is added or taken away) and the version has not
+gone up since the manifest where this branch left the main line, the test
+fails. While the main line has no manifest yet, that comparison is skipped and
+the test says so. A font change alone does not trip the test; it can still
+change how type marks draw, and then the version goes up too.
+
+**Checking it here.** `node book.mjs renderer --check` recomputes every file
+in this folder against the manifest; it exits non-zero, naming each file that
+differs or is missing. `node book.mjs renderer --json` prints the manifest.
+Both only read, and take no other flag.
+
+**Checking it in a host.**
+
+```sh
+node examples/host-seam/verify-renderer.mjs <folder> [--manifest <file>]
+```
+
+One file, Node's own modules only, for a host to copy. It reads each file the
+manifest names from the folder, prints one line per file and a verdict, and
+exits 1 if any file differs or is missing, or if the folder's top level holds
+a `.js` file the manifest does not name. By default it reads the manifest in
+the folder; a host that keeps the manifest it reviewed somewhere else passes
+it with `--manifest`, so a changed folder can't vouch for itself. It is for
+the folder a host keeps the renderer in: run on this repository's own folder
+it fails, because the book's other scripts sit beside the renderer here.
+
 ## The agents' tool: `mcp.mjs`
 
 ```sh
@@ -236,6 +307,7 @@ is the same save; a previewed text's file is removed when the preview is done.
 | `write …` | the module, the book, `live/active.json` | the page, `book.json` | yes | no |
 | `preview …` | the module | the `--out` picture only | yes | yes |
 | `list`, `read`, `journal` | the book | nothing | no | no |
+| `renderer --json`, `renderer --check` | `renderer.manifest.json` and, for `--check`, the eight files it names | nothing | no | no |
 | `serve`, `live …` | the book, its live folder | the live folder (`live page`: the module it names) | `live page` only: the module it has just written from the sheet's gestures, to check it builds to them | no |
 
 A flag that takes a value, given with none (last, or followed by another
@@ -266,10 +338,12 @@ page draws the marks and matches the poster.
 node tests/host-seam.mjs   # ids, revisions, hash, snapshot, reference, posters, host render, flags, older pages
 node tests/live-seam.mjs   # the live sheet: its id, passes, snapshot, notice, watchers, continue and branch
 node tests/mcp.mjs         # the six tools over stdio with the official client
+node tests/renderer.mjs    # the renderer manifest, what the renderer loads, the version rule, the checkers
 ```
 
-`node test.mjs` runs all three. They use the repository's `playwright-core`,
-as the other browser suites do, and the MCP SDK from `npm install`.
+`node test.mjs` runs all four. The first three use the repository's
+`playwright-core`, as the other browser suites do, and the MCP SDK from
+`npm install`; `tests/renderer.mjs` needs neither.
 
 ## Unreleased
 
@@ -290,3 +364,9 @@ as the other browser suites do, and the MCP SDK from `npm install`.
 - `mcp.mjs` `preview` and `save` take a page's source as text; `preview` is
   marked as not read-only, since it writes a temporary picture.
 - A value flag given with no value is refused everywhere the seam reads one.
+- `renderer.manifest.json` (protocol `sketchbook.renderer/1`, renderer 1):
+  the eight files of the renderer a host loads, with sizes and SHA-256.
+  `book.mjs renderer --json` prints it and `book.mjs renderer --check` checks
+  every file against it; `tests/renderer.mjs` keeps it current and holds
+  script changes to a higher `rendererVersion`.
+- `examples/host-seam/verify-renderer.mjs`: a checker a host can copy.
